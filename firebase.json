@@ -1,0 +1,29 @@
+{
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "manga-reader-703c5",
+          "configurations": {
+            "android": "1:1073666454510:android:0fdb06e7698596218054ff",
+            "ios": "1:1073666454510:ios:1cbc1ea5270c65de8054ff"
+          }
+        }
+      },
+      "android": {
+        "default": {
+          "projectId": "manga-reader-703c5",
+          "appId": "1:1073666454510:android:0fdb06e7698596218054ff",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "manga-reader-703c5",
+          "appId": "1:1073666454510:ios:1cbc1ea5270c65de8054ff",
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      }
+    }
+  }
+}

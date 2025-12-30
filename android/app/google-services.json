@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1073666454510",
+    "project_id": "manga-reader-703c5",
+    "storage_bucket": "manga-reader-703c5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1073666454510:android:0fdb06e7698596218054ff",
+        "android_client_info": {
+          "package_name": "com.example.test11111"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1YyL54GB_biwkNct3WTbojZoCUbZ1ZoM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

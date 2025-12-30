@@ -3,6 +3,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
@@ -15,18 +16,18 @@ Future<void> main() async {
     ..maximumSize = 100
     ..maximumSizeBytes = 80 << 20; // ~80MB
 
-  // 🚀 Khởi tạo Firebase an toàn (dành cho hot reload)
+  // 🚀 Khởi tạo Firebase
   await _initFirebase();
 
   // 🧩 Chạy ứng dụng
-  runApp(const ComicApp());
+  runApp(const ProviderScope(child: ComicApp()));
 }
 
 Future<void> _initFirebase() async {
   try {
+    // Chỉ khởi tạo nếu chưa có app nào
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
-        name: 'comic_app',
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
@@ -49,7 +50,6 @@ class ComicApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       builder: EasyLoading.init(
         builder: (context, child) {
-          // 🌗 Thêm hiệu ứng chuyển theme mượt mà
           return AnimatedTheme(
             data: AppTheme.dark,
             duration: const Duration(milliseconds: 300),

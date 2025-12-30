@@ -1,0 +1,56 @@
+mutation SeedDatabase @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public as it only populates example data.") {
+  movie_insertMany(data: [
+    {
+      title: "Inception",
+      releaseYear: 2010,
+      genres: ["sci-fi", "action"],
+      runtimeMinutes: 148,
+      summary: "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a CEO."
+      createdAt: "2024-04-23T12:00:00Z"
+    },
+    {
+      title: "The Matrix",
+      releaseYear: 1999,
+      genres: ["sci-fi", "action"],
+      runtimeMinutes: 136,
+      summary: "A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.",
+      createdAt: "2024-04-23T12:00:00Z"
+    },
+    {
+      title: "Interstellar",
+      releaseYear: 2014,
+      genres: ["sci-fi", "adventure"],
+      runtimeMinutes: 169,
+      summary: "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
+      createdAt: "2024-04-23T12:00:00Z"
+    }
+  ])
+  user_insertMany(data: [
+    {
+      displayName: "Bob User",
+      createdAt: "2024-04-23T12:00:00Z"
+    },
+    {
+      displayName: "Alice Admin",
+      createdAt: "2024-04-23T12:00:00Z"
+    }
+  ])
+  movieList_insertMany(data: [
+    {
+      name: "Bob's Favorite Sci-Fi",
+      isPublic: true,
+      description: "A list of Bob's favorite science fiction movies.",
+      userId: "550e8400-e29b-41d4-a716-446655440000", # example UUID
+      createdAt: "2024-04-23T12:00:00Z",
+      updatedAt: "2024-04-23T12:00:00Z"
+    },
+    {
+      name: "Alice's Top Action",
+      isPublic: false,
+      description: "Alice's top action movies.",
+      userId: "550e8400-e29b-41d4-a716-446655440001", # example UUID
+      createdAt: "2024-04-23T12:00:00Z",
+      updatedAt: "2024-04-23T12:00:00Z"
+    }
+  ])
+}

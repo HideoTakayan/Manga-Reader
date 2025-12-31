@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/drive_service.dart';
@@ -11,9 +12,9 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Color(0xFF0E0E10),
-      body: _HomeContent(),
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: const _HomeContent(),
     );
   }
 }
@@ -54,16 +55,16 @@ class _HomeContent extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       "Chưa có truyện nào.",
-                      style: TextStyle(color: Colors.white),
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     if (authSnapshot.data == null)
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
-                        child: const Text(
+                        child: Text(
                           "(Bạn cần đăng nhập trong trang Quản trị để xem truyện)",
-                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                     TextButton(
@@ -82,7 +83,7 @@ class _HomeContent extends StatelessWidget {
                 // 🔺 Thanh tiêu đề
                 SliverAppBar(
                   floating: true,
-                  backgroundColor: const Color(0xFF0E0E10),
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                   elevation: 0,
                   title: Row(
                     children: [
@@ -96,12 +97,14 @@ class _HomeContent extends StatelessWidget {
                         shaderCallback: (bounds) => const LinearGradient(
                           colors: [Colors.redAccent, Colors.orangeAccent],
                         ).createShader(bounds),
-                        child: const Text(
+                        child: Text(
                           'MangaFlix',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 20,
-                            color: Colors.white,
+                            color: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.color,
                           ),
                         ),
                       ),
@@ -109,13 +112,16 @@ class _HomeContent extends StatelessWidget {
                   ),
                   actions: [
                     IconButton(
-                      icon: const Icon(Icons.search, color: Colors.white),
+                      icon: Icon(
+                        Icons.search,
+                        color: Theme.of(context).iconTheme.color,
+                      ),
                       onPressed: () => context.push('/search-global'),
                     ),
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.notifications_none,
-                        color: Colors.white,
+                        color: Theme.of(context).iconTheme.color,
                       ),
                       onPressed: () =>
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -170,8 +176,7 @@ class _SectionTitle extends StatelessWidget {
           children: [
             Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
@@ -250,15 +255,14 @@ class _MangaFlixCarousel extends StatelessWidget {
                       c.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 2),
-                    const Text(
+                    Text(
                       'Chapter 1',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
@@ -323,11 +327,13 @@ class _RankList extends StatelessWidget {
           ),
           title: Text(
             c.title,
-            style: const TextStyle(color: Colors.white, fontSize: 16),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontSize: 16),
           ),
           subtitle: Text(
             'Tác giả: ${c.author}',
-            style: const TextStyle(color: Colors.white60),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         );
       }),
@@ -346,31 +352,36 @@ class _AutoSlideBanner extends StatefulWidget {
 class _AutoSlideBannerState extends State<_AutoSlideBanner> {
   late final PageController _controller;
   int _currentPage = 0;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _controller = PageController(viewportFraction: 0.9);
 
-    // Tự động chuyển trang mỗi 3 giây
-    Future.delayed(const Duration(seconds: 3), _autoSlide);
+    // Start auto-slide timer
+    _startTimer();
   }
 
-  void _autoSlide() {
-    if (!mounted) return;
-    if (widget.comics.isEmpty) return; // Fix division by zero
-    final nextPage = (_currentPage + 1) % widget.comics.length;
-    _controller.animateToPage(
-      nextPage,
-      duration: const Duration(milliseconds: 500),
-      curve: Curves.easeInOut,
-    );
-    _currentPage = nextPage;
-    Future.delayed(const Duration(seconds: 3), _autoSlide);
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
+      if (!mounted) return;
+      if (widget.comics.isEmpty) return;
+
+      final nextPage = (_currentPage + 1) % widget.comics.length;
+      _controller.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOut,
+      );
+      // _currentPage will be updated in onPageChanged
+    });
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -466,7 +477,9 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
               width: _currentPage == i ? 12 : 6,
               height: 6,
               decoration: BoxDecoration(
-                color: _currentPage == i ? Colors.redAccent : Colors.white24,
+                color: _currentPage == i
+                    ? Colors.redAccent
+                    : Theme.of(context).dividerColor,
                 borderRadius: BorderRadius.circular(3),
               ),
             );

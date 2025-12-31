@@ -8,12 +8,12 @@ class DriveImage extends StatelessWidget {
   final BoxFit fit;
 
   const DriveImage({
-    Key? key,
+    super.key,
     required this.fileId,
     this.width,
     this.height,
     this.fit = BoxFit.cover,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

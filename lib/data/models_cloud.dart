@@ -5,6 +5,11 @@ class CloudComic {
   final String description;
   final String coverFileId; // ID file ảnh bìa trên Drive
   final DateTime updatedAt;
+  final List<String> genres;
+  final String status;
+  final int viewCount;
+  final int likeCount;
+  final List<String> chapterOrder; // List of Chapter/File IDs in order
 
   CloudComic({
     required this.id,
@@ -13,6 +18,11 @@ class CloudComic {
     required this.description,
     required this.coverFileId,
     required this.updatedAt,
+    this.genres = const [],
+    this.status = 'Đang Cập Nhật',
+    this.viewCount = 0,
+    this.likeCount = 0,
+    this.chapterOrder = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -23,6 +33,11 @@ class CloudComic {
       'description': description,
       'coverFileId': coverFileId,
       'updatedAt': updatedAt.toIso8601String(),
+      'genres': genres,
+      'status': status,
+      'viewCount': viewCount,
+      'likeCount': likeCount,
+      'chapterOrder': chapterOrder,
     };
   }
 
@@ -34,6 +49,11 @@ class CloudComic {
       description: map['description'] ?? '',
       coverFileId: map['coverFileId'] ?? '',
       updatedAt: DateTime.tryParse(map['updatedAt'] ?? '') ?? DateTime.now(),
+      genres: List<String>.from(map['genres'] ?? []),
+      status: map['status'] ?? 'Đang Cập Nhật',
+      viewCount: map['viewCount'] ?? 0,
+      likeCount: map['likeCount'] ?? 0,
+      chapterOrder: List<String>.from(map['chapterOrder'] ?? []),
     );
   }
 }

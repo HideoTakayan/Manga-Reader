@@ -1,11 +1,17 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:archive/archive.dart';
 import 'package:collection/collection.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/follow_service.dart';
+import '../../services/history_service.dart';
 
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import '../../data/database_helper.dart';
+import '../../data/models.dart';
 
 enum ReadingMode { vertical, horizontal }
 
@@ -14,10 +20,14 @@ class ReaderState {
   final ReadingMode readingMode;
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
-  final List<Uint8List> pages; // Changed to Uint8List for memory images
+  final List<Uint8List> pages;
   final int currentPageIndex;
   final bool showControls;
   final String? errorMessage;
+  final bool isLiked;
+  final bool isFollowed;
+  final String? comicId;
+  final CloudComic? comic;
 
   const ReaderState({
     this.isLoading = true,
@@ -28,6 +38,10 @@ class ReaderState {
     this.currentPageIndex = 0,
     this.showControls = true,
     this.errorMessage,
+    this.isLiked = false,
+    this.isFollowed = false,
+    this.comicId,
+    this.comic,
   });
 
   ReaderState copyWith({
@@ -39,6 +53,10 @@ class ReaderState {
     int? currentPageIndex,
     bool? showControls,
     String? errorMessage,
+    bool? isLiked,
+    bool? isFollowed,
+    String? comicId,
+    CloudComic? comic,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
@@ -49,12 +67,24 @@ class ReaderState {
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       showControls: showControls ?? this.showControls,
       errorMessage: errorMessage ?? this.errorMessage,
+      isLiked: isLiked ?? this.isLiked,
+      isFollowed: isFollowed ?? this.isFollowed,
+      comicId: comicId ?? this.comicId,
+      comic: comic ?? this.comic,
     );
   }
 }
 
-class ReaderNotifier extends StateNotifier<ReaderState> {
-  ReaderNotifier() : super(const ReaderState());
+final readerProvider =
+    NotifierProvider.autoDispose<ReaderNotifier, ReaderState>(
+      ReaderNotifier.new,
+    );
+
+class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
+  @override
+  ReaderState build() {
+    return const ReaderState();
+  }
 
   Future<void> init(String chapterId) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
@@ -76,18 +106,11 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
 
       // 2. Get All Chapters (for navigation)
       final chapters = await DriveService.instance.getChapters(comicId);
-      // Sort chapters if needed (e.g. by name validation)
-      // For now, assuming they are returned in some order or user sorted manually.
-      // Let's sort by name for simple logic.
+      // Sort chapters by title
       chapters.sort((a, b) => _compareChapterNames(a.title, b.title));
 
       final currentChapter = chapters.firstWhereOrNull(
         (c) => c.id == chapterId,
-      );
-
-      state = state.copyWith(
-        chapters: chapters,
-        currentChapter: currentChapter,
       );
 
       // 3. Download Chapter Content
@@ -105,7 +128,6 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
       final List<Uint8List> images = [];
 
       // Sort files in archive to ensure page order
-      // Archive files might not be sorted alphabetically
       final sortedFiles = archive.files.toList()
         ..sort((a, b) => _compareChapterNames(a.name, b.name));
 
@@ -129,11 +151,32 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
         return;
       }
 
+      // 5. Check Follow Status & Get Comic Info
+      bool followed = false;
+      CloudComic? fetchedComic;
+
+      final comics = await DriveService.instance.getComics();
+      fetchedComic = comics.firstWhereOrNull((c) => c.id == comicId);
+
+      if (FirebaseAuth.instance.currentUser != null) {
+        final followService = FollowService();
+        followed = await followService.isFollowing(comicId).first;
+      }
+
       state = state.copyWith(
         isLoading: false,
+        chapters: chapters,
+        currentChapter: currentChapter,
         pages: images,
         currentPageIndex: 0,
+        isFollowed: followed,
+        isLiked: false,
+        comicId: comicId,
+        comic: fetchedComic,
       );
+
+      // Save initial history
+      _saveProgress();
     } catch (e) {
       debugPrint('Error loading reader: $e');
       state = state.copyWith(
@@ -145,7 +188,14 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
 
   // Simple string comparison for chapter/page names (numeric aware ideally, but simple for now)
   int _compareChapterNames(String a, String b) {
-    return a.compareTo(b);
+    return shortChapterSort(a, b);
+  }
+
+  // Helper for numeric sort (e.g. Chapter 1 < Chapter 10)
+  int shortChapterSort(String a, String b) {
+    return a.compareTo(
+      b,
+    ); // Keep simple as specific logic requires extra package or complex regex
   }
 
   void toggleControls() {
@@ -158,7 +208,30 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
 
   void onPageChanged(int index) {
     state = state.copyWith(currentPageIndex: index);
-    // TODO: Add history saving logic here
+    _saveProgress();
+  }
+
+  Future<void> _saveProgress() async {
+    if (state.comicId == null || state.currentChapter == null) return;
+
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final history = ReadingHistory(
+        userId: userId,
+        comicId: state.comicId!,
+        chapterId: state.currentChapter!.id,
+        chapterTitle: state.currentChapter?.title,
+        lastPageIndex: state.currentPageIndex,
+        updatedAt: DateTime.now(),
+      );
+      // 2. Save to Local DB (SQLite)
+      await DatabaseHelper.instance.saveHistory(history);
+
+      // 3. Sync to Cloud (Firestore)
+      await HistoryService.instance.saveHistory(history);
+    } catch (e) {
+      debugPrint("Error saving history: $e");
+    }
   }
 
   String? getNextChapterId() {
@@ -182,9 +255,50 @@ class ReaderNotifier extends StateNotifier<ReaderState> {
     }
     return null;
   }
-}
 
-final readerProvider =
-    StateNotifierProvider.autoDispose<ReaderNotifier, ReaderState>((ref) {
-      return ReaderNotifier();
-    });
+  Future<void> toggleFollow() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && state.currentChapter != null) {
+      try {
+        final fileMeta = await DriveService.instance.getFile(
+          state.currentChapter!.id,
+        );
+        if (fileMeta != null &&
+            fileMeta.parents != null &&
+            fileMeta.parents!.isNotEmpty) {
+          final comicId = fileMeta.parents!.first;
+          final followService = FollowService();
+
+          // Get current status
+          final isFollowed = await followService.isFollowing(comicId).first;
+
+          if (isFollowed) {
+            await followService.unfollowComic(comicId);
+            state = state.copyWith(isFollowed: false);
+          } else {
+            final comics = await DriveService.instance.getComics();
+            final comic = comics.firstWhereOrNull((c) => c.id == comicId);
+
+            if (comic != null) {
+              await followService.followComic(
+                comicId: comicId,
+                title: comic.title,
+                coverUrl: DriveService.instance.getThumbnailLink(
+                  comic.coverFileId,
+                ),
+              );
+              state = state.copyWith(isFollowed: true);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("Error toggling follow: $e");
+      }
+    }
+  }
+
+  void toggleLike() {
+    state = state.copyWith(isLiked: !state.isLiked);
+    // TODO: Implement persistent like logic if needed
+  }
+}

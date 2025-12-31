@@ -159,13 +159,16 @@ class _AddComicDialogState extends State<_AddComicDialog> {
         author: _authorController.text,
         description: _descController.text,
         coverFile: _coverFile!,
+        genres: ['Unknown'], // Default for quick upload
+        status: 'Đang Cập Nhật',
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -236,11 +239,13 @@ class _ChapterManagerPageState extends State<_ChapterManagerPage> {
       body: FutureBuilder<List<CloudChapter>>(
         future: DriveService.instance.getChapters(widget.comic.id),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting)
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
+          }
           final chapters = snapshot.data ?? [];
-          if (chapters.isEmpty)
+          if (chapters.isEmpty) {
             return const Center(child: Text('Chưa có chương nào'));
+          }
 
           return ListView.builder(
             itemCount: chapters.length,
@@ -308,10 +313,11 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }

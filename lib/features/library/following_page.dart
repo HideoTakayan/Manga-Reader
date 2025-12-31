@@ -19,14 +19,14 @@ class FollowingPage extends StatelessWidget {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
           child: Text(
             'Vui lòng đăng nhập để xem danh sách theo dõi',
             style: TextStyle(fontSize: 16, color: Colors.white),
           ),
         ),
-        backgroundColor: Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       );
     }
 
@@ -80,7 +80,7 @@ class FollowingPage extends StatelessWidget {
                 final comic = comics[index];
 
                 return Card(
-                  color: const Color(0xFF2C2C2E),
+                  color: Theme.of(context).cardColor,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -101,8 +101,7 @@ class FollowingPage extends StatelessWidget {
                     ),
                     title: Text(
                       comic.title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
@@ -110,13 +109,13 @@ class FollowingPage extends StatelessWidget {
                     ),
                     subtitle: Text(
                       'Tác giả: ${comic.author}',
-                      style: const TextStyle(color: Colors.grey),
+                      style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: const Icon(
+                    trailing: Icon(
                       Icons.chevron_right,
-                      color: Colors.white,
+                      color: Theme.of(context).iconTheme.color,
                     ),
                     onTap: () => context.push('/detail/${comic.id}'),
                   ),

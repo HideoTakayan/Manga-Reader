@@ -12,7 +12,16 @@
           "package_name": "com.example.manga_reader"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1073666454510-gli01lt8tknkucc852nqi64g2p9n7m8j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.manga_reader",
+            "certificate_hash": "c50f7860e38dda6624e2a94363f16f761e89b25a"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB1YyL54GB_biwkNct3WTbojZoCUbZ1ZoM"

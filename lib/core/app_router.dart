@@ -15,7 +15,10 @@ import '../features/reader/reader_page.dart';
 import '../features/search/search_page.dart';
 import '../features/main/main_scaffold.dart';
 
-import '../features/admin/admin_control_page.dart';
+import '../features/admin/admin_dashboard_page.dart';
+import '../features/admin/admin_upload_page.dart';
+import '../features/admin/chapter_manager_page.dart';
+import '../data/models_cloud.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/auth-check',
@@ -53,7 +56,7 @@ final GoRouter appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/admin/control',
-              builder: (_, __) => const AdminControlPage(),
+              builder: (_, __) => const AdminDashboardPage(),
             ),
           ],
         ),
@@ -99,6 +102,18 @@ final GoRouter appRouter = GoRouter(
     GoRoute(path: '/search-global', builder: (_, __) => const SearchPage()),
 
     // Admin Dashboard
+    GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardPage()),
+    // Admin Upload
+    GoRoute(path: '/admin/upload', builder: (_, __) => const AdminUploadPage()),
+
+    // Chapter Manager
+    GoRoute(
+      path: '/admin/chapters',
+      builder: (context, state) {
+        final comic = state.extra as CloudComic;
+        return ChapterManagerPage(comic: comic);
+      },
+    ),
   ],
 );
 

@@ -14,9 +14,54 @@ class ChapterManagerPage extends StatefulWidget {
 }
 
 class _ChapterManagerPageState extends State<ChapterManagerPage> {
+  List<CloudChapter> _chapters = [];
+  bool _isLoading = true;
+  bool _isSavingOrder = false;
+  bool _hasChanges = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChapters();
+  }
+
+  Future<void> _loadChapters() async {
+    setState(() => _isLoading = true);
+    final chapters = await DriveService.instance.getChapters(widget.comic.id);
+    if (mounted) {
+      setState(() {
+        _chapters = chapters;
+        _isLoading = false;
+        _hasChanges = false;
+      });
+    }
+  }
+
   // To refresh list after add/delete
   void _refresh() {
-    setState(() {});
+    _loadChapters();
+  }
+
+  Future<void> _saveOrder() async {
+    setState(() => _isSavingOrder = true);
+    try {
+      final newOrder = _chapters.map((c) => c.id).toList();
+      await DriveService.instance.saveChapterOrder(widget.comic.id, newOrder);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lưu thứ tự chương mới!')),
+        );
+        setState(() => _hasChanges = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi lưu thứ tự: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingOrder = false);
+    }
   }
 
   @override
@@ -24,73 +69,143 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.comic.title),
-        backgroundColor: const Color(0xFF1C1C1E),
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
+        actions: [
+          if (_hasChanges)
+            TextButton.icon(
+              onPressed: _isSavingOrder ? null : _saveOrder,
+              icon: _isSavingOrder
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save, color: Colors.orange),
+              label: Text(
+                _isSavingOrder ? 'Đang lưu...' : 'Lưu Thứ Tự',
+                style: const TextStyle(color: Colors.orange),
+              ),
+            ),
+        ],
       ),
-      backgroundColor: const Color(0xFF0E0E10),
-      body: FutureBuilder<List<CloudChapter>>(
-        future: DriveService.instance.getChapters(widget.comic.id),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final chapters = snapshot.data ?? [];
-          if (chapters.isEmpty) {
-            return const Center(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _chapters.isEmpty
+          ? Center(
               child: Text(
                 'Chưa có chương nào.\nBấm nút bên dưới để thêm!',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: chapters.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final chapter = chapters[index];
-              return Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E1E20),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: ListTile(
-                  leading: const Icon(Icons.file_present, color: Colors.orange),
-                  title: Text(
-                    chapter.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+            )
+          : ReorderableListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _chapters.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (oldIndex < newIndex) {
+                    newIndex -= 1;
+                  }
+                  final item = _chapters.removeAt(oldIndex);
+                  _chapters.insert(newIndex, item);
+                  _hasChanges = true;
+                });
+              },
+              itemBuilder: (context, index) {
+                final chapter = _chapters[index];
+                return Container(
+                  key: ValueKey(chapter.id),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withOpacity(0.2)),
                   ),
-                  subtitle: Text(
-                    '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                    style: const TextStyle(color: Colors.white60, fontSize: 12),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: Colors.redAccent,
+                  child: ListTile(
+                    leading: const Icon(Icons.drag_handle, color: Colors.grey),
+                    title: Text(
+                      chapter.title,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Tính năng xóa chapter đang phát triển (Cần xóa File trên Drive)',
+                    subtitle: Text(
+                      '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.redAccent,
+                      ),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: Theme.of(context).cardColor,
+                            title: Text(
+                              'Xác nhận xóa',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            content: Text(
+                              'Bạn có chắc muốn xóa "${chapter.title}"?',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: Text(
+                                  'Hủy',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                                child: const Text('Xóa'),
+                              ),
+                            ],
                           ),
-                        ),
-                      );
-                    },
+                        );
+
+                        if (confirm == true) {
+                          try {
+                            await DriveService.instance.deleteChapter(
+                              chapter.id,
+                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Đã xóa chapter thành công'),
+                                ),
+                              );
+                              _refresh();
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Lỗi xóa chapter: $e')),
+                              );
+                            }
+                          }
+                        }
+                      },
+                    ),
                   ),
-                ),
-              );
-            },
-          );
-        },
-      ),
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           await showDialog(
@@ -170,10 +285,12 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFF1C1C1E),
-      title: const Text(
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
         'Thêm Chapter Mới (Drive)',
-        style: TextStyle(color: Colors.white),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
       ),
       content: SingleChildScrollView(
         child: Column(
@@ -181,12 +298,14 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           children: [
             TextField(
               controller: _titleController,
-              style: const TextStyle(color: Colors.white),
+              style: Theme.of(context).textTheme.bodyLarge,
               decoration: InputDecoration(
                 labelText: 'Tên Chapter (VD: Chap 1)',
-                labelStyle: const TextStyle(color: Colors.white70),
+                labelStyle: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
                 filled: true,
-                fillColor: Colors.black26,
+                fillColor: Theme.of(context).scaffoldBackgroundColor,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -201,7 +320,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Colors.white24,
+                    color: Colors.grey.withOpacity(0.5),
                     style: BorderStyle.solid,
                   ),
                   borderRadius: BorderRadius.circular(8),
@@ -210,7 +329,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                   children: [
                     Icon(
                       _file == null ? Icons.attach_file : Icons.check_circle,
-                      color: _file == null ? Colors.white60 : Colors.green,
+                      color: _file == null ? Colors.grey : Colors.green,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -218,7 +337,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                         _file == null
                             ? 'Chọn file (ZIP/EPUB)'
                             : path.basename(_file!.path),
-                        style: const TextStyle(color: Colors.white),
+                        style: Theme.of(context).textTheme.bodyMedium,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -237,7 +356,12 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.white54)),
+          child: Text(
+            'Hủy',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+          ),
         ),
         ElevatedButton(
           onPressed: _isUploading ? null : _submit,

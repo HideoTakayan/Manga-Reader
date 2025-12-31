@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'data/drive_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
+import 'core/theme_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,24 +47,23 @@ Future<void> _initFirebase() async {
   }
 }
 
-class ComicApp extends StatelessWidget {
+class ComicApp extends ConsumerWidget {
   const ComicApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeProvider);
+
     return MaterialApp.router(
       title: 'Comic Reader',
-      theme: AppTheme.dark,
-      themeMode: ThemeMode.dark,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
       builder: EasyLoading.init(
         builder: (context, child) {
-          return AnimatedTheme(
-            data: AppTheme.dark,
-            duration: const Duration(milliseconds: 300),
-            child: child ?? const SizedBox.shrink(),
-          );
+          return child ?? const SizedBox.shrink();
         },
       ),
     );

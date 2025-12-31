@@ -278,22 +278,28 @@ class Comment {
 /// 🕰️ Reading History Model
 /// --------------------
 class ReadingHistory {
+  final String userId; // Added field for user segregation
   final String comicId;
   final String chapterId;
+  final String? chapterTitle;
   final int lastPageIndex;
   final DateTime updatedAt;
 
   const ReadingHistory({
+    required this.userId,
     required this.comicId,
     required this.chapterId,
+    this.chapterTitle,
     required this.lastPageIndex,
     required this.updatedAt,
   });
 
   factory ReadingHistory.fromMap(Map<String, dynamic> map) {
     return ReadingHistory(
+      userId: map['userId'] as String? ?? 'guest', // Fallback for old data
       comicId: map['comicId'] as String,
       chapterId: map['chapterId'] as String,
+      chapterTitle: map['chapterTitle'] as String?,
       lastPageIndex: map['lastPageIndex'] as int? ?? 0,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int),
     );
@@ -301,8 +307,10 @@ class ReadingHistory {
 
   Map<String, dynamic> toMap() {
     return {
+      'userId': userId,
       'comicId': comicId,
       'chapterId': chapterId,
+      'chapterTitle': chapterTitle,
       'lastPageIndex': lastPageIndex,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
     };

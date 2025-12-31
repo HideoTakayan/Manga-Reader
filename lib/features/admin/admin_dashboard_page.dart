@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
-import '../../data/firestore_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
+import 'edit_comic_dialog.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -16,17 +19,34 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Map<String, int> _stats = {'comics': 0, 'users': 0, 'chapters': 0};
   final user = FirebaseAuth.instance.currentUser;
+  GoogleSignInAccount? _driveAccount;
+  late StreamSubscription<GoogleSignInAccount?> _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _checkAdmin();
     _loadStats();
+    _driveAccount = DriveService.instance.currentUser;
+    _authSubscription = DriveService.instance.onAuthStateChanged.listen((
+      account,
+    ) {
+      if (mounted) {
+        setState(() {
+          _driveAccount = account;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
   }
 
   void _checkAdmin() {
     if (user?.email != 'admin@gmail.com') {
-      // Simple client-side protection. Secure apps should use Firestore Rules / Custom Claims.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.go('/');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -39,111 +59,449 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Future<void> _loadStats() async {
-    // Manually count
-    // 1. Comics
     final comics = await DriveService.instance.getComics();
     final comicCount = comics.length;
-
-    // 2. Users (Still in Firestore)
-    // We can't easily get count without fetching all, but for now let's try to just fetch
-    // or leave it as 0 if we don't want to fetch all users.
-    // Let's assume we want to keep it simple and just show 0 or fetch if manageable.
-    // Since we removed getStats from FirestoreService, we can try to fetch users stream length?
-    // No, better to just leave it 0 or add getUsersCount if needed.
-    // Let's just fetch all users for now since this is the only way in basic Firestore without counters.
-    // Actually, FirestoreService might still have getUsers.
-    int userCount = 0;
-    try {
-      // Assuming getStats is gone, let's skip user count or fetch simple list.
-      // userCount = (await FirestoreService.instance.getUsers().first).length;
-    } catch (_) {}
-
+    // ... User count logic if needed
     if (mounted) {
       setState(() {
-        _stats = {'comics': comicCount, 'users': userCount, 'chapters': 0};
+        _stats = {'comics': comicCount, 'users': 0, 'chapters': 0};
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Double check in build
     if (user?.email != 'admin@gmail.com') {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5), // Light background for admin
-      appBar: AppBar(
-        title: const Text(
-          'Admin Dashboard',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF1C1C1E),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadStats),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 200.0,
+            floating: false,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              title: Text(
+                'Admin Dashboard',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Theme.of(context).colorScheme.surface,
+                      Theme.of(context).scaffoldBackgroundColor,
+                    ],
+                  ),
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.admin_panel_settings,
+                    size: 80,
+                    color: Theme.of(context).iconTheme.color?.withOpacity(0.1),
+                  ),
+                ),
+              ),
+            ),
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            actions: [
+              IconButton(
+                icon: Icon(
+                  Icons.refresh,
+                  color: Theme.of(context).iconTheme.color,
+                ),
+                onPressed: _loadStats,
+              ),
+            ],
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDriveStatus(),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      _StatCard(
+                        title: 'Truyện',
+                        value: '${_stats['comics']}',
+                        icon: Icons.book,
+                        color: Colors.blueAccent,
+                      ),
+                      const SizedBox(width: 16),
+                      _StatCard(
+                        title: 'Người dùng',
+                        value: '${_stats['users']}',
+                        icon: Icons.people,
+                        color: Colors.orangeAccent,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Quản lý nội dung',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => context.push('/admin/upload'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Thêm Truyện'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+          _buildComicGrid(),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Tổng quan',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
+    );
+  }
+
+  Widget _buildDriveStatus() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: _driveAccount != null
+              ? [Colors.green.withOpacity(0.2), Colors.green.withOpacity(0.05)]
+              : [Colors.red.withOpacity(0.2), Colors.red.withOpacity(0.05)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _driveAccount != null
+              ? Colors.green.withOpacity(0.3)
+              : Colors.red.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_queue,
+            color: _driveAccount != null ? Colors.green : Colors.red,
+            size: 32,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _StatCard(
-                  title: 'Truyện',
-                  value: '${_stats['comics']}',
-                  icon: Icons.book,
-                  color: Colors.blue,
+                Text(
+                  'Google Drive',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).textTheme.bodyLarge?.color,
+                  ),
                 ),
-                const SizedBox(width: 16),
-                _StatCard(
-                  title: 'Người dùng',
-                  value: '${_stats['users']}',
-                  icon: Icons.people,
-                  color: Colors.orange,
-                ),
-                // Add more cards if needed
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Quản lý nội dung',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    // Reuse the existing upload page logic or simply navigate there?
-                    // Currently AdminUploadPage includes a list.
-                    // Let's repurpose AdminUploadPage as "Content Manager" or just link to it.
-                    // The user asked for "Add Comic" functionality.
-                    // We can use the Add Dialog from AdminUploadPage here or just navigate to it.
-                    // For simplicity, let's navigate to the previous page which handles list + add.
-                    context.push('/admin/upload');
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Thêm Truyện'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1C1C1E),
-                    foregroundColor: Colors.white,
+                Text(
+                  _driveAccount != null
+                      ? 'Kết nối: ${_driveAccount!.email}'
+                      : 'Chưa kết nối',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.color?.withOpacity(0.7),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            const _RecentComicsTable(),
-          ],
-        ),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (_driveAccount == null) {
+                try {
+                  await DriveService.instance.signIn();
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                  }
+                }
+              } else {
+                // Confirm logout logic...
+                await DriveService.instance.signOut();
+              }
+            },
+            child: Text(
+              _driveAccount != null ? 'Ngắt kết nối' : 'Kết nối',
+              style: TextStyle(
+                color: _driveAccount != null
+                    ? Colors.redAccent
+                    : Colors.blueAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComicGrid() {
+    return FutureBuilder<List<CloudComic>>(
+      future: DriveService.instance.getComics(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SliverToBoxAdapter(
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final comics = snapshot.data ?? [];
+        if (comics.isEmpty) {
+          return const SliverToBoxAdapter(
+            child: Center(child: Text('Chưa có truyện nào')),
+          );
+        }
+
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.7,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final comic = comics[index];
+              return _AdminComicCard(comic: comic, onRefresh: _loadStats);
+            }, childCount: comics.length),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AdminComicCard extends StatelessWidget {
+  final CloudComic comic;
+  final VoidCallback onRefresh;
+
+  const _AdminComicCard({required this.comic, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: DriveImage(fileId: comic.coverFileId, fit: BoxFit.cover),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      comic.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      comic.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+              child: IconButton(
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+                iconSize: 18,
+                icon: const Icon(Icons.edit, color: Colors.white),
+                onPressed: () {
+                  // Show options: Chapter Manager / Edit Info
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Theme.of(context).cardColor,
+                    builder: (ctx) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: Icon(
+                            Icons.list,
+                            color: Theme.of(context).iconTheme.color,
+                          ),
+                          title: Text(
+                            'Quản lý Chương',
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            context.push('/admin/chapters', extra: comic);
+                          },
+                        ),
+                        ListTile(
+                          leading: Icon(
+                            Icons.edit,
+                            color: Theme.of(context).iconTheme.color,
+                          ),
+                          title: Text(
+                            'Sửa Thông Tin',
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          onTap: () async {
+                            Navigator.pop(ctx);
+                            await showDialog(
+                              context: context,
+                              builder: (_) => EditComicDialog(comic: comic),
+                            );
+                            onRefresh();
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(
+                            Icons.delete,
+                            color: Colors.redAccent,
+                          ),
+                          title: const Text(
+                            'Xóa Truyện',
+                            style: TextStyle(color: Colors.redAccent),
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            showDialog(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                backgroundColor: Theme.of(context).cardColor,
+                                title: Text(
+                                  'Xóa Truyện?',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                content: Text(
+                                  'Bạn có chắc muốn xóa truyện "${comic.title}" không? Hành động này không thể hoàn tác.',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext),
+                                    child: Text(
+                                      'Hủy',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      Navigator.pop(
+                                        dialogContext,
+                                      ); // Close dialog
+                                      // Show loading
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: false,
+                                        builder: (_) => const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      );
+                                      try {
+                                        await DriveService.instance.deleteComic(
+                                          comic.id,
+                                        );
+                                        if (context.mounted) {
+                                          Navigator.pop(
+                                            context,
+                                          ); // Close loading
+                                          onRefresh(); // Refresh parent
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Đã xóa truyện'),
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          Navigator.pop(
+                                            context,
+                                          ); // Close loading
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(content: Text('Lỗi: $e')),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Text(
+                                      'Xóa',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -168,7 +526,7 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -185,7 +543,11 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               value,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
             ),
             Text(
               title,
@@ -194,76 +556,6 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _RecentComicsTable extends StatelessWidget {
-  const _RecentComicsTable();
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<CloudComic>>(
-      future: DriveService.instance.getComics(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final comics = snapshot.data ?? [];
-        if (comics.isEmpty) {
-          return const Card(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Text("Chưa có dữ liệu truyện."),
-            ),
-          );
-        }
-
-        return Card(
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: comics
-                .map(
-                  (comic) => ListTile(
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: DriveImage(
-                        fileId: comic.coverFileId,
-                        width: 40,
-                        height: 60,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    title: Text(
-                      comic.title,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(comic.author),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Tính năng xóa đang phát triển (Cần xóa Folder trên Drive)',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    onTap: () {
-                      context.push('/admin/upload');
-                    },
-                  ),
-                )
-                .toList(),
-          ),
-        );
-      },
     );
   }
 }

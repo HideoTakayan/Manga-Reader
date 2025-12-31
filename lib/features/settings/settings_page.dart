@@ -5,18 +5,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/theme_provider.dart';
 import '../../utils/auth_help.dart';
 
-class SettingsPage extends StatefulWidget {
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  State<SettingsPage> createState() => _SettingsPageState();
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends ConsumerState<SettingsPage> {
   final user = FirebaseAuth.instance.currentUser;
   bool _loading = false;
+  @override
+  void initState() {
+    super.initState();
+  }
 
   Future<void> _editProfileDialog(BuildContext context) async {
     final nameController = TextEditingController(text: user?.displayName ?? '');
@@ -35,7 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -51,13 +57,9 @@ class _SettingsPageState extends State<SettingsPage> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   "Chỉnh sửa thông tin",
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 20),
                 GestureDetector(
@@ -87,12 +89,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: nameController,
-                  style: const TextStyle(color: Colors.white),
+                  style: Theme.of(context).textTheme.bodyLarge,
                   decoration: InputDecoration(
                     labelText: 'Tên hiển thị',
-                    labelStyle: const TextStyle(color: Colors.white70),
+                    labelStyle: Theme.of(context).textTheme.bodyMedium,
                     filled: true,
-                    fillColor: const Color(0xFF2C2C2E),
+                    fillColor: Theme.of(context).scaffoldBackgroundColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -101,12 +103,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: bioController,
-                  style: const TextStyle(color: Colors.white),
+                  style: Theme.of(context).textTheme.bodyLarge,
                   decoration: InputDecoration(
                     labelText: 'Mô tả',
-                    labelStyle: const TextStyle(color: Colors.white70),
+                    labelStyle: Theme.of(context).textTheme.bodyMedium,
                     filled: true,
-                    fillColor: const Color(0xFF2C2C2E),
+                    fillColor: Theme.of(context).scaffoldBackgroundColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -211,7 +213,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (user == null) return _buildGuestView(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: _buildAppBar(context),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Colors.blue))
@@ -250,6 +252,28 @@ class _SettingsPageState extends State<SettingsPage> {
                           subtitle: 'Thống kê & Quản lý',
                           onTap: () => context.push('/admin'),
                         ),
+
+                      _buildTile(
+                        context,
+                        icon: Icons.brightness_6,
+                        color: Colors.purpleAccent,
+                        title: 'Giao diện',
+                        subtitle: ref.watch(themeProvider) == ThemeMode.dark
+                            ? 'Chế độ Tối'
+                            : 'Chế độ Sáng',
+                        trailing: Switch(
+                          value: ref.watch(themeProvider) == ThemeMode.dark,
+                          onChanged: (val) {
+                            ref.read(themeProvider.notifier).toggleTheme(val);
+                          },
+                          activeThumbColor: Colors.purpleAccent,
+                        ),
+                        onTap: () {
+                          final isDark =
+                              ref.read(themeProvider) == ThemeMode.dark;
+                          ref.read(themeProvider.notifier).toggleTheme(!isDark);
+                        },
+                      ),
                       _buildTile(
                         context,
                         icon: Icons.notifications_outlined,
@@ -258,6 +282,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         subtitle: 'Cài đặt thông báo đẩy',
                         onTap: () {},
                       ),
+
                       _buildTile(
                         context,
                         icon: Icons.privacy_tip_outlined,
@@ -307,21 +332,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     return AppBar(
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
       elevation: 0,
       centerTitle: true,
-      title: const Text(
-        'Cài đặt',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 20,
-        ),
-      ),
+      title: Text('Cài đặt', style: Theme.of(context).textTheme.titleLarge),
       leading: IconButton(
-        icon: const Icon(
+        icon: Icon(
           Icons.arrow_back_ios_new,
-          color: Colors.white,
+          color: Theme.of(context).iconTheme.color,
           size: 20,
         ),
         onPressed: () =>
@@ -405,9 +423,10 @@ class _SettingsPageState extends State<SettingsPage> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    Widget? trailing,
   }) {
     return Card(
-      color: const Color(0xFF2C2C2E),
+      color: Theme.of(context).cardColor, // Use Theme color
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
@@ -422,17 +441,28 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            // Use Theme text style or fallback
+            color: Theme.of(context).textTheme.bodyLarge?.color,
             fontWeight: FontWeight.w600,
             fontSize: 16,
           ),
         ),
         subtitle: Text(
           subtitle,
-          style: const TextStyle(color: Colors.grey, fontSize: 13),
+          style: TextStyle(
+            color: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+            fontSize: 13,
+          ),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+        trailing:
+            trailing ??
+            Icon(
+              Icons.chevron_right,
+              color: Theme.of(context).iconTheme.color?.withOpacity(0.5),
+            ),
         onTap: onTap,
       ),
     );

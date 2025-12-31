@@ -24,8 +24,11 @@ class FollowService {
   }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception('Chưa đăng nhập');
-    final ref =
-        _db.collection('users').doc(uid).collection('following').doc(comicId);
+    final ref = _db
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .doc(comicId);
     await ref.set({
       'comicId': comicId,
       'title': title,
@@ -37,8 +40,43 @@ class FollowService {
   Future<void> unfollowComic(String comicId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception('Chưa đăng nhập');
-    final ref =
-        _db.collection('users').doc(uid).collection('following').doc(comicId);
+    final ref = _db
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .doc(comicId);
     await ref.delete();
+  }
+
+  Future<void> toggleFollow(
+    String comicId, {
+    String? title,
+    String? coverUrl,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception('Chưa đăng nhập');
+
+    final ref = _db
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .doc(comicId);
+    final doc = await ref.get();
+
+    if (doc.exists) {
+      await ref.delete();
+    } else {
+      if (title == null || coverUrl == null) {
+        // If title/cover missing, we can fetch from DriveService or just save ID
+        // For now, let's require them or use placeholders
+        throw Exception('Missing info for follow');
+      }
+      await ref.set({
+        'comicId': comicId,
+        'title': title,
+        'coverUrl': coverUrl,
+        'followedAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 }

@@ -11,21 +11,21 @@ class LibraryPage extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
           title: const Text('Thư viện'),
-          backgroundColor: const Color(0xFF1C1C1E),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
             onPressed: () => context.go('/'),
           ),
-          bottom: const TabBar(
-            indicatorColor: Colors.amber,
-            labelColor: Colors.amber,
+          bottom: TabBar(
+            indicatorColor: Theme.of(context).primaryColor,
+            labelColor: Theme.of(context).primaryColor,
             unselectedLabelColor: Colors.grey,
-            tabs: [
-              Tab(text: 'Đang theo dõi'),
-              Tab(text: 'Lịch sử'),
+            tabs: const [
+              Tab(text: 'Đang theo dõi', icon: Icon(Icons.favorite)),
+              Tab(text: 'Lịch sử', icon: Icon(Icons.history)),
             ],
           ),
         ),

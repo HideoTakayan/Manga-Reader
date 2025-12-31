@@ -25,13 +25,18 @@ class MainScaffold extends StatelessWidget {
       body: navigationShell,
       bottomNavigationBar: NavigationBarTheme(
         data: NavigationBarThemeData(
-          backgroundColor: Colors.black.withOpacity(0.9),
+          backgroundColor: Theme.of(
+            context,
+          ).bottomNavigationBarTheme.backgroundColor,
           indicatorColor: Colors.redAccent.withOpacity(0.15),
           labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(color: Colors.white, fontSize: 12),
+            TextStyle(
+              color: Theme.of(context).textTheme.bodyMedium?.color,
+              fontSize: 12,
+            ),
           ),
           iconTheme: WidgetStateProperty.all(
-            const IconThemeData(color: Colors.white),
+            IconThemeData(color: Theme.of(context).iconTheme.color),
           ),
         ),
         child: NavigationBar(

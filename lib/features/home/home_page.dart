@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import '../../data/mock_catalog.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../../data/drive_service.dart';
 import '../../data/models.dart';
+import '../../data/models_cloud.dart';
+import '../shared/drive_image.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -12,7 +14,6 @@ class HomePage extends StatelessWidget {
     return const Scaffold(
       backgroundColor: Color(0xFF0E0E10),
       body: _HomeContent(),
-      bottomNavigationBar: _BottomNav(currentIndex: 0),
     );
   }
 }
@@ -20,70 +21,136 @@ class HomePage extends StatelessWidget {
 class _HomeContent extends StatelessWidget {
   const _HomeContent();
 
+  Comic _fromCloud(CloudComic c) {
+    return Comic(
+      id: c.id,
+      title: c.title,
+      author: c.author,
+      description: c.description,
+      coverUrl: c.coverFileId, // We use this for DriveImage
+      genres: const [],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final List<Comic> comics = MockCatalog.comics();
+    return StreamBuilder<GoogleSignInAccount?>(
+      stream: DriveService.instance.onAuthStateChanged,
+      initialData: DriveService.instance.currentUser,
+      builder: (context, authSnapshot) {
+        // Log in status changed -> Trigger re-fetch
+        return FutureBuilder<List<CloudComic>>(
+          future: DriveService.instance.getComics(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-    return CustomScrollView(
-      slivers: [
-        // 🔺 Thanh tiêu đề
-        SliverAppBar(
-          floating: true,
-          backgroundColor: const Color(0xFF0E0E10),
-          elevation: 0,
-          title: Row(
-            children: [
-              const Icon(Icons.auto_stories, color: Colors.redAccent, size: 30),
-              const SizedBox(width: 8),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [Colors.redAccent, Colors.orangeAccent],
-                ).createShader(bounds),
-                child: const Text(
-                  'MangaFlix',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                    color: Colors.white,
+            final cloudComics = snapshot.data ?? [];
+            final comics = cloudComics.map(_fromCloud).toList();
+
+            if (comics.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Chưa có truyện nào.",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    if (authSnapshot.data == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: const Text(
+                          "(Bạn cần đăng nhập trong trang Quản trị để xem truyện)",
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ),
+                    TextButton(
+                      onPressed: () {
+                        (context as Element).markNeedsBuild();
+                      },
+                      child: const Text("Tải lại"),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return CustomScrollView(
+              slivers: [
+                // 🔺 Thanh tiêu đề
+                SliverAppBar(
+                  floating: true,
+                  backgroundColor: const Color(0xFF0E0E10),
+                  elevation: 0,
+                  title: Row(
+                    children: [
+                      const Icon(
+                        Icons.auto_stories,
+                        color: Colors.redAccent,
+                        size: 30,
+                      ),
+                      const SizedBox(width: 8),
+                      ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: [Colors.redAccent, Colors.orangeAccent],
+                        ).createShader(bounds),
+                        child: const Text(
+                          'MangaFlix',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.search, color: Colors.white),
+                      onPressed: () => context.push('/search-global'),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.notifications_none,
+                        color: Colors.white,
+                      ),
+                      onPressed: () =>
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Thông báo đang phát triển...'),
+                            ),
+                          ),
+                    ),
+                  ],
+                ),
+
+                // 🔥 Banner nổi bật (auto-slide)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _AutoSlideBanner(comics: comics),
                   ),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.search, color: Colors.white),
-              onPressed: () => context.push('/search'),
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications_none, color: Colors.white),
-              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Thông báo đang phát triển...')),
-              ),
-            ),
-          ],
-        ),
 
-        // 🔥 Banner nổi bật (auto-slide)
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _AutoSlideBanner(comics: comics),
-          ),
-        ),
+                // 🔥 Truyện hot
+                _SectionTitle(label: '🔥 Truyện Hot Hôm Nay', onViewAll: () {}),
+                _MangaFlixCarousel(comics: comics),
 
-        // 🔥 Truyện hot
-        _SectionTitle(label: '🔥 Truyện Hot Hôm Nay', onViewAll: () {}),
-        _MangaFlixCarousel(comics: comics),
+                // 🆕 Mới cập nhật
+                _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
+                _MangaFlixCarousel(comics: comics.reversed.toList()),
 
-        // 🆕 Mới cập nhật
-        _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
-        _MangaFlixCarousel(comics: comics.reversed.toList()),
-
-        // 🏆 Top được xem nhiều
-        _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
-        SliverToBoxAdapter(child: _RankList(comics: comics)),
-      ],
+                // 🏆 Top được xem nhiều
+                _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
+                SliverToBoxAdapter(child: _RankList(comics: comics)),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -111,10 +178,7 @@ class _SectionTitle extends StatelessWidget {
             ),
             TextButton(
               onPressed: onViewAll,
-              child: const Text(
-                '',
-                style: TextStyle(color: Colors.redAccent),
-              ),
+              child: const Text('', style: TextStyle(color: Colors.redAccent)),
             ),
           ],
         ),
@@ -161,20 +225,22 @@ class _MangaFlixCarousel extends StatelessWidget {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
-                              child: CachedNetworkImage(
-                                imageUrl: c.coverUrl,
+                              child: DriveImage(
+                                fileId: c.coverUrl, // Actually coverFileId
                                 fit: BoxFit.cover,
                                 width: 140,
-                                fadeInDuration:
-                                    const Duration(milliseconds: 300),
+                                height: double.infinity,
                               ),
                             ),
                           ),
-                          Positioned(
+                          const Positioned(
                             top: 6,
                             right: 6,
-                            child: Icon(Icons.favorite_border,
-                                color: Colors.white70, size: 18),
+                            child: Icon(
+                              Icons.favorite_border,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
                           ),
                         ],
                       ),
@@ -185,11 +251,15 @@ class _MangaFlixCarousel extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 2),
-                    const Text('Chapter 1',
-                        style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const Text(
+                      'Chapter 1',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
                   ],
                 ),
               ),
@@ -221,8 +291,8 @@ class _RankList extends StatelessWidget {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: c.coverUrl,
+                child: DriveImage(
+                  fileId: c.coverUrl,
                   width: 50,
                   height: 70,
                   fit: BoxFit.cover,
@@ -251,52 +321,16 @@ class _RankList extends StatelessWidget {
                 ),
             ],
           ),
-          title: Text(c.title,
-              style: const TextStyle(color: Colors.white, fontSize: 16)),
-          subtitle: Text('Tác giả: ${c.author}',
-              style: const TextStyle(color: Colors.white60)),
+          title: Text(
+            c.title,
+            style: const TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          subtitle: Text(
+            'Tác giả: ${c.author}',
+            style: const TextStyle(color: Colors.white60),
+          ),
         );
       }),
-    );
-  }
-}
-
-class _BottomNav extends StatelessWidget {
-  final int currentIndex;
-  const _BottomNav({required this.currentIndex});
-
-  @override
-  Widget build(BuildContext context) {
-    return NavigationBarTheme(
-      data: NavigationBarThemeData(
-        backgroundColor: Colors.black.withOpacity(0.9),
-        indicatorColor: Colors.redAccent.withOpacity(0.15),
-      ),
-      child: NavigationBar(
-        selectedIndex: currentIndex,
-        onDestinationSelected: (i) {
-          switch (i) {
-            case 0:
-              context.go('/');
-              break;
-            case 1:
-              context.go('/library/following');
-              break;
-            case 2:
-              context.go('/chatpage');
-              break;
-            case 3:
-              context.go('/settings');
-              break;
-          }
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Trang chủ'),
-          NavigationDestination(icon: Icon(Icons.favorite), label: 'Following'),
-          NavigationDestination(icon: Icon(Icons.message), label: 'Chat'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Cài đặt'),
-        ],
-      ),
     );
   }
 }
@@ -324,6 +358,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
 
   void _autoSlide() {
     if (!mounted) return;
+    if (widget.comics.isEmpty) return; // Fix division by zero
     final nextPage = (_currentPage + 1) % widget.comics.length;
     _controller.animateToPage(
       nextPage,
@@ -342,6 +377,8 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.comics.isEmpty) return const SizedBox.shrink();
+
     return Column(
       children: [
         SizedBox(
@@ -362,8 +399,8 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
                       fit: StackFit.expand,
                       children: [
                         // Ảnh nền
-                        CachedNetworkImage(
-                          imageUrl: c.coverUrl,
+                        DriveImage(
+                          fileId: c.coverUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
                         ),
@@ -405,7 +442,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
                                   color: Colors.black54,
                                   offset: Offset(1, 1),
                                   blurRadius: 4,
-                                )
+                                ),
                               ],
                             ),
                           ),

@@ -60,8 +60,10 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         if (!isLogin) {
           EasyLoading.showSuccess(
-              'Đăng ký thành công! Kiểm tra email xác minh.');
+            'Đăng ký thành công! Kiểm tra email xác minh.',
+          );
         }
+
         context.go('/');
       }
     } catch (e) {
@@ -69,8 +71,11 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  InputDecoration _inputDecoration(String label, IconData icon,
-      {Widget? suffix}) {
+  InputDecoration _inputDecoration(
+    String label,
+    IconData icon, {
+    Widget? suffix,
+  }) {
     return InputDecoration(
       labelText: label,
       labelStyle: const TextStyle(color: Colors.white70, fontSize: 15),
@@ -100,8 +105,11 @@ class _LoginPageState extends State<LoginPage> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // 🔹 Icon quyển sách
-              Icon(Icons.menu_book_rounded,
-                  color: Colors.orange.shade400, size: 85),
+              Icon(
+                Icons.menu_book_rounded,
+                color: Colors.orange.shade400,
+                size: 85,
+              ),
 
               // 🔹 Thêm chữ "MangaFlix" ngay dưới icon
               const SizedBox(height: 10),
@@ -140,8 +148,10 @@ class _LoginPageState extends State<LoginPage> {
                 TextField(
                   controller: _nameCtrl,
                   style: const TextStyle(color: Colors.white),
-                  decoration:
-                      _inputDecoration('Tên hiển thị', Icons.person_outline),
+                  decoration: _inputDecoration(
+                    'Tên hiển thị',
+                    Icons.person_outline,
+                  ),
                 ),
                 const SizedBox(height: 18),
               ],

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
+import 'data/drive_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
 
@@ -18,6 +18,15 @@ Future<void> main() async {
 
   // 🚀 Khởi tạo Firebase
   await _initFirebase();
+
+  // ☁️ Khôi phục phiên làm việc Google Drive (nếu có)
+  // Lưu ý: Việc này có thể mất chút thời gian nhưng quan trọng để load dữ liệu
+  try {
+    await DriveService.instance.restorePreviousSession();
+    debugPrint('✅ Drive Session Restored');
+  } catch (e) {
+    debugPrint('⚠️ Drive Session Restore Failed: $e');
+  }
 
   // 🧩 Chạy ứng dụng
   runApp(const ProviderScope(child: ComicApp()));

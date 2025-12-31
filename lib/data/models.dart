@@ -33,13 +33,13 @@ class Comic {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'coverUrl': coverUrl,
-        'author': author,
-        'description': description,
-        'genres': genres,
-      };
+    'id': id,
+    'title': title,
+    'coverUrl': coverUrl,
+    'author': author,
+    'description': description,
+    'genres': genres,
+  };
 
   // === SQLite ===
   Map<String, dynamic> toMap() {
@@ -133,20 +133,20 @@ class Chapter {
   });
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
-        id: json['id']?.toString() ?? '',
-        comicId: json['comicId']?.toString() ?? '',
-        name: json['name']?.toString() ?? '',
-        number: (json['number'] is int)
-            ? json['number']
-            : int.tryParse(json['number']?.toString() ?? '0') ?? 0,
-      );
+    id: json['id']?.toString() ?? '',
+    comicId: json['comicId']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    number: (json['number'] is int)
+        ? json['number']
+        : int.tryParse(json['number']?.toString() ?? '0') ?? 0,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'comicId': comicId,
-        'name': name,
-        'number': number,
-      };
+    'id': id,
+    'comicId': comicId,
+    'name': name,
+    'number': number,
+  };
 
   Map<String, dynamic> toMap() => toJson();
 
@@ -156,52 +156,6 @@ class Chapter {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is Chapter && runtimeType == other.runtimeType && id == other.id;
-
-  @override
-  int get hashCode => id.hashCode;
-}
-
-/// --------------------
-/// 🖼️ PageImage Model
-/// --------------------
-class PageImage {
-  final String id;
-  final String chapterId;
-  final int index;
-  final String imageUrl;
-
-  const PageImage({
-    required this.id,
-    required this.chapterId,
-    required this.index,
-    required this.imageUrl,
-  });
-
-  factory PageImage.fromJson(Map<String, dynamic> json) => PageImage(
-        id: json['id']?.toString() ?? '',
-        chapterId: json['chapterId']?.toString() ?? '',
-        index: (json['index'] is int)
-            ? json['index']
-            : int.tryParse(json['index']?.toString() ?? '0') ?? 0,
-        imageUrl: json['imageUrl']?.toString() ?? '',
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'chapterId': chapterId,
-        'index': index,
-        'imageUrl': imageUrl,
-      };
-
-  Map<String, dynamic> toMap() => toJson();
-
-  factory PageImage.fromMap(Map<String, dynamic> map) =>
-      PageImage.fromJson(map);
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PageImage && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -253,8 +207,8 @@ class Comment {
       isLiked: json['isLiked'] == true,
       replies: json['replies'] is List
           ? (json['replies'] as List)
-              .map((e) => Comment.fromJson(e as Map<String, dynamic>))
-              .toList()
+                .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+                .toList()
           : null,
     );
   }
@@ -277,10 +231,8 @@ class Comment {
     return map;
   }
 
-  Comment toggleLike() => copyWith(
-        likes: isLiked ? likes - 1 : likes + 1,
-        isLiked: !isLiked,
-      );
+  Comment toggleLike() =>
+      copyWith(likes: isLiked ? likes - 1 : likes + 1, isLiked: !isLiked);
 
   Comment addReply(Comment reply) {
     final newReplies = [...?replies, reply];
@@ -320,4 +272,39 @@ class Comment {
 
   @override
   int get hashCode => id.hashCode;
+}
+
+/// --------------------
+/// 🕰️ Reading History Model
+/// --------------------
+class ReadingHistory {
+  final String comicId;
+  final String chapterId;
+  final int lastPageIndex;
+  final DateTime updatedAt;
+
+  const ReadingHistory({
+    required this.comicId,
+    required this.chapterId,
+    required this.lastPageIndex,
+    required this.updatedAt,
+  });
+
+  factory ReadingHistory.fromMap(Map<String, dynamic> map) {
+    return ReadingHistory(
+      comicId: map['comicId'] as String,
+      chapterId: map['chapterId'] as String,
+      lastPageIndex: map['lastPageIndex'] as int? ?? 0,
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'comicId': comicId,
+      'chapterId': chapterId,
+      'lastPageIndex': lastPageIndex,
+      'updatedAt': updatedAt.millisecondsSinceEpoch,
+    };
+  }
 }

@@ -15,8 +15,6 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
-      case TargetPlatform.iOS:
-        return ios;
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -24,20 +22,11 @@ class DefaultFirebaseOptions {
     }
   }
 
-   static const FirebaseOptions android = FirebaseOptions(
-  apiKey: 'AIzaSyB1YyL54GB_biwkNct3WTbojZoCUbZ1ZoM',  
-  appId: '1:1073666454510:android:0fdb06e7698596218054ff',
-  messagingSenderId: '1073666454510',
-  projectId: 'manga-reader-703c5', 
-  storageBucket: 'manga-reader-703c5.firebasestorage.app', 
-);
-
-static const FirebaseOptions ios = FirebaseOptions(
-  apiKey: 'AIzaSyA4k0Vgt8soKaTba5D4QzNj4cvzsUaRLV0',
-  appId: '1:1073666454510:ios:1cbc1ea5270c65de8054ff', 
-  messagingSenderId: '1073666454510',
-  projectId: 'manga-reader-703c5',
-  storageBucket: 'manga-reader-703c5.firebasestorage.app',
-  iosBundleId: 'com.example.test11111',
-);
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyB1YyL54GB_biwkNct3WTbojZoCUbZ1ZoM',
+    appId: '1:1073666454510:android:293398af03f8582a8054ff',
+    messagingSenderId: '1073666454510',
+    projectId: 'manga-reader-703c5',
+    storageBucket: 'manga-reader-703c5.firebasestorage.app',
+  );
 }

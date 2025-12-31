@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:manga_reader/data/models.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
-import 'mock_catalog.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -56,43 +55,23 @@ class DatabaseHelper {
     ''');
 
     // ✅ Chèn dữ liệu mặc định từ mock_catalog
-    await _insertMockData(db);
+    // await _insertMockData(db); // REMOVED MOCK DATA
+
+    // 🕰️ Tạo bảng history
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS history (
+        comicId TEXT PRIMARY KEY,
+        chapterId TEXT,
+        lastPageIndex INTEGER,
+        updatedAt INTEGER
+      )
+    ''');
   }
 
   // ===========================
-  // 📥 Import dữ liệu mock
+  // 📥 Import dữ liệu mock (Đã xóa)
   // ===========================
-  Future<void> _insertMockData(Database db) async {
-    for (final comic in MockCatalog.comics()) {
-      await db.insert('comics', {
-        'id': comic.id,
-        'title': comic.title,
-        'author': comic.author,
-        'description': comic.description,
-        'coverUrl': comic.coverUrl,
-      });
-
-      final chapters = MockCatalog.chaptersOf(comic.id);
-      for (final chap in chapters) {
-        await db.insert('chapters', {
-          'id': chap.id,
-          'comicId': comic.id,
-          'name': chap.name,
-          'number': chap.number,
-        });
-
-        final pages = MockCatalog.pagesOf(chap.id);
-        for (final page in pages) {
-          await db.insert('pages', {
-            'id': page.id,
-            'chapterId': chap.id,
-            'imageUrl': page.imageUrl,
-            'pageIndex': page.index,
-          });
-        }
-      }
-    }
-  }
+  // Future<void> _insertMockData(Database db) async {}
 
   // ===========================
   // 📚 CRUD cơ bản
@@ -133,31 +112,65 @@ class DatabaseHelper {
         .toList();
   }
 
-  Future<List<PageImage>> getPagesByChapter(String chapterId) async {
+  // ===========================
+  // 🕰️ History
+  // ===========================
+
+  Future<void> saveHistory(ReadingHistory history) async {
     final db = await instance.database;
-    final result = await db.query(
-      'pages',
-      where: 'chapterId = ?',
-      whereArgs: [chapterId],
+    // Đảm bảo bảng tồn tại (cho trường hợp update app)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS history (
+        comicId TEXT PRIMARY KEY,
+        chapterId TEXT,
+        lastPageIndex INTEGER,
+        updatedAt INTEGER
+      )
+    ''');
+
+    await db.insert(
+      'history',
+      history.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    return result
-        .map(
-          (e) => PageImage(
-            id: e['id'] as String,
-            chapterId: e['chapterId'] as String,
-            imageUrl: e['imageUrl'] as String,
-            index: e['pageIndex'] as int,
-          ),
-        )
-        .toList();
   }
 
-  // Xoá toàn bộ DB (nếu muốn reset)
+  Future<List<ReadingHistory>> getHistory() async {
+    final db = await instance.database;
+    // Đảm bảo bảng tồn tại
+    try {
+      final result = await db.query('history', orderBy: 'updatedAt DESC');
+      return result.map((e) => ReadingHistory.fromMap(e)).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<ReadingHistory?> getHistoryForComic(String comicId) async {
+    final db = await instance.database;
+    try {
+      final result = await db.query(
+        'history',
+        where: 'comicId = ?',
+        whereArgs: [comicId],
+      );
+      if (result.isNotEmpty) {
+        return ReadingHistory.fromMap(result.first);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> clearAll() async {
     final db = await instance.database;
     await db.delete('pages');
     await db.delete('chapters');
     await db.delete('comics');
+  }
+
+  Future<void> clearHistory() async {
+    final db = await instance.database;
+    await db.delete('history');
   }
 
   Future close() async {

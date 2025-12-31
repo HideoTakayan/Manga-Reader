@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1073666454510:android:0fdb06e7698596218054ff",
+        "mobilesdk_app_id": "1:1073666454510:android:293398af03f8582a8054ff",
         "android_client_info": {
-          "package_name": "com.example.test11111"
+          "package_name": "com.example.manga_reader"
         }
       },
       "oauth_client": [],

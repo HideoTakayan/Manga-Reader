@@ -3,87 +3,108 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 // Các trang
-import '../pages/home/home_page.dart';
-import '../pages/library/following_page.dart';
-import '../pages/chatpage/chat_page.dart';
-import '../pages/settings/settings_page.dart';
-import '../pages/settings/account/account_page.dart';
-import '../pages/settings/account/edit_profile_page.dart';
+import '../features/home/home_page.dart';
+import '../features/library/library_page.dart';
+
+import '../features/settings/settings_page.dart';
+import '../features/settings/account/account_page.dart';
+import '../features/settings/account/edit_profile_page.dart';
 import '../features/auth/login.dart';
 import '../features/detail/comic_detail_page.dart';
 import '../features/reader/reader_page.dart';
-import '../pages/search/search_page.dart';
+import '../features/search/search_page.dart';
+import '../features/main/main_scaffold.dart';
+
+import '../features/admin/admin_control_page.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/auth-check',
   routes: [
     // Kiểm tra đăng nhập
-    GoRoute(
-      path: '/auth-check',
-      builder: (_, __) => const _AuthCheckPage(),
-    ),
+    GoRoute(path: '/auth-check', builder: (_, __) => const _AuthCheckPage()),
 
     // Trang đăng nhập
-    GoRoute(
-      path: '/login',
-      builder: (_, __) => const LoginPage(),
-    ),
+    GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
-    // Các trang chính (đã bỏ ShellRoute, vì HomePage có bottom nav riêng)
-    GoRoute(
-      path: '/',
-      builder: (_, __) => const HomePage(),
-    ),
-    GoRoute(
-      path: '/library/following',
-      builder: (_, __) => const FollowingPage(),
-    ),
-    GoRoute(
-      path: '/chatpage',
-      builder: (_, __) => const ChatPage(),
-    ),
-    GoRoute(
-      path: '/settings',
-      builder: (_, __) => const SettingsPage(),
-      routes: [
-        GoRoute(
-          path: 'account',
-          builder: (_, __) => const AccountPage(),
+    // Shell Route cho các trang chính có BottomNavBar
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) {
+        return MainScaffold(navigationShell: navigationShell);
+      },
+      branches: [
+        // Tab 1: Home
+        StatefulShellBranch(
+          routes: [GoRoute(path: '/', builder: (_, __) => const HomePage())],
+        ),
+        // Tab 2: Library (Following)
+        StatefulShellBranch(
+          routes: [
+            GoRoute(path: '/library', builder: (_, __) => const LibraryPage()),
+          ],
+        ),
+        // Tab 3: Search
+        StatefulShellBranch(
+          routes: [
+            GoRoute(path: '/search', builder: (_, __) => const SearchPage()),
+          ],
+        ),
+        // Tab 4: Control (Admin)
+        StatefulShellBranch(
           routes: [
             GoRoute(
-              path: 'edit',
-              builder: (_, __) => const EditProfilePage(),
+              path: '/admin/control',
+              builder: (_, __) => const AdminControlPage(),
+            ),
+          ],
+        ),
+        // Tab 5: Settings
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/settings',
+              builder: (_, __) => const SettingsPage(),
+              routes: [
+                GoRoute(
+                  path: 'account',
+                  builder: (_, __) => const AccountPage(),
+                  routes: [
+                    GoRoute(
+                      path: 'edit',
+                      builder: (_, __) => const EditProfilePage(),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
       ],
     ),
 
-    // Chi tiết truyện
+    // Chi tiết truyện (Ẩn BottomBar -> nằm ngoài Shell)
     GoRoute(
       path: '/detail/:id',
       builder: (context, state) =>
           ComicDetailPage(comicId: state.pathParameters['id']!),
     ),
 
-    // Đọc truyện
+    // Đọc truyện (Ẩn BottomBar)
     GoRoute(
       path: '/reader/:chapterId',
       builder: (context, state) =>
           ReaderPage(chapterId: state.pathParameters['chapterId']!),
     ),
 
-    // Search
-    GoRoute(
-      path: '/search',
-      builder: (_, __) => const SearchPage(),
-    ),
+    // Search (Standalone - Cho nút ở Home)
+    GoRoute(path: '/search-global', builder: (_, __) => const SearchPage()),
+
+    // Admin Dashboard
   ],
 );
 
 /// Trang kiểm tra login
 class _AuthCheckPage extends StatelessWidget {
-  const _AuthCheckPage({super.key});
+  const _AuthCheckPage();
 
   @override
   Widget build(BuildContext context) {
@@ -103,9 +124,7 @@ class _AuthCheckPage extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => context.go('/'),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/'));
         return const SizedBox.shrink();
       },
     );

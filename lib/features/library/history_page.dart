@@ -68,6 +68,13 @@ class _HistoryPageState extends State<HistoryPage> {
     final mergedList = historyMap.values.toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
+    // Sync merged data back to local SQLite
+    if (userId != null) {
+      for (var h in mergedList) {
+        await DatabaseHelper.instance.saveHistory(h);
+      }
+    }
+
     setState(() {
       _historyList = mergedList;
     });

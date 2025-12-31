@@ -111,10 +111,10 @@ class _LoginPageState extends State<LoginPage> {
                 size: 85,
               ),
 
-              // 🔹 Thêm chữ "MangaFlix" ngay dưới icon
+              // 🔹 Thêm chữ "MangaReader" ngay dưới icon
               const SizedBox(height: 10),
               Text(
-                'MangaFlix',
+                'MangaReader',
                 style: TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.bold,

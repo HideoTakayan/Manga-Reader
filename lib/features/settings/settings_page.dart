@@ -280,7 +280,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         color: Colors.blue,
                         title: 'Thông báo',
                         subtitle: 'Cài đặt thông báo đẩy',
-                        onTap: () {},
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Tính năng đang phát triển'),
+                            ),
+                          );
+                        },
                       ),
 
                       _buildTile(
@@ -289,7 +295,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         color: Colors.purple,
                         title: 'Quyền riêng tư',
                         subtitle: 'Quản lý dữ liệu và quyền truy cập',
-                        onTap: () {},
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Tính năng đang phát triển'),
+                            ),
+                          );
+                        },
                       ),
                       _buildTile(
                         context,
@@ -297,7 +309,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         color: Colors.green,
                         title: 'Trợ giúp',
                         subtitle: 'Hỏi đáp và hỗ trợ',
-                        onTap: () {},
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Tính năng đang phát triển'),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 24),
                       SizedBox(
@@ -311,7 +329,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           ),
                           label: const Text(
                             'Đăng xuất',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.redAccent,

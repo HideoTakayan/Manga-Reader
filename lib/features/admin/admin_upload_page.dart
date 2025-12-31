@@ -137,6 +137,7 @@ class _AddComicDialogState extends State<_AddComicDialog> {
   final _titleController = TextEditingController();
   final _authorController = TextEditingController();
   final _descController = TextEditingController();
+  final _genresController = TextEditingController(); // Added
   File? _coverFile;
   bool _isUploading = false;
 
@@ -159,7 +160,11 @@ class _AddComicDialogState extends State<_AddComicDialog> {
         author: _authorController.text,
         description: _descController.text,
         coverFile: _coverFile!,
-        genres: ['Unknown'], // Default for quick upload
+        genres: _genresController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
         status: 'Đang Cập Nhật',
       );
       if (mounted) Navigator.pop(context);
@@ -192,6 +197,12 @@ class _AddComicDialogState extends State<_AddComicDialog> {
             TextField(
               controller: _descController,
               decoration: const InputDecoration(labelText: 'Mô tả'),
+            ),
+            TextField(
+              controller: _genresController,
+              decoration: const InputDecoration(
+                labelText: 'Thể loại (cách nhau bởi dấu phẩy)',
+              ),
             ),
             const SizedBox(height: 10),
             ElevatedButton.icon(

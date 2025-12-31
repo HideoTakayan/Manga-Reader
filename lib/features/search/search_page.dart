@@ -50,93 +50,115 @@ class _SearchPageState extends State<SearchPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => StatefulBuilder(
         builder: (context, setStateModal) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bộ Lọc Tìm Kiếm',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 20),
-                Text('Thể loại', style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: allGenres.map((genre) {
-                    final isSelected = selectedGenre == genre;
-                    return ChoiceChip(
-                      label: Text(genre),
-                      selected: isSelected,
-                      selectedColor: Theme.of(context).primaryColor,
-                      backgroundColor: Theme.of(context).cardColor,
-                      labelStyle: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : Theme.of(context).textTheme.bodyLarge?.color,
+          return DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            minChildSize: 0.5,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (context, scrollController) {
+              return SingleChildScrollView(
+                controller: scrollController,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Bộ Lọc Tìm Kiếm',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      onSelected: (selected) {
-                        setStateModal(() {
-                          selectedGenre = selected ? genre : null;
-                        });
-                        setState(() {}); // Update main UI
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Trạng thái',
-                  style: TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: allStatuses.map((status) {
-                    final isSelected = selectedStatus == status;
-                    return ChoiceChip(
-                      label: Text(status),
-                      selected: isSelected,
-                      selectedColor: Theme.of(context).primaryColor,
-                      backgroundColor: Theme.of(context).cardColor,
-                      labelStyle: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : Theme.of(context).textTheme.bodyLarge?.color,
+                      const SizedBox(height: 20),
+                      Text(
+                        'Thể loại',
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                      onSelected: (selected) {
-                        setStateModal(() {
-                          selectedStatus = selected ? status : null;
-                        });
-                        setState(() {}); // Update main UI
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text('Áp dụng'),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        children: allGenres.map((genre) {
+                          final isSelected = selectedGenre == genre;
+                          return ChoiceChip(
+                            label: Text(genre),
+                            selected: isSelected,
+                            selectedColor: Theme.of(context).primaryColor,
+                            backgroundColor: Theme.of(context).cardColor,
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.color,
+                            ),
+                            onSelected: (selected) {
+                              setStateModal(() {
+                                selectedGenre = selected ? genre : null;
+                              });
+                              setState(() {}); // Update main UI
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Trạng thái',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        children: allStatuses.map((status) {
+                          final isSelected = selectedStatus == status;
+                          return ChoiceChip(
+                            label: Text(status),
+                            selected: isSelected,
+                            selectedColor: Theme.of(context).primaryColor,
+                            backgroundColor: Theme.of(context).cardColor,
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.color,
+                            ),
+                            onSelected: (selected) {
+                              setStateModal(() {
+                                selectedStatus = selected ? status : null;
+                              });
+                              setState(() {}); // Update main UI
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text('Áp dụng'),
+                        ),
+                      ),
+                      SizedBox(
+                        height: MediaQuery.of(context).viewInsets.bottom,
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),

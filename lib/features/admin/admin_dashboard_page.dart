@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -61,10 +62,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Future<void> _loadStats() async {
     final comics = await DriveService.instance.getComics();
     final comicCount = comics.length;
-    // ... User count logic if needed
+
+    // Get user count from Firestore
+    int userCount = 0;
+    try {
+      final userSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .count()
+          .get();
+      userCount = userSnapshot.count ?? 0;
+    } catch (e) {
+      debugPrint('Error loading user stats: $e');
+    }
+
     if (mounted) {
       setState(() {
-        _stats = {'comics': comicCount, 'users': 0, 'chapters': 0};
+        _stats = {'comics': comicCount, 'users': userCount, 'chapters': 0};
       });
     }
   }

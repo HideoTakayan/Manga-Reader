@@ -98,7 +98,7 @@ class _HomeContent extends StatelessWidget {
                           colors: [Colors.redAccent, Colors.orangeAccent],
                         ).createShader(bounds),
                         child: Text(
-                          'MangaFlix',
+                          'MangaReader',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 20,
@@ -143,11 +143,11 @@ class _HomeContent extends StatelessWidget {
 
                 // 🔥 Truyện hot
                 _SectionTitle(label: '🔥 Truyện Hot Hôm Nay', onViewAll: () {}),
-                _MangaFlixCarousel(comics: comics),
+                _MangaReaderCarousel(comics: comics),
 
                 // 🆕 Mới cập nhật
                 _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
-                _MangaFlixCarousel(comics: comics.reversed.toList()),
+                _MangaReaderCarousel(comics: comics.reversed.toList()),
 
                 // 🏆 Top được xem nhiều
                 _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
@@ -192,9 +192,9 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-class _MangaFlixCarousel extends StatelessWidget {
+class _MangaReaderCarousel extends StatelessWidget {
   final List<Comic> comics;
-  const _MangaFlixCarousel({required this.comics});
+  const _MangaReaderCarousel({required this.comics});
 
   @override
   Widget build(BuildContext context) {

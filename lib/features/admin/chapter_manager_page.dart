@@ -18,6 +18,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   bool _isLoading = true;
   bool _isSavingOrder = false;
   bool _hasChanges = false;
+  bool _isAscending = true; // State for sort direction
 
   @override
   void initState() {
@@ -40,6 +41,54 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   // To refresh list after add/delete
   void _refresh() {
     _loadChapters();
+  }
+
+  // Natural Sort Logic
+  void _sortChapters() {
+    setState(() {
+      _chapters.sort((a, b) {
+        // Helper to extract the first number (int or double) from string
+        // Matches: 9, 9.5, 9.12, etc.
+        double? getNumber(String s) {
+          final match = RegExp(r'(\d+(\.\d+)?)').firstMatch(s);
+          return match != null ? double.parse(match.group(1)!) : null;
+        }
+
+        final numA = getNumber(a.title);
+        final numB = getNumber(b.title);
+
+        // If both have numbers, compare numbers
+        if (numA != null && numB != null) {
+          if (numA == numB) {
+            // If numbers are equal (unlikely with double, but possible),
+            // fallback to string compare to ensure stability
+            return _isAscending
+                ? a.title.compareTo(b.title)
+                : b.title.compareTo(a.title);
+          }
+          return _isAscending ? numA.compareTo(numB) : numB.compareTo(numA);
+        }
+
+        // Fallback to standard string compare
+        return _isAscending
+            ? a.title.compareTo(b.title)
+            : b.title.compareTo(a.title);
+      });
+
+      _isAscending = !_isAscending; // Toggle direction for next click
+      _hasChanges = true;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isAscending
+              ? 'Đã sắp xếp giảm dần (Cao -> Thấp)'
+              : 'Đã sắp xếp tăng dần (Thấp -> Cao)',
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   Future<void> _saveOrder() async {
@@ -72,6 +121,16 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         actions: [
+          // Sort Button
+          IconButton(
+            onPressed: _chapters.isEmpty ? null : _sortChapters,
+            tooltip: 'Tự động sắp xếp',
+            icon: Icon(
+              Icons.sort_by_alpha, // Or Icons.swap_vert
+              color: _hasChanges ? Colors.orange : null,
+            ),
+          ),
+
           if (_hasChanges)
             TextButton.icon(
               onPressed: _isSavingOrder ? null : _saveOrder,
@@ -193,10 +252,40 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                               _refresh();
                             }
                           } catch (e) {
+                            // Handle 404 (File not found) as if it was deleted successfully
+                            // This happens if the file was already deleted from Drive outside the app
+                            final isNotFound =
+                                e.toString().contains('404') ||
+                                e.toString().contains('File not found');
+
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Lỗi xóa chapter: $e')),
-                              );
+                              if (isNotFound) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'File không tồn tại trên Drive, đã xóa khỏi danh sách local',
+                                    ),
+                                  ),
+                                );
+                                // Attempt to remove from local list/db if needed,
+                                // but primarily we just refresh the view or let the next load handle it.
+                                // Calling _refresh() will reload from Drive, which might still return it
+                                // if it's a cached list, but let's assume getChapters fetches fresh data
+                                // OR we manually remove it from _chapters list here.
+                                setState(() {
+                                  _chapters.removeWhere(
+                                    (c) => c.id == chapter.id,
+                                  );
+                                });
+                                // Also try to clean up the order in Drive if possible?
+                                // But simple UI removal is improved UX for now.
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Lỗi xóa chapter: $e'),
+                                  ),
+                                );
+                              }
                             }
                           }
                         }

@@ -577,6 +577,7 @@ class DriveService {
         String type = 'zip';
         if (f.name!.endsWith('.epub')) type = 'epub';
         if (f.name!.endsWith('.cbz')) type = 'cbz';
+        if (f.name!.endsWith('.pdf')) type = 'pdf';
 
         return CloudChapter(
           id: f.id!,

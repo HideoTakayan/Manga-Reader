@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/theme_provider.dart';
 import '../../utils/auth_help.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -253,27 +252,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           onTap: () => context.push('/admin'),
                         ),
 
-                      _buildTile(
-                        context,
-                        icon: Icons.brightness_6,
-                        color: Colors.purpleAccent,
-                        title: 'Giao diện',
-                        subtitle: ref.watch(themeProvider) == ThemeMode.dark
-                            ? 'Chế độ Tối'
-                            : 'Chế độ Sáng',
-                        trailing: Switch(
-                          value: ref.watch(themeProvider) == ThemeMode.dark,
-                          onChanged: (val) {
-                            ref.read(themeProvider.notifier).toggleTheme(val);
-                          },
-                          activeThumbColor: Colors.purpleAccent,
-                        ),
-                        onTap: () {
-                          final isDark =
-                              ref.read(themeProvider) == ThemeMode.dark;
-                          ref.read(themeProvider.notifier).toggleTheme(!isDark);
-                        },
-                      ),
+                      const SizedBox(height: 8), // Replaced toggle with spacing
                       _buildTile(
                         context,
                         icon: Icons.notifications_outlined,

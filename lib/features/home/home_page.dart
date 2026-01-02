@@ -28,9 +28,19 @@ class _HomeContent extends StatelessWidget {
       title: c.title,
       author: c.author,
       description: c.description,
-      coverUrl: c.coverFileId, // We use this for DriveImage
+      coverUrl: c.coverFileId,
       genres: const [],
     );
+  }
+
+  List<Comic> _getNewUpdates(List<Comic> all) {
+    // Already sorted by updatedAt desc from DriveService
+    return all.take(10).toList();
+  }
+
+  List<Comic> _getRandom(List<Comic> all, int count) {
+    final list = List<Comic>.from(all)..shuffle();
+    return list.take(count).toList();
   }
 
   @override
@@ -39,7 +49,6 @@ class _HomeContent extends StatelessWidget {
       stream: DriveService.instance.onAuthStateChanged,
       initialData: DriveService.instance.currentUser,
       builder: (context, authSnapshot) {
-        // Log in status changed -> Trigger re-fetch
         return FutureBuilder<List<CloudComic>>(
           future: DriveService.instance.getComics(),
           builder: (context, snapshot) {
@@ -48,9 +57,9 @@ class _HomeContent extends StatelessWidget {
             }
 
             final cloudComics = snapshot.data ?? [];
-            final comics = cloudComics.map(_fromCloud).toList();
+            final allComics = cloudComics.map(_fromCloud).toList();
 
-            if (comics.isEmpty) {
+            if (allComics.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -77,6 +86,14 @@ class _HomeContent extends StatelessWidget {
                 ),
               );
             }
+
+            // 1. Mới cập nhật (10 truyện mới nhất)
+            final newUpdates = _getNewUpdates(allComics);
+
+            // 2. Random cho các mục khác
+            final featured = _getRandom(allComics, 10);
+            final hotToday = _getRandom(allComics, 10);
+            final trending = _getRandom(allComics, 10);
 
             return CustomScrollView(
               slivers: [
@@ -118,40 +135,28 @@ class _HomeContent extends StatelessWidget {
                       ),
                       onPressed: () => context.push('/search-global'),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.notifications_none,
-                        color: Theme.of(context).iconTheme.color,
-                      ),
-                      onPressed: () =>
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Thông báo đang phát triển...'),
-                            ),
-                          ),
-                    ),
                   ],
                 ),
 
-                // 🔥 Banner nổi bật (auto-slide)
+                // 🔥 Banner nổi bật (Random 10)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: _AutoSlideBanner(comics: comics),
+                    child: _AutoSlideBanner(comics: featured),
                   ),
                 ),
 
-                // 🔥 Truyện hot
+                // 🔥 Truyện hot (Random 10)
                 _SectionTitle(label: '🔥 Truyện Hot Hôm Nay', onViewAll: () {}),
-                _MangaReaderCarousel(comics: comics),
+                _MangaReaderCarousel(comics: hotToday),
 
-                // 🆕 Mới cập nhật
+                // 🆕 Mới cập nhật (Top 10 mới nhất)
                 _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
-                _MangaReaderCarousel(comics: comics.reversed.toList()),
+                _MangaReaderCarousel(comics: newUpdates),
 
-                // 🏆 Top được xem nhiều
+                // 🏆 Top Trending (Random 10)
                 _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
-                SliverToBoxAdapter(child: _RankList(comics: comics)),
+                SliverToBoxAdapter(child: _RankList(comics: trending)),
               ],
             );
           },

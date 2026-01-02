@@ -102,7 +102,6 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                 : chapters.take(5).toList();
             final followService = FollowService();
             final theme = Theme.of(context);
-            final isDark = theme.brightness == Brightness.dark;
 
             return Scaffold(
               backgroundColor: theme.scaffoldBackgroundColor,
@@ -321,9 +320,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white10
-                                      : Colors.black12,
+                                  color: Colors.white10,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 alignment: Alignment.center,

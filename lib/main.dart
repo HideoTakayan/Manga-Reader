@@ -7,7 +7,6 @@ import 'firebase_options.dart';
 import 'data/drive_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
-import 'core/theme_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,13 +51,11 @@ class ComicApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final themeMode = ref.watch(themeProvider);
-
+    // Force Dark Mode always
     return MaterialApp.router(
       title: 'Comic Reader',
-      theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: themeMode,
+      themeMode: ThemeMode.dark, // Enforce Dark Mode
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
       builder: EasyLoading.init(

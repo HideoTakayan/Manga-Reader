@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:archive/archive.dart';
 import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pdfx/pdfx.dart';
 import '../../services/follow_service.dart';
 import '../../services/history_service.dart';
 
@@ -123,24 +124,15 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // 4. Unzip and Extract Images
-      final archive = ZipDecoder().decodeBytes(fileBytes);
-      final List<Uint8List> images = [];
+      // 4. Extract Images based on file type
+      final fileType = currentChapter?.fileType ?? 'zip';
+      List<Uint8List> images = [];
 
-      // Sort files in archive to ensure page order
-      final sortedFiles = archive.files.toList()
-        ..sort((a, b) => _compareChapterNames(a.name, b.name));
-
-      for (final file in sortedFiles) {
-        if (file.isFile) {
-          final filename = file.name.toLowerCase();
-          if (filename.endsWith('.jpg') ||
-              filename.endsWith('.jpeg') ||
-              filename.endsWith('.png') ||
-              filename.endsWith('.webp')) {
-            images.add(file.content);
-          }
-        }
+      if (fileType == 'pdf') {
+        images = await _extractImagesFromPdf(fileBytes);
+      } else {
+        // ZIP or CBZ
+        images = await _extractImagesFromZip(fileBytes);
       }
 
       if (images.isEmpty) {
@@ -183,6 +175,59 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         isLoading: false,
         errorMessage: 'Đã xảy ra lỗi: $e',
       );
+    }
+  }
+
+  // Extract images from ZIP/CBZ file
+  Future<List<Uint8List>> _extractImagesFromZip(Uint8List fileBytes) async {
+    final archive = ZipDecoder().decodeBytes(fileBytes);
+    final List<Uint8List> images = [];
+
+    // Sort files in archive to ensure page order
+    final sortedFiles = archive.files.toList()
+      ..sort((a, b) => _compareChapterNames(a.name, b.name));
+
+    for (final file in sortedFiles) {
+      if (file.isFile) {
+        final filename = file.name.toLowerCase();
+        if (filename.endsWith('.jpg') ||
+            filename.endsWith('.jpeg') ||
+            filename.endsWith('.png') ||
+            filename.endsWith('.webp')) {
+          images.add(file.content);
+        }
+      }
+    }
+
+    return images;
+  }
+
+  // Extract images from PDF file
+  Future<List<Uint8List>> _extractImagesFromPdf(Uint8List fileBytes) async {
+    try {
+      final document = await PdfDocument.openData(fileBytes);
+      final List<Uint8List> images = [];
+
+      for (int i = 0; i < document.pagesCount; i++) {
+        final page = await document.getPage(i + 1);
+        final pageImage = await page.render(
+          width: page.width * 2, // 2x resolution for better quality
+          height: page.height * 2,
+          format: PdfPageImageFormat.png,
+        );
+
+        if (pageImage != null && pageImage.bytes != null) {
+          images.add(pageImage.bytes);
+        }
+
+        await page.close();
+      }
+
+      await document.close();
+      return images;
+    } catch (e) {
+      debugPrint('Error extracting PDF: $e');
+      return [];
     }
   }
 

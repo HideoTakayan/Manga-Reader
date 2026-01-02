@@ -34,7 +34,7 @@ class _HomeContent extends StatelessWidget {
   }
 
   List<Comic> _getNewUpdates(List<Comic> all) {
-    // Already sorted by updatedAt desc from DriveService
+    // Đã được sắp xếp theo updatedAt giảm dần từ DriveService
     return all.take(10).toList();
   }
 
@@ -97,7 +97,7 @@ class _HomeContent extends StatelessWidget {
 
             return CustomScrollView(
               slivers: [
-                // 🔺 Thanh tiêu đề
+                // Thanh tiêu đề
                 SliverAppBar(
                   floating: true,
                   backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -138,7 +138,7 @@ class _HomeContent extends StatelessWidget {
                   ],
                 ),
 
-                // 🔥 Banner nổi bật (Random 10)
+                // Banner nổi bật (Random 10)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(16),

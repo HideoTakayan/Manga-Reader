@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../data/drive_service.dart';
 
@@ -18,29 +19,39 @@ class DriveImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, String>>(
-      future: DriveService.instance.getHeaders(),
+      future: DriveService.instance.headers,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return Container(
             width: width,
             height: height,
-            color: Colors.grey[300],
+            color: Colors.grey[800],
             child: const Center(child: CircularProgressIndicator()),
           );
         }
 
-        return Image.network(
-          'https://www.googleapis.com/drive/v3/files/$fileId?alt=media',
-          headers: snapshot.data,
+        return CachedNetworkImage(
+          imageUrl:
+              'https://www.googleapis.com/drive/v3/files/$fileId?alt=media',
+          httpHeaders: snapshot.data,
           width: width,
           height: height,
           fit: fit,
-          errorBuilder: (context, error, stackTrace) {
+          memCacheWidth: (width != null && width!.isFinite)
+              ? (width! * 2).toInt()
+              : null,
+          placeholder: (context, url) => Container(
+            width: width,
+            height: height,
+            color: Colors.grey[800],
+            child: const Center(child: CircularProgressIndicator()),
+          ),
+          errorWidget: (context, url, error) {
             return Container(
               width: width,
               height: height,
-              color: Colors.grey,
-              child: const Icon(Icons.broken_image),
+              color: Colors.grey[800],
+              child: const Icon(Icons.broken_image, color: Colors.grey),
             );
           },
         );

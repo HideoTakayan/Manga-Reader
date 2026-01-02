@@ -63,7 +63,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     final comics = await DriveService.instance.getComics();
     final comicCount = comics.length;
 
-    // Get user count from Firestore
+    // Lấy số lượng user từ Firestore
     int userCount = 0;
     try {
       final userSnapshot = await FirebaseFirestore.instance

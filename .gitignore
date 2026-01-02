@@ -45,3 +45,29 @@ app.*.map.json
 /android/app/release
 
 .fake
+
+# ========================================
+# 🔐 SENSITIVE CREDENTIALS - DO NOT COMMIT
+# ========================================
+# These files contain API keys, private keys, and other sensitive data
+# NEVER commit these files to version control!
+
+# Service Account credentials (Google Drive)
+lib/config/service_account_credentials.dart
+
+# API Keys
+lib/config/drive_config.dart
+
+# Firebase configuration
+lib/firebase_options.dart
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# Keep template files (these are safe to commit)
+!lib/config/service_account_credentials.dart.example
+!lib/config/drive_config.dart.example
+!lib/firebase_options.dart.example
+
+# Personal backup folder (if you create one)
+/credentials_backup/
+*.backup

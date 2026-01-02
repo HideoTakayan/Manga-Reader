@@ -67,8 +67,6 @@ class FollowService {
       await ref.delete();
     } else {
       if (title == null || coverUrl == null) {
-        // If title/cover missing, we can fetch from DriveService or just save ID
-        // For now, let's require them or use placeholders
         throw Exception('Missing info for follow');
       }
       await ref.set({

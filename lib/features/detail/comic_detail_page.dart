@@ -21,7 +21,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   bool showAll = false;
   ReadingHistory? _history;
 
-  // Placeholder for comments until migrated
+  // Placeholder cho comments (chưa migrate)
   List<String> comments = [];
   final TextEditingController _commentController = TextEditingController();
 
@@ -41,16 +41,15 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     ReadingHistory? history;
 
-    // 1. Try fetching from Cloud first (if logged in)
+    // Bước 1: Thử lấy từ Cloud trước (nếu đã đăng nhập)
     if (userId != null) {
       history = await HistoryService.instance.getHistoryForComic(
         widget.comicId,
       );
     }
 
-    // 2. Fallback to Local DB if cloud returns null or not logged in
+    // Bước 2: Fallback sang Local DB nếu cloud trả về null hoặc chưa đăng nhập
     if (history == null) {
-      // Local DB requires non-null userId for querying, use 'guest' or actual ID
       final localUserId = userId ?? 'guest';
       history = await DatabaseHelper.instance.getHistoryForComic(
         localUserId,

@@ -91,11 +91,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
     try {
-      // 1. Get Chapter File Metadata to find Comic ID (Parent)
+      // Bước 1: Lấy metadata của file chapter để tìm Comic ID (Parent)
       final fileMeta = await DriveService.instance.getFile(chapterId);
       if (fileMeta == null ||
-          fileMeta.parents == null ||
-          fileMeta.parents!.isEmpty) {
+          fileMeta['parents'] == null ||
+          (fileMeta['parents'] as List).isEmpty) {
         state = state.copyWith(
           isLoading: false,
           errorMessage: 'Không tìm thấy thông tin chương truyện',
@@ -103,18 +103,17 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      final comicId = fileMeta.parents!.first;
+      final comicId = (fileMeta['parents'] as List).first as String;
 
-      // 2. Get All Chapters (for navigation)
+      // Bước 2: Lấy tất cả chapter (để điều hướng)
       final chapters = await DriveService.instance.getChapters(comicId);
-      // Sort chapters by title
       chapters.sort((a, b) => _compareChapterNames(a.title, b.title));
 
       final currentChapter = chapters.firstWhereOrNull(
         (c) => c.id == chapterId,
       );
 
-      // 3. Download Chapter Content
+      // Bước 3: Tải nội dung chapter
       final fileBytes = await DriveService.instance.downloadFile(chapterId);
       if (fileBytes == null) {
         state = state.copyWith(
@@ -124,14 +123,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // 4. Extract Images based on file type
+      // Bước 4: Trích xuất ảnh dựa trên loại file
       final fileType = currentChapter?.fileType ?? 'zip';
       List<Uint8List> images = [];
 
       if (fileType == 'pdf') {
         images = await _extractImagesFromPdf(fileBytes);
       } else {
-        // ZIP or CBZ
         images = await _extractImagesFromZip(fileBytes);
       }
 
@@ -143,7 +141,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // 5. Check Follow Status & Get Comic Info
+      // Bước 5: Kiểm tra trạng thái theo dõi & Lấy thông tin truyện
       bool followed = false;
       CloudComic? fetchedComic;
 
@@ -167,7 +165,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         comic: fetchedComic,
       );
 
-      // Save initial history
+      // Lưu lịch sử ban đầu
       _saveProgress();
     } catch (e) {
       debugPrint('Error loading reader: $e');
@@ -178,12 +176,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  // Extract images from ZIP/CBZ file
+  // Trích xuất ảnh từ file ZIP/CBZ
   Future<List<Uint8List>> _extractImagesFromZip(Uint8List fileBytes) async {
     final archive = ZipDecoder().decodeBytes(fileBytes);
     final List<Uint8List> images = [];
 
-    // Sort files in archive to ensure page order
+    // Sắp xếp file trong archive để đảm bảo thứ tự trang
     final sortedFiles = archive.files.toList()
       ..sort((a, b) => _compareChapterNames(a.name, b.name));
 
@@ -202,7 +200,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return images;
   }
 
-  // Extract images from PDF file
+  // Trích xuất ảnh từ file PDF
   Future<List<Uint8List>> _extractImagesFromPdf(Uint8List fileBytes) async {
     try {
       final document = await PdfDocument.openData(fileBytes);
@@ -211,7 +209,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       for (int i = 0; i < document.pagesCount; i++) {
         final page = await document.getPage(i + 1);
         final pageImage = await page.render(
-          width: page.width * 2, // 2x resolution for better quality
+          width: page.width * 2,
           height: page.height * 2,
           format: PdfPageImageFormat.png,
         );
@@ -231,16 +229,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  // Simple string comparison for chapter/page names (numeric aware ideally, but simple for now)
+  // So sánh chuỗi đơn giản cho tên chapter/page
   int _compareChapterNames(String a, String b) {
     return shortChapterSort(a, b);
   }
 
-  // Helper for numeric sort (e.g. Chapter 1 < Chapter 10)
+  // Helper sắp xếp theo số (ví dụ: Chapter 1 < Chapter 10)
   int shortChapterSort(String a, String b) {
-    return a.compareTo(
-      b,
-    ); // Keep simple as specific logic requires extra package or complex regex
+    return a.compareTo(b);
   }
 
   void toggleControls() {
@@ -309,12 +305,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           state.currentChapter!.id,
         );
         if (fileMeta != null &&
-            fileMeta.parents != null &&
-            fileMeta.parents!.isNotEmpty) {
-          final comicId = fileMeta.parents!.first;
+            fileMeta['parents'] != null &&
+            (fileMeta['parents'] as List).isNotEmpty) {
+          final comicId = (fileMeta['parents'] as List).first as String;
           final followService = FollowService();
 
-          // Get current status
+          // Lấy trạng thái hiện tại
           final isFollowed = await followService.isFollowing(comicId).first;
 
           if (isFollowed) {
@@ -344,6 +340,5 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
   void toggleLike() {
     state = state.copyWith(isLiked: !state.isLiked);
-    // TODO: Implement persistent like logic if needed
   }
 }

@@ -9,10 +9,10 @@ class HistoryService {
 
   HistoryService._();
 
-  // Save history to Cloud
+  // Lưu lịch sử lên Cloud
   Future<void> saveHistory(ReadingHistory history) async {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) return; // Not logged in
+    if (uid == null) return;
 
     try {
       await _db
@@ -20,16 +20,13 @@ class HistoryService {
           .doc(uid)
           .collection('history')
           .doc(history.comicId)
-          .set({
-            ...history.toMap(),
-            'updatedAt': FieldValue.serverTimestamp(), // Use server time
-          });
+          .set({...history.toMap(), 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
       print('Error saving cloud history: $e');
     }
   }
 
-  // Get single comic history
+  // Lấy lịch sử của một truyện
   Future<ReadingHistory?> getHistoryForComic(String comicId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return null;
@@ -44,7 +41,7 @@ class HistoryService {
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        // Convert Timestamp to int (milliseconds) for compatibility
+        // Chuyển Timestamp thành int (milliseconds) để tương thích
         if (data['updatedAt'] is Timestamp) {
           data['updatedAt'] =
               (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
@@ -57,7 +54,7 @@ class HistoryService {
     return null;
   }
 
-  // Get all history
+  // Lấy tất cả lịch sử
   Future<List<ReadingHistory>> getAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
@@ -84,7 +81,7 @@ class HistoryService {
     }
   }
 
-  // Delete history
+  // Xóa lịch sử
   Future<void> deleteHistory(String comicId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;

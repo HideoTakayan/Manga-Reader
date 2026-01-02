@@ -1,15 +1,15 @@
-// This was intended for ReaderProvider but I'm switching to DriveService first.
-// Please ignore this or empty it, but I must provide valid arguments.
-// Actually I will just update DriveService here.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:googleapis_auth/auth_io.dart' as auth;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:path/path.dart' as path;
 import 'models_cloud.dart';
+import '../config/drive_config.dart';
+import '../config/service_account_credentials.dart';
 
 class DriveService {
   static final DriveService instance = DriveService._internal();
@@ -21,19 +21,20 @@ class DriveService {
 
   GoogleSignInAccount? _currentUser;
   drive.DriveApi? _driveApi;
-  List<CloudComic>? _cachedComics; // Cache for comics list
+  auth.AutoRefreshingAuthClient? _authClient;
+  List<CloudComic>? _cachedComics;
 
-  // Stream to notify auth changes
+  // Stream thông báo thay đổi trạng thái đăng nhập
   final _authController = StreamController<GoogleSignInAccount?>.broadcast();
   Stream<GoogleSignInAccount?> get onAuthStateChanged => _authController.stream;
   GoogleSignInAccount? get currentUser => _currentUser;
 
-  // 🎯 Folder "MangaReader_Data" dynamic
+  // Folder gốc chứa dữ liệu truyện
   String? _rootFolderId;
   static const String _rootFolderName = 'MangaReader_Data';
   static const String _catalogFileName = 'catalog.json';
 
-  // 1. Auth Methods
+  // === PHƯƠNG THỨC XÁC THỰC ===
   Future<GoogleSignInAccount?> signIn() async {
     try {
       _currentUser = await _googleSignIn.signIn();
@@ -47,7 +48,7 @@ class DriveService {
       print('Google Sign In Error: $e');
       _currentUser = null;
       _driveApi = null;
-      rethrow; // Throw the error so caller can handle it
+      rethrow;
     }
   }
 
@@ -61,7 +62,6 @@ class DriveService {
       return _currentUser;
     } catch (e) {
       print('Silent Sign In Error: $e');
-      // If restore fails, we should treat as signed out
       _currentUser = null;
       _authController.add(null);
       return null;
@@ -90,47 +90,57 @@ class DriveService {
     return headers ?? {};
   }
 
-  // 2. Initialization & Root Folder
+  // === KHỞI TẠO & QUẢN LÝ FOLDER GỐC ===
   Future<void> _initRootFolder() async {
-    if (_driveApi == null) return;
-    if (_rootFolderId != null) return; // Already initialized
+    if (_rootFolderId != null) return;
 
+    if (_driveApi == null) {
+      await _initServiceAccount();
+    }
+
+    _rootFolderId = DriveConfig.PUBLIC_FOLDER_ID;
+    print('✅ Using public folder: $_rootFolderId');
+  }
+
+  // Khởi tạo xác thực Service Account
+  Future<void> _initServiceAccount() async {
     try {
-      // Search for folder
-      final q =
-          "name = '$_rootFolderName' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
-      final fileList = await _driveApi!.files.list(q: q);
+      print('🔐 Initializing Service Account...');
 
-      if (fileList.files != null && fileList.files!.isNotEmpty) {
-        _rootFolderId = fileList.files!.first.id;
-        print('✅ Found existing root folder: $_rootFolderId');
-      } else {
-        // Create folder
-        final folderMeta = drive.File()
-          ..name = _rootFolderName
-          ..mimeType = 'application/vnd.google-apps.folder';
-        final folder = await _driveApi!.files.create(folderMeta);
-        _rootFolderId = folder.id;
-        print('✅ Created new root folder: $_rootFolderId');
-      }
+      final credentials = auth.ServiceAccountCredentials.fromJson(
+        jsonDecode(serviceAccountJson),
+      );
+
+      final scopes = [drive.DriveApi.driveReadonlyScope];
+
+      final client = await auth.clientViaServiceAccount(credentials, scopes);
+      _authClient = client;
+      _driveApi = drive.DriveApi(client);
+
+      print('✅ Service Account initialized');
     } catch (e) {
-      print('⚠️ Error initializing root folder: $e');
-      throw Exception('Không thể khởi tạo thư mục lưu trữ trên Drive.');
+      print('❌ Error initializing Service Account: $e');
+      rethrow;
     }
   }
 
-  // 3. Comic Management
+  Future<Map<String, String>> get headers async {
+    if (_authClient == null) await _initServiceAccount();
+    return {
+      'Authorization': 'Bearer ${_authClient!.credentials.accessToken.data}',
+    };
+  }
+
+  // === QUẢN LÝ TRUYỆN ===
   Future<List<CloudComic>> getComics({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedComics != null) return _cachedComics!;
-
-    if (_driveApi == null) await restorePreviousSession();
-    if (_driveApi == null) return [];
 
     try {
       await _initRootFolder();
       if (_rootFolderId == null) return [];
 
-      // Find catalog.json
+      if (_driveApi == null) await _initServiceAccount();
+
       final q =
           "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
       final fileList = await _driveApi!.files.list(q: q);
@@ -141,6 +151,8 @@ class DriveService {
       }
 
       final fileId = fileList.files!.first.id!;
+
+      // Download catalog.json content using Service Account
       final media =
           await _driveApi!.files.get(
                 fileId,
@@ -148,11 +160,11 @@ class DriveService {
               )
               as drive.Media;
 
-      // Read stream
       final List<int> bytes = [];
       await for (final chunk in media.stream) {
         bytes.addAll(chunk);
       }
+
       final content = utf8.decode(bytes);
       final List<dynamic> jsonList = jsonDecode(content);
 
@@ -160,19 +172,6 @@ class DriveService {
       return _cachedComics!;
     } catch (e) {
       print('Error getting comics: $e');
-
-      // If error contains "Content size" or similar, rebuild catalog
-      if (e.toString().contains('Content size') ||
-          e.toString().contains('ClientException')) {
-        print('🔄 Detected corrupted catalog, rebuilding...');
-        try {
-          await rebuildCatalog();
-          return _cachedComics ?? [];
-        } catch (rebuildError) {
-          print('Error rebuilding catalog: $rebuildError');
-          return [];
-        }
-      }
       return [];
     }
   }
@@ -197,7 +196,7 @@ class DriveService {
       throw Exception('Không thể tạo thư mục gốc lưu trữ.');
     }
 
-    // 1. Create Comic Folder
+    // Bước 1: Tạo folder truyện
     final folderMeta = drive.File()
       ..name = title
       ..parents = [_rootFolderId!]
@@ -206,7 +205,7 @@ class DriveService {
     final folder = await _driveApi!.files.create(folderMeta);
     final folderId = folder.id!;
 
-    // 2. Upload Cover
+    // Bước 2: Upload ảnh bìa
     final coverMeta = drive.File()
       ..name = 'cover.${path.extension(coverFile.path)}'
       ..parents = [folderId];
@@ -220,7 +219,7 @@ class DriveService {
       uploadMedia: coverMedia,
     );
 
-    // 3. Create CloudComic Object
+    // Bước 3: Tạo đối tượng CloudComic
     final comic = CloudComic(
       id: folderId,
       title: title,
@@ -234,7 +233,7 @@ class DriveService {
       likeCount: 0,
     );
 
-    // 4. Save info.json inside folder
+    // Bước 4: Lưu info.json vào folder
     final infoMeta = drive.File()
       ..name = 'info.json'
       ..parents = [folderId];
@@ -244,19 +243,18 @@ class DriveService {
     final infoMedia = drive.Media(Stream.value(infoBytes), infoBytes.length);
     await _driveApi!.files.create(infoMeta, uploadMedia: infoMedia);
 
-    // 5. Update catalog.json
+    // Bước 5: Cập nhật catalog.json
     await _updateCatalog(comic);
   }
 
   Future<void> _updateCatalog(CloudComic newComic) async {
     List<CloudComic> currentList = await getComics();
-    // Remove if exists (update)
     currentList.removeWhere((c) => c.id == newComic.id);
-    currentList.insert(0, newComic); // Add to top
+    currentList.insert(0, newComic);
 
     final jsonContent = jsonEncode(currentList.map((e) => e.toMap()).toList());
 
-    // Find catalog.json to overwrite or create new
+    // Tìm catalog.json để ghi đè hoặc tạo mới
     String? catalogFileId;
     final q =
         "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
@@ -281,7 +279,6 @@ class DriveService {
         ..parents = [_rootFolderId!];
       await _driveApi!.files.create(fileMeta, uploadMedia: media);
     }
-    // Update Cache
     _cachedComics = currentList;
   }
 
@@ -289,19 +286,18 @@ class DriveService {
     if (_driveApi == null) await signIn();
     if (_driveApi == null) throw Exception('Chưa đăng nhập Google Drive');
 
-    // 1. Delete folder on Drive
+    // Bước 1: Xóa folder trên Drive
     try {
       await _driveApi!.files.delete(comicId);
     } catch (e) {
       print('Error deleting folder: $e');
-      // Even if delete fails (e.g. not found), we should remove from catalog
     }
 
-    // 2. Remove from catalog
+    // Bước 2: Xóa khỏi catalog
     List<CloudComic> currentList = await getComics();
     currentList.removeWhere((c) => c.id == comicId);
 
-    // 3. Save catalog
+    // Bước 3: Lưu catalog
     final jsonContent = jsonEncode(currentList.map((e) => e.toMap()).toList());
 
     String? catalogFileId;
@@ -332,7 +328,7 @@ class DriveService {
     _cachedComics = currentList;
   }
 
-  /// Scan all folders in MangaReader_Data and rebuild catalog.json
+  // Quét tất cả folder trong MangaReader_Data và tái tạo catalog.json
   Future<void> rebuildCatalog() async {
     if (_driveApi == null) await signIn();
     if (_driveApi == null) {
@@ -345,19 +341,18 @@ class DriveService {
     if (_rootFolderId == null) return;
 
     try {
-      // 1. Get all folders in MangaReader_Data
+      // Bước 1: Lấy tất cả folder trong MangaReader_Data
       final foldersQuery =
           "mimeType = 'application/vnd.google-apps.folder' and '$_rootFolderId' in parents and trashed = false";
       final folderList = await _driveApi!.files.list(q: foldersQuery);
 
       if (folderList.files == null || folderList.files!.isEmpty) {
-        // No folders, create empty catalog
         _cachedComics = [];
         await _saveCatalogToDrive([]);
         return;
       }
 
-      // 2. For each folder, try to read info.json
+      // Bước 2: Với mỗi folder, đọc info.json
       final List<CloudComic> comics = [];
       for (final folder in folderList.files!) {
         try {
@@ -374,7 +369,7 @@ class DriveService {
                     )
                     as drive.Media;
 
-            // Read stream without relying on contentLength
+            // Đọc stream không cần dựa vào contentLength
             final List<int> bytes = [];
             await for (final chunk in media.stream) {
               bytes.addAll(chunk);
@@ -383,20 +378,21 @@ class DriveService {
             final Map<String, dynamic> comicMap = jsonDecode(content);
             comics.add(CloudComic.fromMap(comicMap));
           } else {
-            // No info.json? Create a default one!
-            print('⚠️ No info.json for ${folder.name}, creating default...');
+            print(
+              '⚠️ Không tìm thấy info.json cho ${folder.name}, tạo mặc định...',
+            );
             final defaultComic = CloudComic(
               id: folder.id!,
               title: folder.name!,
               author: 'Unknown',
               description: 'No description available.',
-              coverFileId: '', // Ideally find an image file, but empty for now
+              coverFileId: '',
               updatedAt: folder.modifiedTime ?? DateTime.now(),
               genres: [],
               status: 'Unknown',
             );
 
-            // Upload the default info.json
+            // Upload info.json mặc định
             final infoMeta = drive.File()
               ..name = 'info.json'
               ..parents = [folder.id!];
@@ -412,17 +408,16 @@ class DriveService {
           }
         } catch (e) {
           print('Error reading info.json for folder ${folder.name}: $e');
-          // Skip this folder if info.json is invalid
         }
       }
 
-      // 3. Sort by updatedAt (newest first)
+      // Bước 3: Sắp xếp theo updatedAt (mới nhất trước)
       comics.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-      // 4. Save to catalog.json
+      // Bước 4: Lưu vào catalog.json
       await _saveCatalogToDrive(comics);
 
-      // 5. Update cache
+      // Bước 5: Cập nhật cache
       _cachedComics = comics;
 
       print('✅ Rebuilt catalog with ${comics.length} comics');
@@ -435,7 +430,7 @@ class DriveService {
   Future<void> _saveCatalogToDrive(List<CloudComic> comics) async {
     final jsonContent = jsonEncode(comics.map((e) => e.toMap()).toList());
 
-    // Find catalog.json to overwrite or create new
+    // Tìm catalog.json để ghi đè hoặc tạo mới
     String? catalogFileId;
     final q =
         "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
@@ -478,13 +473,13 @@ class DriveService {
       );
     }
 
-    // 1. Get current comic info
+    // Bước 1: Lấy thông tin truyện hiện tại
     final currentComics = await getComics();
     final currentComic = currentComics.firstWhere((c) => c.id == comicId);
 
     String coverFileId = currentComic.coverFileId;
 
-    // 2. If new cover provided, upload it
+    // Bước 2: Nếu có ảnh bìa mới, upload lên
     if (newCoverFile != null) {
       final coverMeta = drive.File()
         ..name = 'cover.${path.extension(newCoverFile.path)}'
@@ -495,14 +490,14 @@ class DriveService {
         newCoverFile.lengthSync(),
       );
 
-      // Delete old cover
+      // Xóa ảnh bìa cũ
       try {
         await _driveApi!.files.delete(currentComic.coverFileId);
       } catch (e) {
         print('Error deleting old cover: $e');
       }
 
-      // Upload new cover
+      // Upload ảnh bìa mới
       final coverResult = await _driveApi!.files.create(
         coverMeta,
         uploadMedia: coverMedia,
@@ -510,7 +505,7 @@ class DriveService {
       coverFileId = coverResult.id!;
     }
 
-    // 3. Create updated CloudComic object
+    // Bước 3: Tạo đối tượng CloudComic đã cập nhật
     final updatedComic = CloudComic(
       id: comicId,
       title: title,
@@ -520,12 +515,12 @@ class DriveService {
       updatedAt: DateTime.now(),
       genres: genres,
       status: status,
-      viewCount: currentComic.viewCount, // Preserve existing
-      likeCount: currentComic.likeCount, // Preserve existing
-      chapterOrder: currentComic.chapterOrder, // Preserve existing
+      viewCount: currentComic.viewCount,
+      likeCount: currentComic.likeCount,
+      chapterOrder: currentComic.chapterOrder,
     );
 
-    // 4. Update info.json in comic folder
+    // Bước 4: Cập nhật info.json trong folder truyện
     final infoQuery =
         "name = 'info.json' and '$comicId' in parents and trashed = false";
     final infoFiles = await _driveApi!.files.list(q: infoQuery);
@@ -542,46 +537,36 @@ class DriveService {
       );
     }
 
-    // 5. Update catalog.json
+    // Bước 5: Cập nhật catalog.json
     await _updateCatalog(updatedComic);
   }
 
-  // 4. Chapter Management
+  // === QUẢN LÝ CHAPTER ===
   Future<List<CloudChapter>> getChapters(String comicId) async {
-    if (_driveApi == null) await restorePreviousSession();
-    if (_driveApi == null) return [];
     try {
-      // List all files in comic folder that are NOT info.json or cover
+      if (_driveApi == null) await _initServiceAccount();
+
       final q =
           "'$comicId' in parents and trashed = false and name != 'info.json' and not name contains 'cover.'";
+      final fileList = await _driveApi!.files.list(
+        q: q,
+        $fields: 'files(id,name,mimeType,size,createdTime)',
+        pageSize: 1000,
+      );
 
-      final List<drive.File> allFiles = [];
-      String? pageToken;
-
-      do {
-        final fileList = await _driveApi!.files.list(
-          q: q,
-          $fields:
-              'nextPageToken, files(id, name, mimeType, size, createdTime)',
-          pageToken: pageToken,
-          pageSize: 1000,
-        );
-
-        if (fileList.files != null) {
-          allFiles.addAll(fileList.files!);
-        }
-        pageToken = fileList.nextPageToken;
-      } while (pageToken != null);
+      final allFiles = fileList.files ?? [];
 
       final files = allFiles.map((f) {
         String type = 'zip';
-        if (f.name!.endsWith('.epub')) type = 'epub';
-        if (f.name!.endsWith('.cbz')) type = 'cbz';
-        if (f.name!.endsWith('.pdf')) type = 'pdf';
+        if (f.name != null) {
+          if (f.name!.endsWith('.epub')) type = 'epub';
+          if (f.name!.endsWith('.cbz')) type = 'cbz';
+          if (f.name!.endsWith('.pdf')) type = 'pdf';
+        }
 
         return CloudChapter(
           id: f.id!,
-          title: f.name!, // Simplification: File name is title
+          title: f.name ?? 'Unknown',
           fileId: f.id!,
           fileType: type,
           sizeBytes: int.tryParse(f.size ?? '0') ?? 0,
@@ -601,22 +586,14 @@ class DriveService {
       if (order.isNotEmpty) {
         final orderMap = {for (var i = 0; i < order.length; i++) order[i]: i};
         files.sort((a, b) {
-          // If both have order, compare index
           if (orderMap.containsKey(a.id) && orderMap.containsKey(b.id)) {
             return orderMap[a.id]!.compareTo(orderMap[b.id]!);
           }
-          // If only a has order, it comes first (or last?) -> Let's put unordered at top or bottom
-          // Usually unordered = new. Newest should be at top?
-          // If we are Manually Ordering, specific order takes precedence. Unordered ... ?
-          // Let's put unordered files at the END.
           if (orderMap.containsKey(a.id)) return -1;
           if (orderMap.containsKey(b.id)) return 1;
-
-          // Both unordered -> Sort by Name
           return b.title.compareTo(a.title);
         });
       } else {
-        // Default sort by Name (Chap 10, Chap 9...)
         files.sort((a, b) => b.title.compareTo(a.title));
       }
 
@@ -649,10 +626,6 @@ class DriveService {
 
     final media = drive.Media(file.openRead(), file.lengthSync());
     await _driveApi!.files.create(fileMeta, uploadMedia: media);
-
-    // We normally don't need to update catalog for chapter changes in this simple design,
-    // unless we want to show "Latest Chapter" in the list.
-    // For now, let's just upload.
   }
 
   Future<void> deleteChapter(String chapterId) async {
@@ -663,9 +636,6 @@ class DriveService {
       );
     }
 
-    // Move file to trash
-    await _driveApi!.files.delete(chapterId);
-    // Move file to trash
     await _driveApi!.files.delete(chapterId);
   }
 
@@ -673,7 +643,7 @@ class DriveService {
     if (_driveApi == null) await signIn();
     if (_driveApi == null) return;
 
-    // 1. Get current comic info to update object
+    // Bước 1: Lấy thông tin truyện hiện tại để cập nhật
     final currentComics = await getComics();
     final index = currentComics.indexWhere((c) => c.id == comicId);
     if (index == -1) return;
@@ -693,7 +663,7 @@ class DriveService {
       chapterOrder: newOrder,
     );
 
-    // 2. Update info.json
+    // Bước 2: Cập nhật info.json
     final infoQuery =
         "name = 'info.json' and '$comicId' in parents and trashed = false";
     final infoFiles = await _driveApi!.files.list(q: infoQuery);
@@ -710,35 +680,38 @@ class DriveService {
       );
     }
 
-    // 3. Update Catalog (Cache & Drive)
+    // Bước 3: Cập nhật Catalog (Cache & Drive)
     await _updateCatalog(updatedComic);
   }
 
-  // 5. Image & Content Helper
+  // === TRỢ GIÚP ẢNH & NỘI DUNG ===
   String getThumbnailLink(String fileId) {
-    // Note: This requires the file to be public or use a token in headers
-    // Using simple approach: We will use a widget that attaches auth headers
-    return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media';
+    return 'https://www.googleapis.com/drive/v3/files/$fileId?alt=media&key=${DriveConfig.API_KEY}';
   }
 
-  // Get File Metadata (e.g. parents)
-  Future<drive.File?> getFile(String fileId) async {
-    if (_driveApi == null) await restorePreviousSession();
-    if (_driveApi == null) await signIn();
+  // Lấy metadata của file (ví dụ: parents)
+  Future<Map<String, dynamic>?> getFile(String fileId) async {
     try {
-      return await _driveApi!.files.get(fileId, $fields: 'id, name, parents')
-          as drive.File;
+      if (_driveApi == null) await _initServiceAccount();
+
+      final file =
+          await _driveApi!.files.get(fileId, $fields: 'id,name,parents')
+              as drive.File;
+
+      return {'id': file.id, 'name': file.name, 'parents': file.parents};
     } catch (e) {
       print('Error getting file: $e');
       return null;
     }
   }
 
-  // Download file content as bytes
+  // Tải nội dung file dưới dạng bytes
   Future<Uint8List?> downloadFile(String fileId) async {
-    if (_driveApi == null) await restorePreviousSession();
-    if (_driveApi == null) await signIn();
     try {
+      print('📥 Downloading file (Service Account): $fileId');
+
+      if (_driveApi == null) await _initServiceAccount();
+
       final media =
           await _driveApi!.files.get(
                 fileId,
@@ -746,13 +719,15 @@ class DriveService {
               )
               as drive.Media;
 
-      final List<int> dataStore = [];
-      await for (final data in media.stream) {
-        dataStore.addAll(data);
+      final List<int> bytes = [];
+      await for (final chunk in media.stream) {
+        bytes.addAll(chunk);
       }
-      return Uint8List.fromList(dataStore);
+
+      print('📦 Size: ${bytes.length} bytes');
+      return Uint8List.fromList(bytes);
     } catch (e) {
-      print('Error downloading file: $e');
+      print('💥 Error downloading file: $e');
       return null;
     }
   }

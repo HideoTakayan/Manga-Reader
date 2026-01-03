@@ -19,6 +19,7 @@ enum ReadingMode { vertical, horizontal }
 class ReaderState {
   final bool isLoading;
   final bool isLoadingNextChapter;
+  final bool isLoadingPrevChapter;
   final ReadingMode readingMode;
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
@@ -31,10 +32,12 @@ class ReaderState {
   final String? comicId;
   final CloudComic? comic;
   final bool hasReachedEnd;
+  final bool hasReachedStart;
 
   const ReaderState({
     this.isLoading = true,
     this.isLoadingNextChapter = false,
+    this.isLoadingPrevChapter = false,
     this.readingMode = ReadingMode.vertical,
     this.chapters = const [],
     this.currentChapter,
@@ -47,11 +50,13 @@ class ReaderState {
     this.comicId,
     this.comic,
     this.hasReachedEnd = false,
+    this.hasReachedStart = false,
   });
 
   ReaderState copyWith({
     bool? isLoading,
     bool? isLoadingNextChapter,
+    bool? isLoadingPrevChapter,
     ReadingMode? readingMode,
     List<CloudChapter>? chapters,
     CloudChapter? currentChapter,
@@ -64,10 +69,12 @@ class ReaderState {
     String? comicId,
     CloudComic? comic,
     bool? hasReachedEnd,
+    bool? hasReachedStart,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
       isLoadingNextChapter: isLoadingNextChapter ?? this.isLoadingNextChapter,
+      isLoadingPrevChapter: isLoadingPrevChapter ?? this.isLoadingPrevChapter,
       readingMode: readingMode ?? this.readingMode,
       chapters: chapters ?? this.chapters,
       currentChapter: currentChapter ?? this.currentChapter,
@@ -80,6 +87,7 @@ class ReaderState {
       comicId: comicId ?? this.comicId,
       comic: comic ?? this.comic,
       hasReachedEnd: hasReachedEnd ?? this.hasReachedEnd,
+      hasReachedStart: hasReachedStart ?? this.hasReachedStart,
     );
   }
 }
@@ -391,6 +399,70 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   /// Reset the hasReachedEnd flag
   void resetEndReached() {
     state = state.copyWith(hasReachedEnd: false);
+  }
+
+  /// Load previous chapter seamlessly without full page reload
+  Future<void> loadPrevChapter() async {
+    // Prevent multiple calls
+    if (state.isLoadingPrevChapter) return;
+
+    final prevChapterId = getPrevChapterId();
+    if (prevChapterId == null) {
+      // No previous chapters
+      state = state.copyWith(hasReachedStart: true);
+      return;
+    }
+
+    state = state.copyWith(isLoadingPrevChapter: true, hasReachedStart: false);
+
+    try {
+      // Download previous chapter content
+      final fileBytes = await DriveService.instance.downloadFile(prevChapterId);
+      if (fileBytes == null) {
+        state = state.copyWith(isLoadingPrevChapter: false);
+        return;
+      }
+
+      // Find previous chapter metadata
+      final prevChapter = state.chapters.firstWhereOrNull(
+        (c) => c.id == prevChapterId,
+      );
+
+      // Extract images
+      final fileType = prevChapter?.fileType ?? 'zip';
+      List<Uint8List> images = [];
+
+      if (fileType == 'pdf') {
+        images = await _extractImagesFromPdf(fileBytes);
+      } else {
+        images = await _extractImagesFromZip(fileBytes);
+      }
+
+      if (images.isEmpty) {
+        state = state.copyWith(isLoadingPrevChapter: false);
+        return;
+      }
+
+      // Update state with previous chapter (start at last page)
+      state = state.copyWith(
+        isLoadingPrevChapter: false,
+        currentChapter: prevChapter,
+        pages: images,
+        currentPageIndex: images.length - 1,
+        hasReachedStart: false,
+      );
+
+      // Save progress for new chapter
+      _saveProgress();
+    } catch (e) {
+      debugPrint('Error loading previous chapter: $e');
+      state = state.copyWith(isLoadingPrevChapter: false);
+    }
+  }
+
+  /// Reset the hasReachedStart flag
+  void resetStartReached() {
+    state = state.copyWith(hasReachedStart: false);
   }
 
   Future<void> toggleFollow() async {

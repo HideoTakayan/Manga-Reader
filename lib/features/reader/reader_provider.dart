@@ -107,7 +107,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // Bước 2: Lấy tất cả chapter (để điều hướng)
       final chapters = await DriveService.instance.getChapters(comicId);
-      chapters.sort((a, b) => _compareChapterNames(a.title, b.title));
+      // Removed: chapters.sort((a, b) => _compareChapterNames(a.title, b.title));
 
       final currentChapter = chapters.firstWhereOrNull(
         (c) => c.id == chapterId,
@@ -183,7 +183,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     // Sắp xếp file trong archive để đảm bảo thứ tự trang
     final sortedFiles = archive.files.toList()
-      ..sort((a, b) => _compareChapterNames(a.name, b.name));
+      ..sort((a, b) => _naturalSort(a.name, b.name));
 
     for (final file in sortedFiles) {
       if (file.isFile) {
@@ -229,14 +229,38 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
+  // So sánh chuỗi có hỗ trợ nhận diện số (Natural Sort)
+  // Ví dụ: "10.jpg" sẽ đứng sau "2.jpg"
+  int _naturalSort(String a, String b) {
+    final regExp = RegExp(r"(\d+)|(\D+)");
+    final aMatches = regExp.allMatches(a.toLowerCase()).toList();
+    final bMatches = regExp.allMatches(b.toLowerCase()).toList();
+
+    for (int i = 0; i < aMatches.length && i < bMatches.length; i++) {
+      final aPart = aMatches[i].group(0)!;
+      final bPart = bMatches[i].group(0)!;
+
+      if (aPart != bPart) {
+        final aInt = int.tryParse(aPart);
+        final bInt = int.tryParse(bPart);
+
+        if (aInt != null && bInt != null) {
+          return aInt.compareTo(bInt);
+        }
+        return aPart.compareTo(bPart);
+      }
+    }
+    return a.length.compareTo(b.length);
+  }
+
   // So sánh chuỗi đơn giản cho tên chapter/page
   int _compareChapterNames(String a, String b) {
-    return shortChapterSort(a, b);
+    return _naturalSort(a, b);
   }
 
   // Helper sắp xếp theo số (ví dụ: Chapter 1 < Chapter 10)
   int shortChapterSort(String a, String b) {
-    return a.compareTo(b);
+    return _naturalSort(a, b);
   }
 
   void toggleControls() {

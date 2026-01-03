@@ -401,6 +401,70 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(hasReachedEnd: false);
   }
 
+  /// Load previous chapter seamlessly without full page reload
+  Future<void> loadPrevChapter() async {
+    // Prevent multiple calls
+    if (state.isLoadingPrevChapter) return;
+
+    final prevChapterId = getPrevChapterId();
+    if (prevChapterId == null) {
+      // No previous chapters
+      state = state.copyWith(hasReachedStart: true);
+      return;
+    }
+
+    state = state.copyWith(isLoadingPrevChapter: true, hasReachedStart: false);
+
+    try {
+      // Download previous chapter content
+      final fileBytes = await DriveService.instance.downloadFile(prevChapterId);
+      if (fileBytes == null) {
+        state = state.copyWith(isLoadingPrevChapter: false);
+        return;
+      }
+
+      // Find previous chapter metadata
+      final prevChapter = state.chapters.firstWhereOrNull(
+        (c) => c.id == prevChapterId,
+      );
+
+      // Extract images
+      final fileType = prevChapter?.fileType ?? 'zip';
+      List<Uint8List> images = [];
+
+      if (fileType == 'pdf') {
+        images = await _extractImagesFromPdf(fileBytes);
+      } else {
+        images = await _extractImagesFromZip(fileBytes);
+      }
+
+      if (images.isEmpty) {
+        state = state.copyWith(isLoadingPrevChapter: false);
+        return;
+      }
+
+      // Update state with previous chapter (start at last page)
+      state = state.copyWith(
+        isLoadingPrevChapter: false,
+        currentChapter: prevChapter,
+        pages: images,
+        currentPageIndex: images.length - 1,
+        hasReachedStart: false,
+      );
+
+      // Save progress for new chapter
+      _saveProgress();
+    } catch (e) {
+      debugPrint('Error loading previous chapter: $e');
+      state = state.copyWith(isLoadingPrevChapter: false);
+    }
+  }
+
+  /// Reset the hasReachedStart flag
+  void resetStartReached() {
+    state = state.copyWith(hasReachedStart: false);
+  }
+
   Future<void> toggleFollow() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null && state.currentChapter != null) {

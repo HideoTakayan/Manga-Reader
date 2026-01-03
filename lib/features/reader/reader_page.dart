@@ -252,10 +252,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                           IconButton(
                             icon: Icon(
                               state.isFollowed
-                                  ? Icons.notifications
-                                  : Icons.notifications_none,
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
                               color: state.isFollowed
-                                  ? Colors.amber
+                                  ? Colors.red
                                   : Colors.white,
                             ),
                             onPressed: () async {
@@ -321,15 +321,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
                                 }
                               }
                             },
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              state.isLiked
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: state.isLiked ? Colors.red : Colors.white,
-                            ),
-                            onPressed: notifier.toggleLike,
                           ),
                           IconButton(
                             icon: const Icon(
@@ -567,15 +558,13 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             textAlign: TextAlign.center,
                           ),
                         ),
-                        // Follow Icon
+                        // Follow Icon (Heart)
                         IconButton(
                           icon: Icon(
                             state.isFollowed
-                                ? Icons.notifications
-                                : Icons.notifications_none,
-                            color: state.isFollowed
-                                ? Colors.amber
-                                : Colors.white,
+                                ? Icons.favorite
+                                : Icons.favorite_border,
+                            color: state.isFollowed ? Colors.red : Colors.white,
                           ),
                           onPressed: () async {
                             await notifier.toggleFollow();

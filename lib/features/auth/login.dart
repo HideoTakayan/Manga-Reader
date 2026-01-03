@@ -245,16 +245,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-
-              const Text(
-                '© 2025 NhatPhu - TuTrinh - TanDung',
-                style: TextStyle(
-                  color: Colors.white24,
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
             ],
           ),
         ),

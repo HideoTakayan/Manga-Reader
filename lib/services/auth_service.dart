@@ -50,6 +50,29 @@ class AuthService {
   }
 
   /// ----------------------------
+  /// 🔹 ĐỔI MẬT KHÂU
+  /// ----------------------------
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Người dùng chưa đăng nhập');
+
+    final cred = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+
+    try {
+      await user.reauthenticateWithCredential(cred);
+      await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_handleAuthError(e));
+    }
+  }
+
+  /// ----------------------------
   /// 🔹 ĐĂNG XUẤT
   /// ----------------------------
   Future<void> logout() async {

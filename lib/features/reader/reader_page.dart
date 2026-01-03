@@ -40,13 +40,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
     // Only trigger in vertical mode
     if (state.readingMode != ReadingMode.vertical) return;
+    if (!_scrollController.hasClients) return;
 
-    // Check if near end of scroll (within 200px of bottom)
-    if (_scrollController.hasClients &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200) {
-      // Trigger next chapter load
+    final pixels = _scrollController.position.pixels;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+
+    // Check if near end of scroll (within 200px of bottom) - load next chapter
+    if (pixels >= maxExtent - 200) {
       notifier.loadNextChapter();
+    }
+
+    // Check if at very top with overscroll (negative pixels) - load previous chapter
+    if (pixels < -80) {
+      notifier.loadPrevChapter();
     }
   }
 
@@ -385,22 +391,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
 
   // Vertical View with continuous scrolling
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {
-    // Total items = pages + 1 footer for chapter transition
-    final itemCount = state.pages.length + 1;
+    // Total items = 1 header + pages + 1 footer for chapter transition
+    final itemCount = state.pages.length + 2;
 
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(), // Enable overscroll for prev chapter
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        // Last item: Chapter transition footer
-        if (index == state.pages.length) {
+        // First item: Chapter transition header (previous chapter)
+        if (index == 0) {
+          return _buildChapterTransitionHeader(state, notifier);
+        }
+
+        // Last item: Chapter transition footer (next chapter)
+        if (index == itemCount - 1) {
           return _buildChapterTransitionFooter(state, notifier);
         }
 
-        // Normal page
+        // Normal page (adjust index for header offset)
+        final pageIndex = index - 1;
         return Image.memory(
-          state.pages[index],
+          state.pages[pageIndex],
           fit: BoxFit.fitWidth,
           width: double.infinity,
           errorBuilder: (_, __, ___) => const SizedBox(
@@ -409,6 +422,98 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           ),
         );
       },
+    );
+  }
+
+  // Chapter transition header widget (previous chapter)
+  Widget _buildChapterTransitionHeader(ReaderState state, ReaderNotifier notifier) {
+    final hasPrevChapter = notifier.getPrevChapterId() != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 40),
+
+          // Loading or previous chapter indicator
+          if (state.isLoadingPrevChapter)
+            const Column(
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 12),
+                Text(
+                  'Đang tải chương trước...',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            )
+          else if (hasPrevChapter)
+            Column(
+              children: [
+                const Icon(
+                  Icons.keyboard_double_arrow_up,
+                  color: Colors.white54,
+                  size: 28,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Kéo xuống để đọc chương trước',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                // Manual button as fallback
+                OutlinedButton.icon(
+                  onPressed: () => notifier.loadPrevChapter(),
+                  icon: const Icon(Icons.arrow_back, size: 16),
+                  label: const Text('Chương trước'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                  ),
+                ),
+              ],
+            )
+          else
+            Column(
+              children: [
+                const Icon(
+                  Icons.first_page,
+                  color: Colors.blueAccent,
+                  size: 32,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Bắt đầu ${state.currentChapter?.title ?? 'chương'}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+
+          const SizedBox(height: 20),
+
+          // Divider
+          Container(
+            height: 2,
+            width: 100,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  Colors.white.withOpacity(0.3),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+        ],
+      ),
     );
   }
 

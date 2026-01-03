@@ -18,6 +18,7 @@ enum ReadingMode { vertical, horizontal }
 
 class ReaderState {
   final bool isLoading;
+  final bool isLoadingNextChapter;
   final ReadingMode readingMode;
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
@@ -29,9 +30,11 @@ class ReaderState {
   final bool isFollowed;
   final String? comicId;
   final CloudComic? comic;
+  final bool hasReachedEnd;
 
   const ReaderState({
     this.isLoading = true,
+    this.isLoadingNextChapter = false,
     this.readingMode = ReadingMode.vertical,
     this.chapters = const [],
     this.currentChapter,
@@ -43,10 +46,12 @@ class ReaderState {
     this.isFollowed = false,
     this.comicId,
     this.comic,
+    this.hasReachedEnd = false,
   });
 
   ReaderState copyWith({
     bool? isLoading,
+    bool? isLoadingNextChapter,
     ReadingMode? readingMode,
     List<CloudChapter>? chapters,
     CloudChapter? currentChapter,
@@ -58,9 +63,11 @@ class ReaderState {
     bool? isFollowed,
     String? comicId,
     CloudComic? comic,
+    bool? hasReachedEnd,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
+      isLoadingNextChapter: isLoadingNextChapter ?? this.isLoadingNextChapter,
       readingMode: readingMode ?? this.readingMode,
       chapters: chapters ?? this.chapters,
       currentChapter: currentChapter ?? this.currentChapter,
@@ -72,6 +79,7 @@ class ReaderState {
       isFollowed: isFollowed ?? this.isFollowed,
       comicId: comicId ?? this.comicId,
       comic: comic ?? this.comic,
+      hasReachedEnd: hasReachedEnd ?? this.hasReachedEnd,
     );
   }
 }
@@ -319,6 +327,70 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       return state.chapters[currentIndex - 1].id;
     }
     return null;
+  }
+
+  /// Load next chapter seamlessly without full page reload
+  Future<void> loadNextChapter() async {
+    // Prevent multiple calls
+    if (state.isLoadingNextChapter) return;
+
+    final nextChapterId = getNextChapterId();
+    if (nextChapterId == null) {
+      // No more chapters
+      state = state.copyWith(hasReachedEnd: true);
+      return;
+    }
+
+    state = state.copyWith(isLoadingNextChapter: true, hasReachedEnd: false);
+
+    try {
+      // Download next chapter content
+      final fileBytes = await DriveService.instance.downloadFile(nextChapterId);
+      if (fileBytes == null) {
+        state = state.copyWith(isLoadingNextChapter: false);
+        return;
+      }
+
+      // Find next chapter metadata
+      final nextChapter = state.chapters.firstWhereOrNull(
+        (c) => c.id == nextChapterId,
+      );
+
+      // Extract images
+      final fileType = nextChapter?.fileType ?? 'zip';
+      List<Uint8List> images = [];
+
+      if (fileType == 'pdf') {
+        images = await _extractImagesFromPdf(fileBytes);
+      } else {
+        images = await _extractImagesFromZip(fileBytes);
+      }
+
+      if (images.isEmpty) {
+        state = state.copyWith(isLoadingNextChapter: false);
+        return;
+      }
+
+      // Update state with new chapter
+      state = state.copyWith(
+        isLoadingNextChapter: false,
+        currentChapter: nextChapter,
+        pages: images,
+        currentPageIndex: 0,
+        hasReachedEnd: false,
+      );
+
+      // Save progress for new chapter
+      _saveProgress();
+    } catch (e) {
+      debugPrint('Error loading next chapter: $e');
+      state = state.copyWith(isLoadingNextChapter: false);
+    }
+  }
+
+  /// Reset the hasReachedEnd flag
+  void resetEndReached() {
+    state = state.copyWith(hasReachedEnd: false);
   }
 
   Future<void> toggleFollow() async {

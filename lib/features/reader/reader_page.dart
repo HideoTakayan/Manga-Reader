@@ -25,14 +25,34 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     _pageController = PageController();
     _scrollController = ScrollController();
 
+    // Add scroll listener for continuous scrolling
+    _scrollController.addListener(_onVerticalScroll);
+
     // Load data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(readerProvider.notifier).init(widget.chapterId);
     });
   }
 
+  void _onVerticalScroll() {
+    final state = ref.read(readerProvider);
+    final notifier = ref.read(readerProvider.notifier);
+
+    // Only trigger in vertical mode
+    if (state.readingMode != ReadingMode.vertical) return;
+
+    // Check if near end of scroll (within 200px of bottom)
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200) {
+      // Trigger next chapter load
+      notifier.loadNextChapter();
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onVerticalScroll);
     _pageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -363,13 +383,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
     );
   }
 
-  // Vertical View
+  // Vertical View with continuous scrolling
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {
+    // Total items = pages + 1 footer for chapter transition
+    final itemCount = state.pages.length + 1;
+
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.zero,
-      itemCount: state.pages.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
+        // Last item: Chapter transition footer
+        if (index == state.pages.length) {
+          return _buildChapterTransitionFooter(state, notifier);
+        }
+
+        // Normal page
         return Image.memory(
           state.pages[index],
           fit: BoxFit.fitWidth,
@@ -380,6 +409,115 @@ class _ReaderPageState extends ConsumerState<ReaderPage> {
           ),
         );
       },
+    );
+  }
+
+  // Chapter transition footer widget
+  Widget _buildChapterTransitionFooter(ReaderState state, ReaderNotifier notifier) {
+    final hasNextChapter = notifier.getNextChapterId() != null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Divider
+          Container(
+            height: 2,
+            width: 100,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.transparent,
+                  Colors.white.withOpacity(0.3),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Chapter end text
+          Text(
+            'Hết ${state.currentChapter?.title ?? 'chương'}',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Loading or next chapter indicator
+          if (state.isLoadingNextChapter)
+            const Column(
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 12),
+                Text(
+                  'Đang tải chương tiếp theo...',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            )
+          else if (hasNextChapter)
+            Column(
+              children: [
+                const Icon(
+                  Icons.keyboard_double_arrow_down,
+                  color: Colors.white54,
+                  size: 28,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Cuộn xuống để đọc chương tiếp',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                // Manual button as fallback
+                OutlinedButton.icon(
+                  onPressed: () => notifier.loadNextChapter(),
+                  icon: const Icon(Icons.arrow_forward, size: 16),
+                  label: const Text('Chương tiếp'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                  ),
+                ),
+              ],
+            )
+          else
+            Column(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.green,
+                  size: 32,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Bạn đã đọc hết truyện!',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => context.pop(),
+                  icon: const Icon(Icons.arrow_back, size: 16),
+                  label: const Text('Quay lại'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white24),
+                  ),
+                ),
+              ],
+            ),
+
+          const SizedBox(height: 40),
+        ],
+      ),
     );
   }
 

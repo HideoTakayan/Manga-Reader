@@ -19,6 +19,7 @@ enum ReadingMode { vertical, horizontal }
 class ReaderState {
   final bool isLoading;
   final bool isLoadingNextChapter;
+  final bool isLoadingPrevChapter;
   final ReadingMode readingMode;
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
@@ -31,10 +32,12 @@ class ReaderState {
   final String? comicId;
   final CloudComic? comic;
   final bool hasReachedEnd;
+  final bool hasReachedStart;
 
   const ReaderState({
     this.isLoading = true,
     this.isLoadingNextChapter = false,
+    this.isLoadingPrevChapter = false,
     this.readingMode = ReadingMode.vertical,
     this.chapters = const [],
     this.currentChapter,
@@ -47,11 +50,13 @@ class ReaderState {
     this.comicId,
     this.comic,
     this.hasReachedEnd = false,
+    this.hasReachedStart = false,
   });
 
   ReaderState copyWith({
     bool? isLoading,
     bool? isLoadingNextChapter,
+    bool? isLoadingPrevChapter,
     ReadingMode? readingMode,
     List<CloudChapter>? chapters,
     CloudChapter? currentChapter,
@@ -64,10 +69,12 @@ class ReaderState {
     String? comicId,
     CloudComic? comic,
     bool? hasReachedEnd,
+    bool? hasReachedStart,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
       isLoadingNextChapter: isLoadingNextChapter ?? this.isLoadingNextChapter,
+      isLoadingPrevChapter: isLoadingPrevChapter ?? this.isLoadingPrevChapter,
       readingMode: readingMode ?? this.readingMode,
       chapters: chapters ?? this.chapters,
       currentChapter: currentChapter ?? this.currentChapter,
@@ -80,6 +87,7 @@ class ReaderState {
       comicId: comicId ?? this.comicId,
       comic: comic ?? this.comic,
       hasReachedEnd: hasReachedEnd ?? this.hasReachedEnd,
+      hasReachedStart: hasReachedStart ?? this.hasReachedStart,
     );
   }
 }

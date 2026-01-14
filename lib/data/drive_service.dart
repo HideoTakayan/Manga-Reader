@@ -24,6 +24,33 @@ class DriveService {
   auth.AutoRefreshingAuthClient? _authClient;
   List<CloudComic>? _cachedComics;
 
+  // ========================================
+  // OPTIMIZATION: In-memory file cache
+  // Stores downloaded chapter files for fast access
+  // Max 5 items to avoid memory issues (~50MB max)
+  // ========================================
+  final Map<String, Uint8List> _fileCache = {};
+  final List<String> _fileCacheOrder = [];
+  static const int _maxCacheSize = 5;
+
+  /// Clear old cache entries when limit is reached
+  void _trimFileCache() {
+    while (_fileCacheOrder.length > _maxCacheSize) {
+      final oldestKey = _fileCacheOrder.removeAt(0);
+      _fileCache.remove(oldestKey);
+      print('🗑️ Evicted from cache: $oldestKey');
+    }
+  }
+
+  /// Get cached file if available
+  Uint8List? getCachedFile(String fileId) => _fileCache[fileId];
+
+  /// Clear entire file cache (useful when memory is low)
+  void clearFileCache() {
+    _fileCache.clear();
+    _fileCacheOrder.clear();
+  }
+
   // Stream thông báo thay đổi trạng thái đăng nhập
   final _authController = StreamController<GoogleSignInAccount?>.broadcast();
   Stream<GoogleSignInAccount?> get onAuthStateChanged => _authController.stream;
@@ -707,6 +734,12 @@ class DriveService {
 
   // Tải nội dung file dưới dạng bytes
   Future<Uint8List?> downloadFile(String fileId) async {
+    // Check cache first for instant access
+    if (_fileCache.containsKey(fileId)) {
+      print('⚡ Cache hit: $fileId');
+      return _fileCache[fileId];
+    }
+
     try {
       print('📥 Downloading file (Service Account): $fileId');
 
@@ -724,8 +757,16 @@ class DriveService {
         bytes.addAll(chunk);
       }
 
-      print('📦 Size: ${bytes.length} bytes');
-      return Uint8List.fromList(bytes);
+      final result = Uint8List.fromList(bytes);
+      print('📦 Size: ${result.length} bytes');
+
+      // Cache the downloaded file
+      _fileCache[fileId] = result;
+      _fileCacheOrder.add(fileId);
+      _trimFileCache();
+      print('💾 Cached: $fileId (${_fileCacheOrder.length}/$_maxCacheSize)');
+
+      return result;
     } catch (e) {
       print('💥 Error downloading file: $e');
       return null;

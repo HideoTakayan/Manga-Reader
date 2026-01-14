@@ -19,8 +19,28 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class _HomeContent extends StatelessWidget {
+class _HomeContent extends StatefulWidget {
   const _HomeContent();
+
+  @override
+  State<_HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<_HomeContent> {
+  late Future<List<CloudComic>> _comicsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _comicsFuture = DriveService.instance.getComics();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _comicsFuture = DriveService.instance.getComics();
+    });
+    await _comicsFuture;
+  }
 
   Comic _fromCloud(CloudComic c) {
     return Comic(
@@ -45,123 +65,137 @@ class _HomeContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<GoogleSignInAccount?>(
-      stream: DriveService.instance.onAuthStateChanged,
-      initialData: DriveService.instance.currentUser,
-      builder: (context, authSnapshot) {
-        return FutureBuilder<List<CloudComic>>(
-          future: DriveService.instance.getComics(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: Colors.redAccent,
+      backgroundColor: Theme.of(context).cardColor,
+      child: StreamBuilder<GoogleSignInAccount?>(
+        stream: DriveService.instance.onAuthStateChanged,
+        initialData: DriveService.instance.currentUser,
+        builder: (context, authSnapshot) {
+          return FutureBuilder<List<CloudComic>>(
+            future: _comicsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-            final cloudComics = snapshot.data ?? [];
-            final allComics = cloudComics.map(_fromCloud).toList();
+              final cloudComics = snapshot.data ?? [];
+              final allComics = cloudComics.map(_fromCloud).toList();
 
-            if (allComics.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "Chưa có truyện nào.",
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    if (authSnapshot.data == null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          "(Bạn cần đăng nhập trong trang Quản trị để xem truyện)",
-                          style: Theme.of(context).textTheme.bodySmall,
+              if (allComics.isEmpty) {
+                return CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              "Chưa có truyện nào.",
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            if (authSnapshot.data == null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Text(
+                                  "(Bạn cần đăng nhập trong trang Quản trị để xem truyện)",
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            TextButton(
+                              onPressed: _refresh,
+                              child: const Text("Tải lại"),
+                            ),
+                          ],
                         ),
                       ),
-                    TextButton(
-                      onPressed: () {
-                        (context as Element).markNeedsBuild();
-                      },
-                      child: const Text("Tải lại"),
                     ),
                   ],
-                ),
-              );
-            }
+                );
+              }
 
-            // 1. Mới cập nhật (10 truyện mới nhất)
-            final newUpdates = _getNewUpdates(allComics);
+              // 1. Mới cập nhật (10 truyện mới nhất)
+              final newUpdates = _getNewUpdates(allComics);
 
-            // 2. Random cho các mục khác
-            final featured = _getRandom(allComics, 10);
-            final hotToday = _getRandom(allComics, 10);
-            final trending = _getRandom(allComics, 10);
+              // 2. Random cho các mục khác
+              final featured = _getRandom(allComics, 10);
+              final hotToday = _getRandom(allComics, 10);
+              final trending = _getRandom(allComics, 10);
 
-            return CustomScrollView(
-              slivers: [
-                // Thanh tiêu đề
-                SliverAppBar(
-                  floating: true,
-                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                  elevation: 0,
-                  title: Row(
-                    children: [
-                      const Icon(
-                        Icons.auto_stories,
-                        color: Colors.redAccent,
-                        size: 30,
-                      ),
-                      const SizedBox(width: 8),
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Colors.redAccent, Colors.orangeAccent],
-                        ).createShader(bounds),
-                        child: Text(
-                          'MangaReader',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                            color: Theme.of(
-                              context,
-                            ).textTheme.titleLarge?.color,
+              return CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  // Thanh tiêu đề
+                  SliverAppBar(
+                    floating: true,
+                    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                    elevation: 0,
+                    title: Row(
+                      children: [
+                        const Icon(
+                          Icons.auto_stories,
+                          color: Colors.redAccent,
+                          size: 30,
+                        ),
+                        const SizedBox(width: 8),
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [Colors.redAccent, Colors.orangeAccent],
+                          ).createShader(bounds),
+                          child: Text(
+                            'MangaReader',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                              color: Theme.of(
+                                context,
+                              ).textTheme.titleLarge?.color,
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                    actions: [
+                      IconButton(
+                        icon: Icon(
+                          Icons.search,
+                          color: Theme.of(context).iconTheme.color,
+                        ),
+                        onPressed: () => context.push('/search-global'),
                       ),
                     ],
                   ),
-                  actions: [
-                    IconButton(
-                      icon: Icon(
-                        Icons.search,
-                        color: Theme.of(context).iconTheme.color,
-                      ),
-                      onPressed: () => context.push('/search-global'),
+
+                  // Banner nổi bật (Random 10)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: _AutoSlideBanner(comics: featured),
                     ),
-                  ],
-                ),
-
-                // Banner nổi bật (Random 10)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _AutoSlideBanner(comics: featured),
                   ),
-                ),
 
-                // 🔥 Truyện hot (Random 10)
-                _SectionTitle(label: '🔥 Truyện Hot Hôm Nay', onViewAll: () {}),
-                _MangaReaderCarousel(comics: hotToday),
+                  // 🔥 Truyện hot (Random 10)
+                  _SectionTitle(
+                    label: '🔥 Truyện Hot Hôm Nay',
+                    onViewAll: () {},
+                  ),
+                  _MangaReaderCarousel(comics: hotToday),
 
-                // 🆕 Mới cập nhật (Top 10 mới nhất)
-                _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
-                _MangaReaderCarousel(comics: newUpdates),
+                  // 🆕 Mới cập nhật (Top 10 mới nhất)
+                  _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
+                  _MangaReaderCarousel(comics: newUpdates),
 
-                // 🏆 Top Trending (Random 10)
-                _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
-                SliverToBoxAdapter(child: _RankList(comics: trending)),
-              ],
-            );
-          },
-        );
-      },
+                  // 🏆 Top Trending (Random 10)
+                  _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
+                  SliverToBoxAdapter(child: _RankList(comics: trending)),
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

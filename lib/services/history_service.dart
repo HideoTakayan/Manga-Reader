@@ -97,4 +97,23 @@ class HistoryService {
       print('Error deleting cloud history: $e');
     }
   }
+
+  // Xóa toàn bộ lịch sử (Batch)
+  Future<void> clearAllHistory() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final collection = _db.collection('users').doc(uid).collection('history');
+      final snapshot = await collection.get();
+
+      final batch = _db.batch();
+      for (var doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    } catch (e) {
+      print('Error clearing all cloud history: $e');
+    }
+  }
 }

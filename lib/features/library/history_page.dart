@@ -17,47 +17,63 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
-  late List<ReadingHistory> _historyList;
-  late Future<List<CloudComic>> _comicsFuture;
+  List<ReadingHistory> _historyList = [];
+  List<CloudComic> _comics = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _historyList = []; // Initialize to empty list
-    _refreshHistory();
-    _comicsFuture = DriveService.instance.getComics();
+    _initData();
   }
 
-  Future<void> _refreshHistory() async {
+  Future<void> _initData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      // 1. Fetch Comics ( Metadata)
+      final comics = await DriveService.instance.getComics();
+
+      // 2. Fetch History
+      final hList = await _fetchAndMergeHistory();
+
+      if (mounted) {
+        setState(() {
+          _comics = comics;
+          _historyList = hList;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('History Init Error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<List<ReadingHistory>> _fetchAndMergeHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
-    List<ReadingHistory> localHistory = [];
-    List<ReadingHistory> cloudHistory = [];
 
-    // 1. Fetch Local
+    // 1. Local
     final localId = userId ?? 'guest';
-    localHistory = await DatabaseHelper.instance.getHistory(localId);
+    final localHistory = await DatabaseHelper.instance.getHistory(localId);
 
-    // 2. Fetch Cloud (if logged in)
+    // 2. Cloud (if logged in)
+    List<ReadingHistory> cloudHistory = [];
     if (userId != null) {
       cloudHistory = await HistoryService.instance.getAllHistory();
     }
 
-    // 3. Merge: Use Map to prioritize latest update
+    // 3. Merge Strategies
     final historyMap = <String, ReadingHistory>{};
-
-    // Add local first
     for (var h in localHistory) {
       historyMap[h.comicId] = h;
     }
-
-    // Add/Overwrite with Cloud (assuming cloud is source of truth or just merge)
-    // Actually, we should check timestamps, but simpler to trust cloud if available?
-    // Let's trust whichever is newer.
     for (var h in cloudHistory) {
       if (historyMap.containsKey(h.comicId)) {
-        final local = historyMap[h.comicId]!;
-        // If cloud is newer, replace
-        if (h.updatedAt.isAfter(local.updatedAt)) {
+        if (h.updatedAt.isAfter(historyMap[h.comicId]!.updatedAt)) {
           historyMap[h.comicId] = h;
         }
       } else {
@@ -65,43 +81,130 @@ class _HistoryPageState extends State<HistoryPage> {
       }
     }
 
-    final mergedList = historyMap.values.toList()
+    final merged = historyMap.values.toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-    // Sync merged data back to local SQLite
-    if (userId != null) {
-      for (var h in mergedList) {
+    // Sync back to local if logged in
+    if (userId != null && merged.isNotEmpty) {
+      for (var h in merged) {
         await DatabaseHelper.instance.saveHistory(h);
       }
     }
 
-    setState(() {
-      _historyList = mergedList;
-    });
+    return merged;
   }
 
-  Future<void> _clearHistory() async {
-    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-    await DatabaseHelper.instance.clearHistory(userId);
+  Future<void> _handleDeepClear() async {
+    // Show Loading
+    if (mounted) setState(() => _isLoading = true);
 
-    // Also clear cloud if logged in (optional, maybe ask user?)
-    // For now, let's just clear local as "Clear History" usually implies device privacy
-    // But if we sync, we probably want to clear all.
-    // Let's clear cloud too for consistency if logged in.
-    if (FirebaseAuth.instance.currentUser != null) {
-      // Cloud delete requires looping or batch. HistoryService.deleteHistory is single.
-      // We need a clearAll in Service or loop.
-      // For safety, let's just loop over current list.
-      for (var h in _historyList) {
-        await HistoryService.instance.deleteHistory(h.comicId);
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+
+    try {
+      // 1. Local Clear
+      await DatabaseHelper.instance.clearHistory('guest');
+      if (userId != null) {
+        await DatabaseHelper.instance.clearHistory(userId);
+      }
+
+      // 2. Cloud Clear
+      if (userId != null) {
+        await HistoryService.instance.clearAllHistory();
+      }
+
+      // 3. Update UI
+      if (mounted) {
+        setState(() {
+          _historyList = [];
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Đã xoá sạch lịch sử!')));
+      }
+    } catch (e) {
+      debugPrint('Clear Error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi xoá lịch sử: $e')));
       }
     }
+  }
 
-    _refreshHistory();
+  void _showDeleteConfirmDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: const Text('Xoá tất cả?'),
+        content: const Text(
+          'Hành động này sẽ xoá vĩnh viễn lịch sử đọc truyện của bạn (Cả trên máy và Cloud).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Huỷ'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _handleDeepClear();
+            },
+            child: const Text('Xoá', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          elevation: 0,
+          title: const Text('Lịch Sử'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_historyList.isEmpty) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          elevation: 0,
+          title: const Text('Lịch Sử'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.history_toggle_off,
+                size: 64,
+                color: Theme.of(context).disabledColor,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Chưa có lịch sử đọc truyện.',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              TextButton(onPressed: _initData, child: const Text('Tải lại')),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -111,160 +214,92 @@ class _HistoryPageState extends State<HistoryPage> {
         ),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        centerTitle: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Xoá lịch sử?'),
-                  content: const Text(
-                    'Bạn có chắc muốn xoá toàn bộ lịch sử đọc không?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Huỷ'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        _clearHistory();
-                        Navigator.pop(context);
-                      },
-                      child: const Text(
-                        'Xoá',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+            onPressed: _showDeleteConfirmDialog,
           ),
         ],
       ),
-      body: FutureBuilder<List<CloudComic>>(
-        future: _comicsFuture,
-        builder: (context, comicsVerifySnapshot) {
-          // We need comics list available to map IDs
-          if (comicsVerifySnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        itemCount: _historyList.length,
+        itemBuilder: (context, index) {
+          final item = _historyList[index];
 
-          final comics = comicsVerifySnapshot.data ?? [];
+          final comic = _comics.firstWhere(
+            (c) => c.id == item.comicId,
+            orElse: () => CloudComic(
+              id: item.comicId,
+              title: 'Truyện không tồn tại',
+              author: 'Unknown',
+              description: '',
+              coverFileId: '',
+              genres: [],
+              status: '',
+              viewCount: 0,
+              likeCount: 0,
+              updatedAt: DateTime.now(),
+            ),
+          );
 
-          // Use _historyList directly
-          if (_historyList.isEmpty) {
-            return const Center(
-              child: Text(
-                'Bạn chưa đọc truyện nào.',
-                style: TextStyle(color: Colors.white70, fontSize: 16),
+          if (comic.coverFileId.isEmpty) return const SizedBox.shrink();
+
+          final date =
+              "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
+
+          return Card(
+            color: Theme.of(context).cardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
               ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            itemCount: _historyList.length,
-            itemBuilder: (context, index) {
-              final item = _historyList[index];
-              // Find comic in already loaded list
-              final comicIndex = comics.indexWhere((c) => c.id == item.comicId);
-
-              if (comicIndex == -1) {
-                // Comic not found (maybe deleted), just skip or show placeholder logic
-                return const SizedBox.shrink();
-              }
-
-              final comic = comics[comicIndex];
-
-              final date =
-                  "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
-
-              return Card(
-                color: Theme.of(context).cardColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: DriveImage(
+                  fileId: comic.coverFileId,
+                  width: 60,
+                  height: 80,
+                  fit: BoxFit.cover,
                 ),
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: DriveImage(
-                      fileId: comic.coverFileId,
-                      width: 60,
-                      height: 80,
-                      fit: BoxFit.cover,
+              ),
+              title: Text(
+                comic.title,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text(
+                    '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  title: Text(
-                    comic.title,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 4),
+                  Text(
+                    date,
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
                   ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text(
-                        'Tác giả: ${comic.author}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.history,
-                            size: 14,
-                            color: Colors.redAccent.withOpacity(0.8),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              '${item.chapterTitle ?? 'Chương ${item.chapterId}'} - Trang ${item.lastPageIndex + 1}',
-                              style: const TextStyle(
-                                color: Colors.redAccent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            date,
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right,
-                    color: Colors.white,
-                  ),
-                  onTap: () async {
-                    await context.push('/reader/${item.chapterId}');
-                    _refreshHistory();
-                  },
-                ),
-              );
-            },
+                ],
+              ),
+              onTap: () async {
+                await context.push('/reader/${item.chapterId}');
+                _initData();
+              },
+            ),
           );
         },
       ),

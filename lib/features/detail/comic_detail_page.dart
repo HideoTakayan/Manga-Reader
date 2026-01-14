@@ -313,20 +313,34 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                               final genre = comic.genres.isNotEmpty
                                   ? comic.genres[index]
                                   : "Manhwa"; // Default if empty
-                              return Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white10,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  genre,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontSize: 12,
+                              return InkWell(
+                                onTap: () {
+                                  context.push(
+                                    Uri(
+                                      path: '/search-global',
+                                      queryParameters: {'genre': genre},
+                                    ).toString(),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white10,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.1),
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    genre,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ),
                               );
@@ -609,7 +623,9 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                 if (_history != null) {
                                   chapterIdToOpen = _history!.chapterId;
                                 } else if (chapters.isNotEmpty) {
-                                  chapterIdToOpen = chapters.last.id;
+                                  // Start from the first chapter (Chapter 1) for new readers
+                                  // Assuming chapters are sorted Ascending (1, 2, 3...) based on current list display
+                                  chapterIdToOpen = chapters.first.id;
                                 }
 
                                 if (chapterIdToOpen != null) {
@@ -630,9 +646,11 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                   vertical: 10,
                                 ),
                               ),
-                              child: const Text(
-                                'Đọc Tiếp',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              child: Text(
+                                _history != null ? 'Đọc Tiếp' : 'Bắt Đầu Đọc',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),

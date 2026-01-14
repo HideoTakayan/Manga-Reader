@@ -4,8 +4,11 @@ import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 import 'package:go_router/go_router.dart';
 
+enum GenreFilterState { none, included, excluded }
+
 class SearchPage extends StatefulWidget {
-  const SearchPage({super.key});
+  final String? initialGenre;
+  const SearchPage({super.key, this.initialGenre});
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -17,7 +20,7 @@ class _SearchPageState extends State<SearchPage> {
   bool isLoading = true;
 
   // Filters
-  String? selectedGenre;
+  Map<String, GenreFilterState> genreFilters = {};
   String? selectedStatus;
   List<String> allGenres = []; // Dynamic list
   final List<String> allStatuses = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
@@ -25,6 +28,9 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialGenre != null) {
+      genreFilters[widget.initialGenre!] = GenreFilterState.included;
+    }
     _loadComics();
   }
 
@@ -81,26 +87,73 @@ class _SearchPageState extends State<SearchPage> {
                         'Thể loại',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Ấn 1 lần để chọn (v), ấn 2 lần để loại trừ (x)',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
+                        runSpacing: 8,
                         children: allGenres.map((genre) {
-                          final isSelected = selectedGenre == genre;
-                          return ChoiceChip(
+                          final state =
+                              genreFilters[genre] ?? GenreFilterState.none;
+
+                          Color? backgroundColor;
+                          Color labelColor =
+                              Theme.of(context).textTheme.bodyLarge?.color ??
+                              Colors.black;
+                          Widget? icon;
+
+                          if (state == GenreFilterState.included) {
+                            backgroundColor = Theme.of(context).primaryColor;
+                            labelColor = Colors.white;
+                            icon = const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            );
+                          } else if (state == GenreFilterState.excluded) {
+                            backgroundColor = Colors.red;
+                            labelColor = Colors.white;
+                            icon = const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.white,
+                            );
+                          } else {
+                            backgroundColor = Theme.of(context).cardColor;
+                            // Use a slight border/color for unselected to make it visible
+                          }
+
+                          return ActionChip(
+                            avatar: icon,
                             label: Text(genre),
-                            selected: isSelected,
-                            selectedColor: Theme.of(context).primaryColor,
-                            backgroundColor: Theme.of(context).cardColor,
-                            labelStyle: TextStyle(
-                              color: isSelected
-                                  ? Colors.white
-                                  : Theme.of(
-                                      context,
-                                    ).textTheme.bodyLarge?.color,
+                            backgroundColor: backgroundColor,
+                            labelStyle: TextStyle(color: labelColor),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: state == GenreFilterState.none
+                                    ? Colors.grey.withOpacity(0.3)
+                                    : Colors.transparent,
+                              ),
                             ),
-                            onSelected: (selected) {
+                            onPressed: () {
                               setStateModal(() {
-                                selectedGenre = selected ? genre : null;
+                                if (state == GenreFilterState.none) {
+                                  genreFilters[genre] =
+                                      GenreFilterState.included;
+                                } else if (state == GenreFilterState.included) {
+                                  genreFilters[genre] =
+                                      GenreFilterState.excluded;
+                                } else {
+                                  genreFilters.remove(genre);
+                                }
                               });
                               setState(() {}); // Update main UI
                             },
@@ -186,7 +239,7 @@ class _SearchPageState extends State<SearchPage> {
         actions: [
           IconButton(
             icon: Icon(
-              selectedGenre != null || selectedStatus != null
+              genreFilters.isNotEmpty || selectedStatus != null
                   ? Icons.filter_list_alt
                   : Icons.filter_list,
               color: Theme.of(context).iconTheme.color,
@@ -205,8 +258,18 @@ class _SearchPageState extends State<SearchPage> {
                       c.title.toLowerCase().contains(q) ||
                       c.author.toLowerCase().contains(q);
 
-                  final matchesGenre =
-                      selectedGenre == null || c.genres.contains(selectedGenre);
+                  bool matchesGenre = true;
+                  if (genreFilters.isNotEmpty) {
+                    matchesGenre = genreFilters.entries.every((entry) {
+                      if (entry.value == GenreFilterState.included) {
+                        return c.genres.contains(entry.key);
+                      } else if (entry.value == GenreFilterState.excluded) {
+                        return !c.genres.contains(entry.key);
+                      }
+                      return true;
+                    });
+                  }
+
                   final matchesStatus =
                       selectedStatus == null || c.status == selectedStatus;
 

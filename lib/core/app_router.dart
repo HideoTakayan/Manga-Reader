@@ -48,7 +48,11 @@ final GoRouter appRouter = GoRouter(
         // Tab 3: Search
         StatefulShellBranch(
           routes: [
-            GoRoute(path: '/search', builder: (_, __) => const SearchPage()),
+            GoRoute(
+              path: '/search',
+              builder: (context, state) =>
+                  SearchPage(initialGenre: state.uri.queryParameters['genre']),
+            ),
           ],
         ),
         // Tab 4: Control (Admin)
@@ -99,7 +103,11 @@ final GoRouter appRouter = GoRouter(
     ),
 
     // Search (Standalone - Cho nút ở Home)
-    GoRoute(path: '/search-global', builder: (_, __) => const SearchPage()),
+    GoRoute(
+      path: '/search-global',
+      builder: (context, state) =>
+          SearchPage(initialGenre: state.uri.queryParameters['genre']),
+    ),
 
     // Admin Dashboard
     GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardPage()),

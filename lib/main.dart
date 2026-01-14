@@ -30,6 +30,19 @@ Future<void> main() async {
 
   // 🧩 Chạy ứng dụng
   runApp(const ProviderScope(child: ComicApp()));
+
+  // ========================================
+  // OPTIMIZATION: Preload comics in background
+  // This warms the cache for faster chapter loading
+  // ========================================
+  Future.microtask(() async {
+    try {
+      await DriveService.instance.getComics();
+      debugPrint('✅ Comics preloaded in background');
+    } catch (e) {
+      debugPrint('⚠️ Comics preload failed: $e');
+    }
+  });
 }
 
 Future<void> _initFirebase() async {

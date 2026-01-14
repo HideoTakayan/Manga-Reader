@@ -30,7 +30,7 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE history ADD COLUMN chapterTitle TEXT');
     }
     if (oldVersion < 3) {
-      // Recreate history table to include userId and update Primary Key
+      // Tái tạo bảng history để thêm cột userId và cập nhật Primary Key
       await db.execute('DROP TABLE IF EXISTS history');
       await db.execute('''
         CREATE TABLE history (

@@ -18,7 +18,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   bool _isLoading = true;
   bool _isSavingOrder = false;
   bool _hasChanges = false;
-  bool _isAscending = true; // State for sort direction
+  bool _isAscending = true; // State sắp xếp tăng/giảm dần
 
   @override
   void initState() {
@@ -38,17 +38,17 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     }
   }
 
-  // To refresh list after add/delete
+  // Làm mới danh sách sau khi thêm/xóa
   void _refresh() {
     _loadChapters();
   }
 
-  // Natural Sort Logic
+  // Logic sắp xếp tự nhiên (Natural Sort)
   void _sortChapters() {
     setState(() {
       _chapters.sort((a, b) {
-        // Helper to extract the first number (int or double) from string
-        // Matches: 9, 9.5, 9.12, etc.
+        // Hàm trích xuất số đầu tiên từ chuỗi (hỗ trợ số thập phân)
+        // Ví dụ: "Chap 9", "9.5", "9.12" -> 9, 9.5, 9.12
         double? getNumber(String s) {
           final match = RegExp(r'(\d+(\.\d+)?)').firstMatch(s);
           return match != null ? double.parse(match.group(1)!) : null;
@@ -57,11 +57,10 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         final numA = getNumber(a.title);
         final numB = getNumber(b.title);
 
-        // If both have numbers, compare numbers
+        // Nếu cả hai đều có số thì so sánh theo số
         if (numA != null && numB != null) {
           if (numA == numB) {
-            // If numbers are equal (unlikely with double, but possible),
-            // fallback to string compare to ensure stability
+            // Nếu số bằng nhau thì so sánh chuỗi để đảm bảo ổn định
             return _isAscending
                 ? a.title.compareTo(b.title)
                 : b.title.compareTo(a.title);
@@ -69,13 +68,13 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
           return _isAscending ? numA.compareTo(numB) : numB.compareTo(numA);
         }
 
-        // Fallback to standard string compare
+        // Nếu không thì so sánh chuỗi thông thường
         return _isAscending
             ? a.title.compareTo(b.title)
             : b.title.compareTo(a.title);
       });
 
-      _isAscending = !_isAscending; // Toggle direction for next click
+      _isAscending = !_isAscending; // Đảo ngược hướng cho lần click sau
       _hasChanges = true;
     });
 
@@ -252,8 +251,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                               _refresh();
                             }
                           } catch (e) {
-                            // Handle 404 (File not found) as if it was deleted successfully
-                            // This happens if the file was already deleted from Drive outside the app
+                            // Xử lý lỗi 404 (File không tìm thấy) như thể đã xóa thành công
+                            // Trường hợp file đã bị xóa trên Drive nhưng app chưa cập nhật
                             final isNotFound =
                                 e.toString().contains('404') ||
                                 e.toString().contains('File not found');
@@ -267,18 +266,14 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                     ),
                                   ),
                                 );
-                                // Attempt to remove from local list/db if needed,
-                                // but primarily we just refresh the view or let the next load handle it.
-                                // Calling _refresh() will reload from Drive, which might still return it
-                                // if it's a cached list, but let's assume getChapters fetches fresh data
-                                // OR we manually remove it from _chapters list here.
+                                // Loại bỏ khỏi danh sách hiển thị
+                                // và không cần gọi _refresh() vì có thể Drive vẫn trả về cached list
                                 setState(() {
                                   _chapters.removeWhere(
                                     (c) => c.id == chapter.id,
                                   );
                                 });
-                                // Also try to clean up the order in Drive if possible?
-                                // But simple UI removal is improved UX for now.
+                                // Có thể cần dọn dẹp thêm order trên Drive nếu cần thiết
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(

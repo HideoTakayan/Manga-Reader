@@ -252,7 +252,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           onTap: () => context.push('/admin'),
                         ),
 
-                      const SizedBox(height: 8), // Replaced toggle with spacing
+                      const SizedBox(height: 8), // Khoảng cách giữa các mục
                       _buildTile(
                         context,
                         icon: Icons.notifications_outlined,
@@ -426,7 +426,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     Widget? trailing,
   }) {
     return Card(
-      color: Theme.of(context).cardColor, // Use Theme color
+      color: Theme.of(context).cardColor, // Sử dụng màu thẻ theo Theme
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
@@ -442,7 +442,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         title: Text(
           title,
           style: TextStyle(
-            // Use Theme text style or fallback
+            // Sử dụng kiểu chữ của Theme hoặc fallback
             color: Theme.of(context).textTheme.bodyLarge?.color,
             fontWeight: FontWeight.w600,
             fontSize: 16,

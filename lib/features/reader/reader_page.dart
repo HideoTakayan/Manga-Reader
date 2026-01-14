@@ -23,45 +23,46 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   late ScrollController _scrollController;
 
   // ========================================
-  // HOLD-TO-LOAD CHAPTER TRANSITION SYSTEM
-  // Prevents accidental chapter skipping
+  // HỆ THỐNG CHUYỂN CHƯƠNG KHI GIỮ (HOLD-TO-LOAD)
+  // Ngăn chặn việc nhảy chương vô tình khi cuộn quá đà
   // ========================================
-  
-  // Hold detection state
+
+  // Trạng thái phát hiện hành động giữ
   bool _isInNextChapterZone = false;
   bool _isInPrevChapterZone = false;
   bool _isHoldingForNextChapter = false;
   bool _isHoldingForPrevChapter = false;
-  
-  // Timer for hold duration
+
+  // Bộ đếm thời gian cho hành động giữ
   Timer? _holdTimer;
   static const Duration _holdDuration = Duration(milliseconds: 1500);
-  
-  // Progress animation
+
+  // Controller cho animation progress ring
   late AnimationController _holdProgressController;
-  
-  // Cooldown to prevent rapid chapter changes
+
+  // Thời gian chờ để tránh chuyển chương liên tục (Cooldown)
   DateTime? _lastChapterChange;
   static const Duration _chapterChangeCooldown = Duration(seconds: 2);
   bool _isChapterTransitionLocked = false;
 
-  // Transition zone thresholds
-  static const double _nextChapterThreshold = 100.0; // pixels from bottom
-  static const double _prevChapterThreshold = -60.0; // negative overscroll
+  // Ngưỡng phát hiện vùng chuyển chương (pixel)
+  static const double _nextChapterThreshold = 100.0; // Khoảng cách từ đáy
+  static const double _prevChapterThreshold =
+      -60.0; // Khoảng cách overscroll ở đỉnh
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController();
     _scrollController = ScrollController();
-    
-    // Progress animation controller
+
+    // Animation controller cho vòng tròn tiến trình
     _holdProgressController = AnimationController(
       vsync: this,
       duration: _holdDuration,
     );
 
-    // Add scroll listener for continuous scrolling
+    // Lắng nghe sự kiện cuộn để phát hiện vùng chuyển chương
     _scrollController.addListener(_onVerticalScroll);
 
     // Load data
@@ -80,20 +81,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final pixels = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
 
-    // Check if in "next chapter" zone (near bottom)
+    // Kiểm tra vùng chuyển chương tiếp theo (gần đáy)
     final isNearEnd = pixels >= maxExtent - _nextChapterThreshold;
-    
-    // Check if in "previous chapter" zone (overscroll at top)
+
+    // Kiểm tra vùng chuyển chương trước (overscroll ở đỉnh)
     final isOverscrollTop = pixels < _prevChapterThreshold;
 
-    // Handle next chapter zone
+    // Xử lý logic vùng chương tiếp theo
     if (isNearEnd && !_isInNextChapterZone) {
       _enterNextChapterZone();
     } else if (!isNearEnd && _isInNextChapterZone) {
       _exitNextChapterZone();
     }
 
-    // Handle previous chapter zone
+    // Xử lý logic vùng chương trước
     if (isOverscrollTop && !_isInPrevChapterZone) {
       _enterPrevChapterZone();
     } else if (!isOverscrollTop && _isInPrevChapterZone) {
@@ -105,12 +106,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final notifier = ref.read(readerProvider.notifier);
     if (notifier.getNextChapterId() == null) return;
     if (_isChapterTransitionLocked) return;
-    
+
     setState(() {
       _isInNextChapterZone = true;
       _isHoldingForNextChapter = true;
     });
-    
+
     // Start hold timer
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
@@ -130,12 +131,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final notifier = ref.read(readerProvider.notifier);
     if (notifier.getPrevChapterId() == null) return;
     if (_isChapterTransitionLocked) return;
-    
+
     setState(() {
       _isInPrevChapterZone = true;
       _isHoldingForPrevChapter = true;
     });
-    
+
     // Start hold timer
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
@@ -160,23 +161,24 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _triggerNextChapter() {
     if (_isChapterTransitionLocked) return;
-    
+
     // Check cooldown
     if (_lastChapterChange != null &&
-        DateTime.now().difference(_lastChapterChange!) < _chapterChangeCooldown) {
+        DateTime.now().difference(_lastChapterChange!) <
+            _chapterChangeCooldown) {
       return;
     }
-    
+
     setState(() {
       _isChapterTransitionLocked = true;
       _isHoldingForNextChapter = false;
     });
-    
+
     _lastChapterChange = DateTime.now();
-    
+
     // Haptic feedback
     HapticFeedback.mediumImpact();
-    
+
     // Load chapter
     ref.read(readerProvider.notifier).loadNextChapter().then((_) {
       if (mounted) {
@@ -185,7 +187,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           _isInNextChapterZone = false;
         });
         _cancelHoldTimer();
-        
+
         // Scroll to top of new chapter
         _scrollController.jumpTo(0);
       }
@@ -194,23 +196,24 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _triggerPrevChapter() {
     if (_isChapterTransitionLocked) return;
-    
+
     // Check cooldown
     if (_lastChapterChange != null &&
-        DateTime.now().difference(_lastChapterChange!) < _chapterChangeCooldown) {
+        DateTime.now().difference(_lastChapterChange!) <
+            _chapterChangeCooldown) {
       return;
     }
-    
+
     setState(() {
       _isChapterTransitionLocked = true;
       _isHoldingForPrevChapter = false;
     });
-    
+
     _lastChapterChange = DateTime.now();
-    
+
     // Haptic feedback
     HapticFeedback.mediumImpact();
-    
+
     // Load chapter
     ref.read(readerProvider.notifier).loadPrevChapter().then((_) {
       if (mounted) {
@@ -233,13 +236,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     super.dispose();
   }
 
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(readerProvider);
     final notifier = ref.read(readerProvider.notifier);
 
-    // Sync logic (simplified)
+    // Logic đồng bộ vị trí trang khi thay đổi state (Giản lược)
     ref.listen<ReaderState>(readerProvider, (prev, next) {
       if (prev?.currentPageIndex != next.currentPageIndex &&
           next.readingMode == ReadingMode.horizontal) {
@@ -559,28 +561,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Vertical View with continuous scrolling
+  // Giao diện dọc với tính năng cuộn liên tục (Continuous Scrolling)
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {
-    // Total items = 1 header + pages + 1 footer for chapter transition
+    // Tổng item = 1 header + danh sách trang ảnh + 1 footer
     final itemCount = state.pages.length + 2;
 
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.zero,
-      physics: const BouncingScrollPhysics(), // Enable overscroll for prev chapter
+      physics:
+          const BouncingScrollPhysics(), // Cho phép overscroll để kích hoạt chuyển chương trước
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        // First item: Chapter transition header (previous chapter)
+        // Item đầu tiên: Header chuyển chương trước
         if (index == 0) {
           return _buildChapterTransitionHeader(state, notifier);
         }
 
-        // Last item: Chapter transition footer (next chapter)
+        // Item cuối cùng: Footer chuyển chương sau
         if (index == itemCount - 1) {
           return _buildChapterTransitionFooter(state, notifier);
         }
 
-        // Normal page (adjust index for header offset)
+        // Trang ảnh bình thường (index trừ 1 do có header)
         final pageIndex = index - 1;
         return Image.memory(
           state.pages[pageIndex],
@@ -595,8 +598,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Chapter transition header widget (previous chapter)
-  Widget _buildChapterTransitionHeader(ReaderState state, ReaderNotifier notifier) {
+  // Header chuyển chương (cho chương trước)
+  Widget _buildChapterTransitionHeader(
+    ReaderState state,
+    ReaderNotifier notifier,
+  ) {
     final hasPrevChapter = notifier.getPrevChapterId() != null;
 
     return Container(
@@ -687,8 +693,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Chapter transition footer widget with hold-to-load progress
-  Widget _buildChapterTransitionFooter(ReaderState state, ReaderNotifier notifier) {
+  // Footer chuyển chương (cho chương sau) với vòng tròn giữ để tải
+  Widget _buildChapterTransitionFooter(
+    ReaderState state,
+    ReaderNotifier notifier,
+  ) {
     final hasNextChapter = notifier.getNextChapterId() != null;
 
     return Container(
@@ -715,10 +724,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           // Chapter end text
           Text(
             'Hết ${state.currentChapter?.title ?? 'chương'}',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 16),
 
@@ -803,8 +809,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 const SizedBox(height: 16),
                 // Manual button as fallback
                 OutlinedButton.icon(
-                  onPressed: _isChapterTransitionLocked 
-                      ? null 
+                  onPressed: _isChapterTransitionLocked
+                      ? null
                       : () => _triggerNextChapter(),
                   icon: const Icon(Icons.arrow_forward, size: 16),
                   label: const Text('Chương tiếp'),

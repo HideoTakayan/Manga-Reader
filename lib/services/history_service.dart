@@ -9,7 +9,8 @@ class HistoryService {
 
   HistoryService._();
 
-  // Lưu lịch sử lên Cloud
+  /// Lưu tiến độ đọc truyện (lịch sử) của người dùng hiện tại lên Cloud Firestore
+  /// Dữ liệu sẽ được lưu trong subcollection 'history' của user đó
   Future<void> saveHistory(ReadingHistory history) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -22,11 +23,12 @@ class HistoryService {
           .doc(history.comicId)
           .set({...history.toMap(), 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
-      print('Error saving cloud history: $e');
+      print('Lỗi khi lưu lịch sử lên cloud: $e');
     }
   }
 
-  // Lấy lịch sử của một truyện
+  /// Truy xuất lịch sử đọc của một bộ truyện cụ thể
+  /// Giúp người dùng tiếp tục đọc từ chương đang dang dở
   Future<ReadingHistory?> getHistoryForComic(String comicId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return null;
@@ -41,7 +43,7 @@ class HistoryService {
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        // Chuyển Timestamp thành int (milliseconds) để tương thích
+        // Chuyển đổi Timestamp của Firestore về dạng mili-giây
         if (data['updatedAt'] is Timestamp) {
           data['updatedAt'] =
               (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
@@ -49,12 +51,13 @@ class HistoryService {
         return ReadingHistory.fromMap(data);
       }
     } catch (e) {
-      print('Error fetching cloud history: $e');
+      print('Lỗi khi lấy lịch sử truyện từ cloud: $e');
     }
     return null;
   }
 
-  // Lấy tất cả lịch sử
+  /// Lấy toàn bộ danh sách lịch sử đọc của người dùng
+  /// Sắp xếp giảm dần theo thời gian cập nhật (mới đọc nhất lên đầu)
   Future<List<ReadingHistory>> getAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
@@ -76,12 +79,12 @@ class HistoryService {
         return ReadingHistory.fromMap(data);
       }).toList();
     } catch (e) {
-      print('Error fetching all cloud history: $e');
+      print('Lỗi khi tải toàn bộ lịch sử từ cloud: $e');
       return [];
     }
   }
 
-  // Xóa lịch sử
+  /// Xoá lịch sử đọc của một bộ truyện cụ thể khỏi danh sách
   Future<void> deleteHistory(String comicId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -94,11 +97,12 @@ class HistoryService {
           .doc(comicId)
           .delete();
     } catch (e) {
-      print('Error deleting cloud history: $e');
+      print('Lỗi khi xoá lịch sử truyện: $e');
     }
   }
 
-  // Xóa toàn bộ lịch sử (Batch)
+  /// Xoá sạch toàn bộ lịch sử đọc của người dùng hiện tại
+  /// Sử dụng Batch Write để thực hiện xoá hàng loạt document cùng lúc
   Future<void> clearAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
@@ -113,7 +117,7 @@ class HistoryService {
       }
       await batch.commit();
     } catch (e) {
-      print('Error clearing all cloud history: $e');
+      print('Lỗi khi xoá toàn bộ lịch sử: $e');
     }
   }
 }

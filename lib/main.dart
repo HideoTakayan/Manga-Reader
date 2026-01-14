@@ -32,8 +32,8 @@ Future<void> main() async {
   runApp(const ProviderScope(child: ComicApp()));
 
   // ========================================
-  // OPTIMIZATION: Preload comics in background
-  // This warms the cache for faster chapter loading
+  // TỐI ƯU HÓA: Tải trước danh sách truyện ngầm (Preload)
+  // Làm nóng bộ nhớ cache để vào ứng dụng mượt hơn
   // ========================================
   Future.microtask(() async {
     try {
@@ -64,11 +64,11 @@ class ComicApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Force Dark Mode always
+    // Luôn bắt buộc Dark Mode
     return MaterialApp.router(
       title: 'Comic Reader',
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.dark, // Enforce Dark Mode
+      themeMode: ThemeMode.dark, // Bắt buộc chế độ tối (Dark Mode)
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
       builder: EasyLoading.init(

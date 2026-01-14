@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pdfx/pdfx.dart';
 import '../../services/follow_service.dart';
 import '../../services/history_service.dart';
+import '../../services/interaction_service.dart';
 
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
@@ -108,17 +109,17 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     try {
       // ========================================
-      // OPTIMIZATION: Parallel API Calls
-      // Previously: 6 sequential calls (~5s)
-      // Now: Parallel where possible (~2s)
+      // TỐI ƯU HÓA: Gọi API song song (Parallel API Calls)
+      // Trước đây: 6 gọi tuần tự (~5s)
+      // Hiện tại: Chạy song song các tác vụ độc lập (~2s)
       // ========================================
 
-      // Phase 1: Start download immediately while getting metadata
-      // These two are independent and can run in parallel
+      // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
+      // Hai tác vụ này độc lập nên có thể chạy song song
       final downloadFuture = DriveService.instance.downloadFile(chapterId);
       final metaFuture = DriveService.instance.getFile(chapterId);
 
-      // Wait for metadata first (needed for comicId)
+      // Chờ metadata trước (cần để lấy comicId)
       final fileMeta = await metaFuture;
       if (fileMeta == null ||
           fileMeta['parents'] == null ||
@@ -132,19 +133,19 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       final comicId = (fileMeta['parents'] as List).first as String;
 
-      // Phase 2: Now that we have comicId, fetch chapters and comics in parallel
-      // while download continues in background
+      // Giai đoạn 2: Sau khi có comicId, tải danh sách chapter và thông tin truyện song song
+      // trong khi việc tải file vẫn đang chạy ngầm
       final chaptersFuture = DriveService.instance.getChapters(comicId);
       final comicsFuture = DriveService.instance.getComics();
-      
-      // Check follow status in parallel (non-blocking)
+
+      // Kiểm tra trạng thái theo dõi song song (không chặn)
       Future<bool> followFuture = Future.value(false);
       if (FirebaseAuth.instance.currentUser != null) {
         final followService = FollowService();
         followFuture = followService.isFollowing(comicId).first;
       }
 
-      // Wait for all parallel operations
+      // Chờ tất cả các tác vụ song song hoàn tất
       final results = await Future.wait([
         chaptersFuture,
         comicsFuture,
@@ -162,7 +163,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         (c) => c.id == chapterId,
       );
 
-      // Validate download
+      // Kiểm tra file tải về
       if (fileBytes == null) {
         state = state.copyWith(
           isLoading: false,
@@ -171,7 +172,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Phase 3: Extract images (CPU-bound, can't parallelize with API calls)
+      // Giai đoạn 3: Giải nén ảnh (Tác vụ nặng CPU, không thể chạy song song với API calls)
       final fileType = currentChapter?.fileType ?? 'zip';
       List<Uint8List> images = [];
 
@@ -189,7 +190,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Find comic info
+      // Tìm thông tin comic tương ứng
       final fetchedComic = comics.firstWhereOrNull((c) => c.id == comicId);
 
       // Update state with all data
@@ -205,10 +206,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         comic: fetchedComic,
       );
 
-      // Save history (non-blocking)
+      // Lưu lịch sử đọc (chạy ngầm, không chặn UI)
       _saveProgress();
-      
-      // Prefetch adjacent chapters in background (non-blocking)
+
+      // Tăng lượt xem (chạy ngầm)
+      InteractionService.instance.incrementChapterView(comicId, chapterId);
+
+      // Tải trước các chương liền kề (Prefetch) để chuyển trang mượt mà
       _prefetchAdjacentChapters();
     } catch (e) {
       debugPrint('Error loading reader: $e');
@@ -219,27 +223,32 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// Prefetch next and previous chapters in background for faster navigation
+  /// Tải trước chương trước và sau chạy ngầm để tăng tốc độ chuyển chương
   void _prefetchAdjacentChapters() {
-    // Prefetch in background without blocking UI
+    // Chạy trong microtask để không chặn luồng chính
     Future.microtask(() async {
       final nextId = getNextChapterId();
       final prevId = getPrevChapterId();
-      
-      // Fire and forget - these will be cached by DriveService
+
+      // Tải và quên (Fire and forget) - kết quả sẽ được cache bởi DriveService
       if (nextId != null) {
-        DriveService.instance.downloadFile(nextId).then((_) {
-          debugPrint('✅ Prefetched next chapter: $nextId');
-        }).catchError((_) {});
+        DriveService.instance
+            .downloadFile(nextId)
+            .then((_) {
+              debugPrint('✅ Prefetched next chapter: $nextId');
+            })
+            .catchError((_) {});
       }
       if (prevId != null) {
-        DriveService.instance.downloadFile(prevId).then((_) {
-          debugPrint('✅ Prefetched prev chapter: $prevId');
-        }).catchError((_) {});
+        DriveService.instance
+            .downloadFile(prevId)
+            .then((_) {
+              debugPrint('✅ Prefetched prev chapter: $prevId');
+            })
+            .catchError((_) {});
       }
     });
   }
-
 
   // Trích xuất ảnh từ file ZIP/CBZ
   Future<List<Uint8List>> _extractImagesFromZip(Uint8List fileBytes) async {
@@ -354,10 +363,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         lastPageIndex: state.currentPageIndex,
         updatedAt: DateTime.now(),
       );
-      // 2. Save to Local DB (SQLite)
+      // 2. Lưu vào DB nội bộ (SQLite) để xem offline
       await DatabaseHelper.instance.saveHistory(history);
 
-      // 3. Sync to Cloud (Firestore)
+      // 3. Đồng bộ lên Cloud (Firestore)
       await HistoryService.instance.saveHistory(history);
     } catch (e) {
       debugPrint("Error saving history: $e");
@@ -386,7 +395,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return null;
   }
 
-  /// Load next chapter seamlessly without full page reload
+  /// Tải chương tiếp theo một cách mượt mà không cần load lại trang
   Future<void> loadNextChapter() async {
     // Prevent multiple calls
     if (state.isLoadingNextChapter) return;
@@ -439,6 +448,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // Save progress for new chapter
       _saveProgress();
+
+      // Increment View Count
+      if (state.comicId != null && nextChapter != null) {
+        InteractionService.instance.incrementChapterView(
+          state.comicId!,
+          nextChapter.id,
+        );
+      }
     } catch (e) {
       debugPrint('Error loading next chapter: $e');
       state = state.copyWith(isLoadingNextChapter: false);
@@ -450,7 +467,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(hasReachedEnd: false);
   }
 
-  /// Load previous chapter seamlessly without full page reload
+  /// Tải chương trước đó một cách mượt mà không cần load lại trang
   Future<void> loadPrevChapter() async {
     // Prevent multiple calls
     if (state.isLoadingPrevChapter) return;
@@ -503,6 +520,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // Save progress for new chapter
       _saveProgress();
+
+      // Increment View Count
+      if (state.comicId != null && prevChapter != null) {
+        InteractionService.instance.incrementChapterView(
+          state.comicId!,
+          prevChapter.id,
+        );
+      }
     } catch (e) {
       debugPrint('Error loading previous chapter: $e');
       state = state.copyWith(isLoadingPrevChapter: false);

@@ -23,13 +23,13 @@ import '../data/models_cloud.dart';
 final GoRouter appRouter = GoRouter(
   initialLocation: '/auth-check',
   routes: [
-    // Kiểm tra đăng nhập
+    // Màn hình kiểm tra trạng thái đăng nhập
     GoRoute(path: '/auth-check', builder: (_, __) => const _AuthCheckPage()),
 
     // Trang đăng nhập
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
-    // Shell Route cho các trang chính có BottomNavBar
+    // Shell Route cho giao diện chính có thanh điều hướng dưới cùng (BottomNavigationBar)
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return MainScaffold(navigationShell: navigationShell);
@@ -88,21 +88,21 @@ final GoRouter appRouter = GoRouter(
       ],
     ),
 
-    // Chi tiết truyện (Ẩn BottomBar -> nằm ngoài Shell)
+    // Chi tiết truyện (Không hiện BottomBar -> Nằm ngoài Shell Route)
     GoRoute(
       path: '/detail/:id',
       builder: (context, state) =>
           ComicDetailPage(comicId: state.pathParameters['id']!),
     ),
 
-    // Đọc truyện (Ẩn BottomBar)
+    // Đọc truyện (Không hiện BottomBar)
     GoRoute(
       path: '/reader/:chapterId',
       builder: (context, state) =>
           ReaderPage(chapterId: state.pathParameters['chapterId']!),
     ),
 
-    // Search (Standalone - Cho nút ở Home)
+    // Tìm kiếm (Trang riêng biệt - Dùng cho nút Tìm kiếm ở Home)
     GoRoute(
       path: '/search-global',
       builder: (context, state) =>

@@ -37,7 +37,7 @@ class _HomeContentState extends State<_HomeContent> {
 
   Future<void> _refresh() async {
     setState(() {
-      _comicsFuture = DriveService.instance.getComics();
+      _comicsFuture = DriveService.instance.getComics(forceRefresh: true);
     });
     await _comicsFuture;
   }
@@ -54,7 +54,8 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   List<Comic> _getNewUpdates(List<Comic> all) {
-    // Đã được sắp xếp theo updatedAt giảm dần từ DriveService
+    // Sắp xếp mặc định theo thời gian cập nhật giảm dần (được xử lý ở DriveService)
+    // Lấy 10 truyện mới nhất
     return all.take(10).toList();
   }
 
@@ -127,7 +128,7 @@ class _HomeContentState extends State<_HomeContent> {
               return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
-                  // Thanh tiêu đề
+                  // Thanh công cụ phía trên (AppBar), ẩn đi khi cuộn xuống
                   SliverAppBar(
                     floating: true,
                     backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -168,7 +169,7 @@ class _HomeContentState extends State<_HomeContent> {
                     ],
                   ),
 
-                  // Banner nổi bật (Random 10)
+                  // Banner tự động trượt (Hiển thị các truyện nổi bật)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -176,7 +177,7 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
 
-                  // 🔥 Truyện hot (Random 10)
+                  // 🔥 Mục Truyện Hot Hôm Nay
                   _SectionTitle(
                     label: '🔥 Truyện Hot Hôm Nay',
                     onViewAll: () {},

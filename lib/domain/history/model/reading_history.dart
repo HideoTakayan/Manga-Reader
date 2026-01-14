@@ -1,4 +1,4 @@
-import '../comic/model/models.dart';
+import '../../comic/model/models.dart';
 
 /// Reading history domain model
 /// Represents a user's reading progress for a comic

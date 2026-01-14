@@ -14,7 +14,7 @@ class AdminUploadPage extends StatefulWidget {
 }
 
 class _AdminUploadPageState extends State<AdminUploadPage> {
-  // To refresh list
+  // Làm mới danh sách
   void _refresh() => setState(() {});
 
   @override
@@ -137,7 +137,7 @@ class _AddComicDialogState extends State<_AddComicDialog> {
   final _titleController = TextEditingController();
   final _authorController = TextEditingController();
   final _descController = TextEditingController();
-  final _genresController = TextEditingController(); // Added
+  final _genresController = TextEditingController(); // Đã thêm
   File? _coverFile;
   bool _isUploading = false;
 

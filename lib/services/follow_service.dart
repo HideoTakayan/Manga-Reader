@@ -35,6 +35,11 @@ class FollowService {
       'coverUrl': coverUrl,
       'followedAt': FieldValue.serverTimestamp(),
     });
+
+    // Tăng lượt yêu thích toàn cục
+    await _db.collection('comics').doc(comicId).set({
+      'likeCount': FieldValue.increment(1),
+    }, SetOptions(merge: true));
   }
 
   Future<void> unfollowComic(String comicId) async {
@@ -46,6 +51,11 @@ class FollowService {
         .collection('following')
         .doc(comicId);
     await ref.delete();
+
+    // Giảm lượt yêu thích toàn cục
+    await _db.collection('comics').doc(comicId).set({
+      'likeCount': FieldValue.increment(-1),
+    }, SetOptions(merge: true));
   }
 
   Future<void> toggleFollow(
@@ -65,6 +75,10 @@ class FollowService {
 
     if (doc.exists) {
       await ref.delete();
+      // Giảm lượt yêu thích toàn cục
+      await _db.collection('comics').doc(comicId).set({
+        'likeCount': FieldValue.increment(-1),
+      }, SetOptions(merge: true));
     } else {
       if (title == null || coverUrl == null) {
         throw Exception('Missing info for follow');
@@ -75,6 +89,10 @@ class FollowService {
         'coverUrl': coverUrl,
         'followedAt': FieldValue.serverTimestamp(),
       });
+      // Tăng lượt yêu thích toàn cục
+      await _db.collection('comics').doc(comicId).set({
+        'likeCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
     }
   }
 }

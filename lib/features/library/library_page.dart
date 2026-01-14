@@ -31,11 +31,8 @@ class LibraryPage extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
-            FollowingPage(), // Ta tái sử dụng widget FollowingPage cũ (nhưng cần bỏ Scaffold bên trong nó đi nếu muốn mượt)
-            // Tuy nhiên để nhanh, ta cứ để lồng Scaffold cũng được, hoặc sửa FollowingPage.
-            // Tốt nhất là sửa FollowingPage để bỏ Scaffold nếu nó được dùng trong TabBarView.
-            // Nhưng ở đây mình sẽ wrap HistoryPage.
-            HistoryPage(),
+            FollowingPage(), // Trang danh sách truyện đang theo dõi
+            HistoryPage(), // Trang lịch sử đọc
           ],
         ),
       ),

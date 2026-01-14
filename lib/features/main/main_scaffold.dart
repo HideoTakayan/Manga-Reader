@@ -12,12 +12,12 @@ class MainScaffold extends StatelessWidget {
     final isAdmin =
         FirebaseAuth.instance.currentUser?.email == 'admin@gmail.com';
 
-    // Map branch index to visual tab index
+    // Ánh xạ index của nhánh điều hướng (branch index) sang index hiển thị trên TabBar
     int selectedIndex = navigationShell.currentIndex;
     if (!isAdmin && selectedIndex == 4) {
-      selectedIndex = 3; // Settings is at index 3 for non-admins
+      selectedIndex = 3; // Nếu không phải admin, Settings nằm ở vị trí số 3
     } else if (!isAdmin && selectedIndex == 3) {
-      // Should not happen if logic is correct, but safe fallback
+      // Trường hợp dự phòng nếu logic sai (không nên xảy ra)
       selectedIndex = 0;
     }
 
@@ -43,9 +43,9 @@ class MainScaffold extends StatelessWidget {
           selectedIndex: selectedIndex,
           onDestinationSelected: (index) {
             int branchIndex = index;
-            // Map visual tab index to branch index
+            // Ánh xạ lại từ index hiển thị sang index của nhánh điều hướng
             if (!isAdmin && index >= 3) {
-              branchIndex = index + 1; // Skip 'Control' branch (index 3)
+              branchIndex = index + 1; // Bỏ qua nhánh 'Control' (index 3)
             }
 
             navigationShell.goBranch(

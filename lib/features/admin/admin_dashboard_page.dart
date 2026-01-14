@@ -256,7 +256,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   }
                 }
               } else {
-                // Confirm logout logic...
+                // Logic đăng xuất sẽ được xử lý tại đây
                 await DriveService.instance.signOut();
               }
             },
@@ -381,7 +381,7 @@ class _AdminComicCard extends StatelessWidget {
                 iconSize: 18,
                 icon: const Icon(Icons.edit, color: Colors.white),
                 onPressed: () {
-                  // Show options: Chapter Manager / Edit Info
+                  // Hiển thị tùy chọn: Quản lý chương / Sửa thông tin
                   showModalBottomSheet(
                     context: context,
                     backgroundColor: Theme.of(context).cardColor,
@@ -458,8 +458,8 @@ class _AdminComicCard extends StatelessWidget {
                                     onPressed: () async {
                                       Navigator.pop(
                                         dialogContext,
-                                      ); // Close dialog
-                                      // Show loading
+                                      ); // Đóng hộp thoại
+                                      // Hiển thị loading
                                       showDialog(
                                         context: context,
                                         barrierDismissible: false,
@@ -474,8 +474,8 @@ class _AdminComicCard extends StatelessWidget {
                                         if (context.mounted) {
                                           Navigator.pop(
                                             context,
-                                          ); // Close loading
-                                          onRefresh(); // Refresh parent
+                                          ); // Đóng loading
+                                          onRefresh(); // Làm mới danh sách
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(

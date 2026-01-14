@@ -27,15 +27,20 @@ class _HistoryPageState extends State<HistoryPage> {
     _initData();
   }
 
-  Future<void> _initData() async {
+  Future<void> _initData({bool forceRefresh = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    // Chỉ hiển thị loading full màn hình khi load lần đầu (chưa có dữ liệu)
+    if (!forceRefresh && _historyList.isEmpty) {
+      setState(() => _isLoading = true);
+    }
 
     try {
-      // 1. Fetch Comics ( Metadata)
-      final comics = await DriveService.instance.getComics();
+      // 1. Tải danh sách truyện từ Drive (Metadata)
+      final comics = await DriveService.instance.getComics(
+        forceRefresh: forceRefresh,
+      );
 
-      // 2. Fetch History
+      // 2. Tải lịch sử đọc và gộp dữ liệu
       final hList = await _fetchAndMergeHistory();
 
       if (mounted) {
@@ -56,17 +61,19 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<List<ReadingHistory>> _fetchAndMergeHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    // 1. Local
+    // 1. Lấy lịch sử từ Local DB
     final localId = userId ?? 'guest';
     final localHistory = await DatabaseHelper.instance.getHistory(localId);
 
-    // 2. Cloud (if logged in)
+    // 2. Lấy lịch sử từ Cloud (nếu đã đăng nhập)
     List<ReadingHistory> cloudHistory = [];
     if (userId != null) {
       cloudHistory = await HistoryService.instance.getAllHistory();
     }
 
-    // 3. Merge Strategies
+    // 3. Chiến lược gộp lịch sử (Merge Strategy):
+    // - Ưu tiên bản ghi có 'updatedAt' mới nhất
+    // - Gộp dựa trên comicId
     final historyMap = <String, ReadingHistory>{};
     for (var h in localHistory) {
       historyMap[h.comicId] = h;
@@ -84,7 +91,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final merged = historyMap.values.toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-    // Sync back to local if logged in
+    // Đồng bộ ngược lại Local DB nếu đã đăng nhập để có dữ liệu offline mới nhất
     if (userId != null && merged.isNotEmpty) {
       for (var h in merged) {
         await DatabaseHelper.instance.saveHistory(h);
@@ -95,24 +102,24 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _handleDeepClear() async {
-    // Show Loading
+    // Hiển thị trạng thái đang xử lý
     if (mounted) setState(() => _isLoading = true);
 
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
     try {
-      // 1. Local Clear
+      // 1. Xoá lịch sử Local
       await DatabaseHelper.instance.clearHistory('guest');
       if (userId != null) {
         await DatabaseHelper.instance.clearHistory(userId);
       }
 
-      // 2. Cloud Clear
+      // 2. Xoá lịch sử Cloud trên Firestore
       if (userId != null) {
         await HistoryService.instance.clearAllHistory();
       }
 
-      // 3. Update UI
+      // 3. Cập nhật UI
       if (mounted) {
         setState(() {
           _historyList = [];
@@ -221,87 +228,91 @@ class _HistoryPageState extends State<HistoryPage> {
           ),
         ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        itemCount: _historyList.length,
-        itemBuilder: (context, index) {
-          final item = _historyList[index];
+      body: RefreshIndicator(
+        onRefresh: () => _initData(forceRefresh: true),
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: _historyList.length,
+          itemBuilder: (context, index) {
+            final item = _historyList[index];
 
-          final comic = _comics.firstWhere(
-            (c) => c.id == item.comicId,
-            orElse: () => CloudComic(
-              id: item.comicId,
-              title: 'Truyện không tồn tại',
-              author: 'Unknown',
-              description: '',
-              coverFileId: '',
-              genres: [],
-              status: '',
-              viewCount: 0,
-              likeCount: 0,
-              updatedAt: DateTime.now(),
-            ),
-          );
-
-          if (comic.coverFileId.isEmpty) return const SizedBox.shrink();
-
-          final date =
-              "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
-
-          return Card(
-            color: Theme.of(context).cardColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
+            final comic = _comics.firstWhere(
+              (c) => c.id == item.comicId,
+              orElse: () => CloudComic(
+                id: item.comicId,
+                title: 'Truyện không tồn tại',
+                author: 'Unknown',
+                description: '',
+                coverFileId: '',
+                genres: [],
+                status: '',
+                viewCount: 0,
+                likeCount: 0,
+                updatedAt: DateTime.now(),
               ),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: DriveImage(
-                  fileId: comic.coverFileId,
-                  width: 60,
-                  height: 80,
-                  fit: BoxFit.cover,
+            );
+
+            if (comic.coverFileId.isEmpty) return const SizedBox.shrink();
+
+            final date =
+                "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
+
+            return Card(
+              color: Theme.of(context).cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-              ),
-              title: Text(
-                comic.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 4),
-                  Text(
-                    '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
-                    style: const TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: DriveImage(
+                    fileId: comic.coverFileId,
+                    width: 60,
+                    height: 80,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                title: Text(
+                  comic.title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    Text(
+                      '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    date,
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      date,
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
+                onTap: () async {
+                  await context.push('/reader/${item.chapterId}');
+                  _initData();
+                },
               ),
-              onTap: () async {
-                await context.push('/reader/${item.chapterId}');
-                _initData();
-              },
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

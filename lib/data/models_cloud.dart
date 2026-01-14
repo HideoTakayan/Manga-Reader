@@ -1,15 +1,15 @@
 class CloudComic {
-  final String id; // Folder ID
+  final String id; // ID thư mục
   final String title;
   final String author;
   final String description;
-  final String coverFileId; // ID file ảnh bìa trên Drive
+  final String coverFileId; // ID file ảnh bìa trên Google Drive
   final DateTime updatedAt;
   final List<String> genres;
   final String status;
   final int viewCount;
   final int likeCount;
-  final List<String> chapterOrder; // List of Chapter/File IDs in order
+  final List<String> chapterOrder; // Danh sách ID chương/file theo thứ tự
 
   CloudComic({
     required this.id,
@@ -59,12 +59,13 @@ class CloudComic {
 }
 
 class CloudChapter {
-  final String id; // File ID
+  final String id; // ID file
   final String title;
   final String fileId;
-  final String fileType; // 'zip', 'cbz', 'epub'
+  final String fileType; // Loại file: 'zip', 'cbz', 'epub'
   final int sizeBytes;
   final DateTime uploadedAt;
+  final int viewCount;
 
   CloudChapter({
     required this.id,
@@ -73,6 +74,7 @@ class CloudChapter {
     required this.fileType,
     this.sizeBytes = 0,
     required this.uploadedAt,
+    this.viewCount = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -83,6 +85,7 @@ class CloudChapter {
       'fileType': fileType,
       'sizeBytes': sizeBytes,
       'uploadedAt': uploadedAt.toIso8601String(),
+      'viewCount': viewCount,
     };
   }
 
@@ -94,6 +97,7 @@ class CloudChapter {
       fileType: map['fileType'] ?? 'zip',
       sizeBytes: map['sizeBytes'] ?? 0,
       uploadedAt: DateTime.tryParse(map['uploadedAt'] ?? '') ?? DateTime.now(),
+      viewCount: map['viewCount'] ?? 0,
     );
   }
 }

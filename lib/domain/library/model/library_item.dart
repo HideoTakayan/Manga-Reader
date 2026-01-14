@@ -1,4 +1,4 @@
-import '../comic/model/models.dart';
+import '../../comic/model/models.dart';
 
 /// Library item model representing a followed/saved comic
 class LibraryItem {

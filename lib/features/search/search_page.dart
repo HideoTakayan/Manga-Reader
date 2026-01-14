@@ -19,10 +19,10 @@ class _SearchPageState extends State<SearchPage> {
   List<CloudComic> allComics = [];
   bool isLoading = true;
 
-  // Filters
+  // Filters (Bộ lọc)
   Map<String, GenreFilterState> genreFilters = {};
   String? selectedStatus;
-  List<String> allGenres = []; // Dynamic list
+  List<String> allGenres = []; // Danh sách thể loại động (lấy từ dữ liệu)
   final List<String> allStatuses = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
 
   @override
@@ -34,13 +34,15 @@ class _SearchPageState extends State<SearchPage> {
     _loadComics();
   }
 
-  Future<void> _loadComics() async {
-    final comics = await DriveService.instance.getComics();
+  Future<void> _loadComics({bool forceRefresh = false}) async {
+    final comics = await DriveService.instance.getComics(
+      forceRefresh: forceRefresh,
+    );
     if (mounted) {
       setState(() {
         allComics = comics;
 
-        // Extract unique genres
+        // Trích xuất danh sách thể loại duy nhất từ tất cả truyện
         final genres = <String>{};
         for (var c in comics) {
           genres.addAll(c.genres);
@@ -127,7 +129,7 @@ class _SearchPageState extends State<SearchPage> {
                             );
                           } else {
                             backgroundColor = Theme.of(context).cardColor;
-                            // Use a slight border/color for unselected to make it visible
+                            // Thêm viền nhẹ cho trạng thái chưa chọn để dễ nhìn hơn
                           }
 
                           return ActionChip(
@@ -151,11 +153,11 @@ class _SearchPageState extends State<SearchPage> {
                                 } else if (state == GenreFilterState.included) {
                                   genreFilters[genre] =
                                       GenreFilterState.excluded;
-                                } else {
-                                  genreFilters.remove(genre);
-                                }
+                                } else {}
                               });
-                              setState(() {}); // Update main UI
+                              setState(
+                                () {},
+                              ); // Cập nhật danh sách truyện bên dưới
                             },
                           );
                         }).toList(),
@@ -186,7 +188,9 @@ class _SearchPageState extends State<SearchPage> {
                               setStateModal(() {
                                 selectedStatus = selected ? status : null;
                               });
-                              setState(() {}); // Update main UI
+                              setState(
+                                () {},
+                              ); // Cập nhật danh sách truyện bên dưới
                             },
                           );
                         }).toList(),
@@ -277,59 +281,71 @@ class _SearchPageState extends State<SearchPage> {
                 }).toList();
 
                 if (comics.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Không tìm thấy truyện nào',
-                      style: TextStyle(color: Colors.white70),
+                  return RefreshIndicator(
+                    onRefresh: () => _loadComics(forceRefresh: true),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 200),
+                        Center(
+                          child: Text(
+                            'Không tìm thấy truyện nào',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 }
 
-                return ListView.builder(
-                  itemCount: comics.length,
-                  itemBuilder: (context, i) {
-                    final comic = comics[i];
-                    return ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: DriveImage(
-                          fileId: comic.coverFileId,
-                          width: 50,
-                          height: 70,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      title: Text(
-                        comic.title,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            comic.author,
-                            style: Theme.of(context).textTheme.bodySmall,
+                return RefreshIndicator(
+                  onRefresh: () => _loadComics(forceRefresh: true),
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: comics.length,
+                    itemBuilder: (context, i) {
+                      final comic = comics[i];
+                      return ListTile(
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: DriveImage(
+                            fileId: comic.coverFileId,
+                            width: 50,
+                            height: 70,
+                            fit: BoxFit.cover,
                           ),
-                          if (comic.genres.isNotEmpty)
+                        ),
+                        title: Text(
+                          comic.title,
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Text(
-                              comic.genres.take(3).join(', '),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    fontSize: 12,
-                                    color: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.color
-                                        ?.withOpacity(0.7),
-                                  ),
+                              comic.author,
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
-                        ],
-                      ),
-                      onTap: () => context.push('/detail/${comic.id}'),
-                    );
-                  },
+                            if (comic.genres.isNotEmpty)
+                              Text(
+                                comic.genres.take(3).join(', '),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      fontSize: 12,
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.color
+                                          ?.withOpacity(0.7),
+                                    ),
+                              ),
+                          ],
+                        ),
+                        onTap: () => context.push('/detail/${comic.id}'),
+                      );
+                    },
+                  ),
                 );
               },
             ),

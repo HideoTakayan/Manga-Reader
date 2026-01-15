@@ -14,6 +14,7 @@ import '../features/detail/comic_detail_page.dart';
 import '../features/reader/reader_page.dart';
 import '../features/search/search_page.dart';
 import '../features/main/main_scaffold.dart';
+import '../features/notification/notification_list_page.dart';
 
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/admin_upload_page.dart';
@@ -107,6 +108,12 @@ final GoRouter appRouter = GoRouter(
       path: '/search-global',
       builder: (context, state) =>
           SearchPage(initialGenre: state.uri.queryParameters['genre']),
+    ),
+
+    // Thông báo
+    GoRoute(
+      path: '/notifications',
+      builder: (context, state) => const NotificationListPage(),
     ),
 
     // Admin Dashboard

@@ -8,6 +8,7 @@ import 'package:photo_view/photo_view_gallery.dart';
 import '../../data/models_cloud.dart';
 import '../../features/shared/drive_image.dart';
 import 'reader_provider.dart';
+import '../../services/notification_service.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
   final String chapterId;
@@ -222,6 +223,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           _isInPrevChapterZone = false;
         });
         _cancelHoldTimer();
+
+        // Tối ưu: Khi về chương trước, nhảy xuống cuối trang để đọc ngược lên mượt hơn
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(
+              _scrollController.position.maxScrollExtent - 200,
+            );
+          }
+        });
       }
     });
   }
@@ -520,6 +530,33 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               }
                             },
                           ),
+                          // Notification Count
+                          StreamBuilder<int>(
+                            stream: NotificationService.instance
+                                .streamComicNotificationCount(
+                                  state.comic?.id ?? '',
+                                ),
+                            builder: (context, snapshot) {
+                              final count = snapshot.data ?? 0;
+                              return Row(
+                                children: [
+                                  const Icon(
+                                    Icons.notifications_none,
+                                    size: 16,
+                                    color: Colors.white70,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    _formatCount(count),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                           IconButton(
                             icon: const Icon(
                               Icons.arrow_forward_ios,
@@ -598,7 +635,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Header chuyển chương (cho chương trước)
+  // Header chuyển chương (cho chương trước) với vòng tròn giữ để tải
   Widget _buildChapterTransitionHeader(
     ReaderState state,
     ReaderNotifier notifier,
@@ -606,13 +643,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final hasPrevChapter = notifier.getPrevChapterId() != null;
 
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 40),
 
-          // Loading or previous chapter indicator
+          // Loading, holding, or previous chapter indicator
           if (state.isLoadingPrevChapter)
             const Column(
               children: [
@@ -621,6 +658,60 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 Text(
                   'Đang tải chương trước...',
                   style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            )
+          else if (_isHoldingForPrevChapter && hasPrevChapter)
+            // Hiển thị vòng tròn tiến trình khi đang giữ
+            Column(
+              children: [
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 60,
+                  height: 60,
+                  child: AnimatedBuilder(
+                    animation: _holdProgressController,
+                    builder: (context, child) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Vòng tròn nền
+                          CircularProgressIndicator(
+                            value: 1.0,
+                            strokeWidth: 4,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white.withOpacity(0.1),
+                            ),
+                          ),
+                          // Vòng tròn tiến trình
+                          CircularProgressIndicator(
+                            value: _holdProgressController.value,
+                            strokeWidth: 4,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Colors.blueAccent,
+                            ),
+                          ),
+                          // Icon mũi tên lên
+                          Icon(
+                            Icons.arrow_upward,
+                            color: Colors.blueAccent.withOpacity(
+                              0.5 + (_holdProgressController.value * 0.5),
+                            ),
+                            size: 24,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Giữ để đọc chương trước...',
+                  style: TextStyle(
+                    color: Colors.blueAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             )
@@ -634,11 +725,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Kéo xuống để đọc chương trước',
+                  'Cuộn thêm để đọc chương trước',
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
-                // Manual button as fallback
+                // Nút thủ công
                 OutlinedButton.icon(
                   onPressed: () => notifier.loadPrevChapter(),
                   icon: const Icon(Icons.arrow_back, size: 16),
@@ -660,7 +751,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Bắt đầu ${state.currentChapter?.title ?? 'chương'}',
+                  'Đây là chương đầu tiên',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
@@ -672,7 +763,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
           const SizedBox(height: 20),
 
-          // Divider
+          // Divider mờ dần
           Container(
             height: 2,
             width: 100,
@@ -680,13 +771,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               gradient: LinearGradient(
                 colors: [
                   Colors.transparent,
-                  Colors.white.withOpacity(0.3),
+                  Colors.white.withOpacity(0.2),
                   Colors.transparent,
                 ],
               ),
             ),
           ),
-
           const SizedBox(height: 20),
         ],
       ),
@@ -1044,6 +1134,33 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             await notifier.toggleFollow();
                           },
                         ),
+                        // Notification Count
+                        StreamBuilder<int>(
+                          stream: NotificationService.instance
+                              .streamComicNotificationCount(
+                                state.comic?.id ?? '',
+                              ),
+                          builder: (context, snapshot) {
+                            final count = snapshot.data ?? 0;
+                            return Row(
+                              children: [
+                                const Icon(
+                                  Icons.notifications_none,
+                                  size: 16,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  _formatCount(count),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                         // Resize Icon
                         IconButton(
                           icon: const Icon(
@@ -1122,4 +1239,10 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
       },
     );
   }
+}
+
+String _formatCount(int count) {
+  if (count < 1000) return count.toString();
+  if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}k';
+  return '${(count / 1000000).toStringAsFixed(1)}m';
 }

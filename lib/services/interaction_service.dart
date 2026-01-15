@@ -97,4 +97,20 @@ class InteractionService {
       };
     });
   }
+
+  /// Luồng sự kiện theo dõi thời gian thực lượt xem của TẤT CẢ các chương trong một truyện
+  Stream<Map<String, int>> streamChapterViews(String comicId) {
+    return _db
+        .collection('comics')
+        .doc(comicId)
+        .collection('chapters')
+        .snapshots()
+        .map((snapshot) {
+          final map = <String, int>{};
+          for (var doc in snapshot.docs) {
+            map[doc.id] = (doc.data()['viewCount'] as num?)?.toInt() ?? 0;
+          }
+          return map;
+        });
+  }
 }

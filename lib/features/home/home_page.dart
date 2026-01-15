@@ -6,6 +6,7 @@ import '../../data/drive_service.dart';
 import '../../data/models.dart';
 import '../../data/models_cloud.dart';
 import '../shared/drive_image.dart';
+import '../../services/notification_service.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -159,6 +160,43 @@ class _HomeContentState extends State<_HomeContent> {
                       ],
                     ),
                     actions: [
+                      // Nút Chuông Thông Báo
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: NotificationService.instance
+                            .streamUserNotifications(),
+                        builder: (context, snapshot) {
+                          final notifications = snapshot.data ?? [];
+                          final hasUnread = notifications.any(
+                            (n) => n['isRead'] != true,
+                          );
+
+                          return Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  Icons.notifications_none,
+                                  color: Theme.of(context).iconTheme.color,
+                                ),
+                                onPressed: () => context.push('/notifications'),
+                              ),
+                              if (hasUnread)
+                                Positioned(
+                                  right: 12,
+                                  top: 12,
+                                  child: Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.redAccent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
                       IconButton(
                         icon: Icon(
                           Icons.search,

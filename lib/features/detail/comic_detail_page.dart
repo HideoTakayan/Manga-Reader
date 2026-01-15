@@ -9,6 +9,7 @@ import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/history_service.dart';
 import '../../services/interaction_service.dart';
+import '../../services/notification_service.dart';
 
 class ComicDetailPage extends StatefulWidget {
   final String comicId;
@@ -19,11 +20,11 @@ class ComicDetailPage extends StatefulWidget {
 }
 
 class _ComicDetailPageState extends State<ComicDetailPage> {
-  bool showAll = false;
   ReadingHistory? _history;
   CloudComic? _comic;
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
+  bool _isDescriptionExpanded = false;
 
   // Dữ liệu giả cho phần bình luận (chức năng comment chưa hoàn thiện)
   List<String> comments = [];
@@ -135,7 +136,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     }
 
     final chapters = _chapters;
-    final displayChapters = showAll ? chapters : chapters.take(5).toList();
+    final displayChapters = chapters; // Hiện tất cả các chương
     final followService = FollowService();
     final theme = Theme.of(context);
 
@@ -308,11 +309,39 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            '$likeCount',
+                                            _formatCount(likeCount),
                                             style: const TextStyle(
                                               color: Colors.white70,
                                               fontSize: 12,
                                             ),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          // Notification Subscriptions Count
+                                          StreamBuilder<int>(
+                                            stream: NotificationService.instance
+                                                .streamComicNotificationCount(
+                                                  widget.comicId,
+                                                ),
+                                            builder: (context, snapshot) {
+                                              final count = snapshot.data ?? 0;
+                                              return Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.notifications_none,
+                                                    size: 16,
+                                                    color: Colors.white70,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    _formatCount(count),
+                                                    style: const TextStyle(
+                                                      color: Colors.white70,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            },
                                           ),
                                         ],
                                       );
@@ -387,32 +416,13 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'DS Chương',
+                          'DS Chương (${chapters.length})',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
                         ),
-                        TextButton(
-                          onPressed: () {
-                            if (chapters.isNotEmpty) {
-                              _showChapterListModal(context, chapters);
-                            }
-                          },
-                          child: Row(
-                            children: [
-                              Text(
-                                'Chương ${chapters.length}',
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              Icon(
-                                Icons.chevron_right,
-                                color: theme.textTheme.bodyMedium?.color,
-                                size: 16,
-                              ),
-                            ],
-                          ),
-                        ),
+                        // Đã xóa nút xem thêm chương ở đây vì đã hiển thị hết danh sách
                       ],
                     ),
                   ),
@@ -436,13 +446,42 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          comic.description,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            height: 1.4,
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _isDescriptionExpanded = !_isDescriptionExpanded;
+                            });
+                          },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                comic.description,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  height: 1.4,
+                                  color: Colors.white70,
+                                ),
+                                maxLines: _isDescriptionExpanded ? null : 4,
+                                overflow: _isDescriptionExpanded
+                                    ? TextOverflow.visible
+                                    : TextOverflow.ellipsis,
+                              ),
+                              if (comic.description.length > 150)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    _isDescriptionExpanded
+                                        ? 'Rút gọn'
+                                        : 'Xem thêm...',
+                                    style: TextStyle(
+                                      color: theme.primaryColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          maxLines: 5,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -458,7 +497,8 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                     return InkWell(
                       onTap: () async {
                         await context.push('/reader/${ch.id}');
-                        _fetchHistory();
+                        // Khi quay lại, làm mới toàn bộ dữ liệu để cập nhật views/history
+                        _fetchData();
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -491,20 +531,32 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                   style: theme.textTheme.bodySmall,
                                 ),
                                 const SizedBox(height: 2),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.remove_red_eye,
-                                      size: 10,
-                                      color: theme.textTheme.bodySmall?.color,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${ch.viewCount}',
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(fontSize: 10),
-                                    ),
-                                  ],
+                                // Sử dụng StreamBuilder để cập nhật lượt xem thời gian thực cho từng chapter
+                                StreamBuilder<Map<String, int>>(
+                                  stream: InteractionService.instance
+                                      .streamChapterViews(widget.comicId),
+                                  builder: (context, snapshot) {
+                                    final viewsMap = snapshot.data ?? {};
+                                    final views =
+                                        viewsMap[ch.id] ?? ch.viewCount;
+
+                                    return Row(
+                                      children: [
+                                        Icon(
+                                          Icons.remove_red_eye,
+                                          size: 10,
+                                          color:
+                                              theme.textTheme.bodySmall?.color,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          '$views',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(fontSize: 10),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -532,75 +584,120 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
             Positioned(
               top: 40,
               right: 10,
-              child: StreamBuilder<bool>(
-                stream: followService.isFollowing(widget.comicId),
-                builder: (context, snapshot) {
-                  final isFollowed = snapshot.data ?? false;
-                  return IconButton(
-                    icon: Icon(
-                      isFollowed ? Icons.favorite : Icons.favorite_border,
-                      color: isFollowed ? Colors.red : Colors.white,
-                    ),
-                    onPressed: () async {
-                      if (isFollowed) {
-                        // Ask to unfollow
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            backgroundColor: theme.cardColor,
-                            title: Text(
-                              'Hủy Theo Dõi?',
-                              style: theme.textTheme.titleLarge,
-                            ),
-                            content: Text(
-                              'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Hủy'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text(
-                                  'Đồng ý',
-                                  style: TextStyle(color: Colors.redAccent),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (confirm == true) {
-                          await followService.unfollowComic(widget.comicId);
+              child: Row(
+                children: [
+                  // Nút Chuông Thông Báo
+                  StreamBuilder<bool>(
+                    stream: NotificationService.instance
+                        .streamSubscriptionStatus(widget.comicId),
+                    builder: (context, snapshot) {
+                      final isSubscribed = snapshot.data ?? false;
+                      return IconButton(
+                        icon: Icon(
+                          isSubscribed
+                              ? Icons.notifications_active
+                              : Icons.notifications_none,
+                          color: isSubscribed ? Colors.yellow : Colors.white,
+                        ),
+                        onPressed: () async {
+                          await NotificationService.instance.toggleSubscription(
+                            widget.comicId,
+                          );
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Đã hủy theo dõi')),
+                              SnackBar(
+                                content: Text(
+                                  isSubscribed
+                                      ? 'Đã tắt thông báo cho truyện này'
+                                      : 'Đã bật thông báo thành công!',
+                                ),
+                                backgroundColor: isSubscribed
+                                    ? Colors.red
+                                    : Colors.green,
+                                duration: const Duration(seconds: 1),
+                              ),
                             );
                           }
-                        }
-                      } else {
-                        // Follow
-                        await followService.followComic(
-                          comicId: comic.id,
-                          title: comic.title,
-                          coverUrl: DriveService.instance.getThumbnailLink(
-                            comic.coverFileId,
-                          ),
-                        );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Đã theo dõi thành công!'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      }
+                        },
+                      );
                     },
-                  );
-                },
+                  ),
+                  // Nút Theo Dõi (Tim)
+                  StreamBuilder<bool>(
+                    stream: followService.isFollowing(widget.comicId),
+                    builder: (context, snapshot) {
+                      final isFollowed = snapshot.data ?? false;
+                      return IconButton(
+                        icon: Icon(
+                          isFollowed ? Icons.favorite : Icons.favorite_border,
+                          color: isFollowed ? Colors.red : Colors.white,
+                        ),
+                        onPressed: () async {
+                          if (isFollowed) {
+                            // Ask to unfollow
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                backgroundColor: theme.cardColor,
+                                title: Text(
+                                  'Hủy Theo Dõi?',
+                                  style: theme.textTheme.titleLarge,
+                                ),
+                                content: Text(
+                                  'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Hủy'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text(
+                                      'Đồng ý',
+                                      style: TextStyle(color: Colors.redAccent),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              await followService.unfollowComic(widget.comicId);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Đã hủy theo dõi'),
+                                  ),
+                                );
+                              }
+                            }
+                          } else {
+                            // Follow
+                            await followService.followComic(
+                              comicId: comic.id,
+                              title: comic.title,
+                              coverUrl: DriveService.instance.getThumbnailLink(
+                                comic.coverFileId,
+                              ),
+                            );
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Đã theo dõi thành công!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
 
@@ -708,117 +805,17 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     );
   }
 
-  void _showChapterListModal(
-    BuildContext context,
-    List<CloudChapter> chapters,
-  ) {
-    final theme = Theme.of(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: theme.scaffoldBackgroundColor,
-      useSafeArea: true,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 1.0,
-          minChildSize: 0.5,
-          maxChildSize: 1.0,
-          expand: false,
-          builder: (context, scrollController) {
-            return Scaffold(
-              backgroundColor: Colors.transparent,
-              appBar: AppBar(
-                backgroundColor: theme.appBarTheme.backgroundColor,
-                elevation: 0,
-                leading: IconButton(
-                  icon: Icon(Icons.close, color: theme.iconTheme.color),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                title: Text(
-                  'DS Chương',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                centerTitle: true,
-                actions: [
-                  IconButton(
-                    icon: Icon(
-                      Icons.notifications_none,
-                      color: theme.iconTheme.color,
-                    ),
-                    onPressed: () {},
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.swap_vert, color: theme.iconTheme.color),
-                    onPressed: () {
-                      // TODO: Implement sort
-                    },
-                  ),
-                ],
-              ),
-              body: ListView.separated(
-                controller: scrollController,
-                itemCount: chapters.length,
-                separatorBuilder: (_, __) =>
-                    Divider(color: theme.dividerColor, height: 1),
-                itemBuilder: (context, index) {
-                  final ch = chapters[index];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    title: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            ch.title,
-                            style: theme.textTheme.bodyLarge,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.remove_red_eye,
-                              size: 12,
-                              color: Colors.grey,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${ch.viewCount}',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    subtitle: Text(
-                      _formatDate(ch.uploadedAt),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    onTap: () async {
-                      Navigator.pop(context); // Đóng modal
-                      await context.push('/reader/${ch.id}');
-                      _fetchHistory();
-                    },
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inDays > 0) return '${diff.inDays} ngày trước';
     if (diff.inHours > 0) return '${diff.inHours} giờ trước';
     return 'Mới đây';
+  }
+
+  String _formatCount(int count) {
+    if (count < 1000) return count.toString();
+    if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}k';
+    return '${(count / 1000000).toStringAsFixed(1)}m';
   }
 }

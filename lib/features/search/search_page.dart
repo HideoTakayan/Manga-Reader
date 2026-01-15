@@ -153,7 +153,9 @@ class _SearchPageState extends State<SearchPage> {
                                 } else if (state == GenreFilterState.included) {
                                   genreFilters[genre] =
                                       GenreFilterState.excluded;
-                                } else {}
+                                } else {
+                                  genreFilters.remove(genre);
+                                }
                               });
                               setState(
                                 () {},

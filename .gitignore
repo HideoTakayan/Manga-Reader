@@ -54,6 +54,7 @@ app.*.map.json
 
 # Service Account credentials (Google Drive)
 lib/config/service_account_credentials.dart
+lib/config/service_account.json
 
 # API Keys
 lib/config/drive_config.dart

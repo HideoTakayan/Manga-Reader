@@ -55,9 +55,6 @@ class HistoryService {
     }
     return null;
   }
-
-  /// Lấy toàn bộ danh sách lịch sử đọc của người dùng
-  /// Sắp xếp giảm dần theo thời gian cập nhật (mới đọc nhất lên đầu)
   Future<List<ReadingHistory>> getAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];

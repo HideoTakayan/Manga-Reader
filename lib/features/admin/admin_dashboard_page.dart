@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 import 'edit_comic_dialog.dart';
+import 'chapter_manager_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -166,7 +169,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       ElevatedButton.icon(
-                        onPressed: () => context.push('/admin/upload'),
+                        onPressed: () async {
+                          final result = await showDialog(
+                            context: context,
+                            builder: (_) => const _AddComicDialog(),
+                          );
+                          if (result == true) {
+                            _loadStats(); // Refresh stats if comic added
+                          }
+                        },
                         icon: const Icon(Icons.add),
                         label: const Text('Thêm Truyện'),
                         style: ElevatedButton.styleFrom(
@@ -369,19 +380,12 @@ class _AdminComicCard extends StatelessWidget {
               ),
             ],
           ),
-          Positioned(
-            top: 4,
-            right: 4,
+          Positioned.fill(
             child: Material(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-              child: IconButton(
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                padding: EdgeInsets.zero,
-                iconSize: 18,
-                icon: const Icon(Icons.edit, color: Colors.white),
-                onPressed: () {
-                  // Hiển thị tùy chọn: Quản lý chương / Sửa thông tin
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
                   showModalBottomSheet(
                     context: context,
                     backgroundColor: Theme.of(context).cardColor,
@@ -399,9 +403,17 @@ class _AdminComicCard extends StatelessWidget {
                           ),
                           onTap: () {
                             Navigator.pop(ctx);
-                            context.push('/admin/chapters', extra: comic);
+                            // Điều hướng đến đúng trang ChapterManagerPage chuẩn (Giao diện ảnh 2)
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ChapterManagerPage(comic: comic),
+                              ),
+                            );
                           },
                         ),
+
                         ListTile(
                           leading: Icon(
                             Icons.edit,
@@ -569,6 +581,156 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AddComicDialog extends StatefulWidget {
+  const _AddComicDialog();
+
+  @override
+  State<_AddComicDialog> createState() => _AddComicDialogState();
+}
+
+class _AddComicDialogState extends State<_AddComicDialog> {
+  final _titleController = TextEditingController();
+  final _authorController = TextEditingController();
+  final _descController = TextEditingController();
+  final _genresController = TextEditingController();
+  File? _coverFile;
+  bool _isUploading = false;
+
+  Future<void> _pickCover() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.single.path != null) {
+      if (mounted) {
+        setState(() {
+          _coverFile = File(result.files.single.path!);
+        });
+      }
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_titleController.text.isEmpty || _coverFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập tên và chọn ảnh bìa')),
+      );
+      return;
+    }
+
+    setState(() => _isUploading = true);
+    try {
+      await DriveService.instance.addComic(
+        title: _titleController.text,
+        author: _authorController.text,
+        description: _descController.text,
+        coverFile: _coverFile!,
+        genres: _genresController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList(),
+        status: 'Đang Cập Nhật',
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Theme.of(context).cardColor,
+      title: Text(
+        'Thêm Truyện Mới',
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(labelText: 'Tên truyện'),
+            ),
+            TextField(
+              controller: _authorController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(labelText: 'Tác giả'),
+            ),
+            TextField(
+              controller: _descController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(labelText: 'Mô tả'),
+            ),
+            TextField(
+              controller: _genresController,
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(
+                labelText: 'Thể loại (cách nhau bởi dấu phẩy)',
+              ),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: _isUploading ? null : _pickCover,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.image,
+                      color: _coverFile != null ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _coverFile == null
+                            ? 'Chọn Ảnh Bìa'
+                            : 'Đã chọn: ${_coverFile!.path.split('/').last}',
+                        style: TextStyle(
+                          color: _coverFile != null
+                              ? Colors.green
+                              : Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_isUploading)
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: CircularProgressIndicator(),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy'),
+        ),
+        ElevatedButton(
+          onPressed: _isUploading ? null : _submit,
+          child: const Text('Lưu'),
+        ),
+      ],
     );
   }
 }

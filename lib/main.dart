@@ -11,30 +11,18 @@ import 'core/theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🖼️ Giới hạn cache ảnh để tránh đầy RAM
   PaintingBinding.instance.imageCache
     ..maximumSize = 100
     ..maximumSizeBytes = 80 << 20; // ~80MB
-
-  // 🚀 Khởi tạo Firebase
   await _initFirebase();
 
-  // ☁️ Khôi phục phiên làm việc Google Drive (nếu có)
-  // Lưu ý: Việc này có thể mất chút thời gian nhưng quan trọng để load dữ liệu
   try {
     await DriveService.instance.restorePreviousSession();
     debugPrint('✅ Drive Session Restored');
   } catch (e) {
     debugPrint('⚠️ Drive Session Restore Failed: $e');
   }
-
-  // 🧩 Chạy ứng dụng
   runApp(const ProviderScope(child: ComicApp()));
-
-  // ========================================
-  // TỐI ƯU HÓA: Tải trước danh sách truyện ngầm (Preload)
-  // Làm nóng bộ nhớ cache để vào ứng dụng mượt hơn
-  // ========================================
   Future.microtask(() async {
     try {
       await DriveService.instance.getComics();

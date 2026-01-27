@@ -17,7 +17,6 @@ import '../features/main/main_scaffold.dart';
 import '../features/notification/notification_list_page.dart';
 
 import '../features/admin/admin_dashboard_page.dart';
-import '../features/admin/admin_upload_page.dart';
 import '../features/admin/chapter_manager_page.dart';
 import '../data/models_cloud.dart';
 
@@ -118,8 +117,6 @@ final GoRouter appRouter = GoRouter(
 
     // Admin Dashboard
     GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardPage()),
-    // Admin Upload
-    GoRoute(path: '/admin/upload', builder: (_, __) => const AdminUploadPage()),
 
     // Chapter Manager
     GoRoute(

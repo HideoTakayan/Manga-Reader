@@ -9,6 +9,7 @@ import '../features/library/library_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/settings/account/account_page.dart';
 import '../features/settings/account/edit_profile_page.dart';
+import '../features/settings/help_page.dart';
 import '../features/auth/login.dart';
 import '../features/detail/comic_detail_page.dart';
 import '../features/reader/reader_page.dart';
@@ -81,6 +82,7 @@ final GoRouter appRouter = GoRouter(
                     ),
                   ],
                 ),
+                GoRoute(path: 'help', builder: (_, __) => const HelpPage()),
               ],
             ),
           ],

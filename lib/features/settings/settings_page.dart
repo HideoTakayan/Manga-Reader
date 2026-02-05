@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../utils/auth_help.dart';
+import '../../services/auth_service.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -242,7 +242,41 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         subtitle: 'Xem và chỉnh sửa thông tin cá nhân',
                         onTap: () => context.go('/settings/account'),
                       ),
-                      if (user!.email == 'admin@gmail.com')
+
+                      // Show "Thêm mật khẩu" only for Google users without password
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(user!.uid)
+                            .get(),
+                        builder: (context, userSnapshot) {
+                          if (!userSnapshot.hasData) return const SizedBox();
+
+                          final userData =
+                              userSnapshot.data!.data()
+                                  as Map<String, dynamic>? ??
+                              {};
+                          final authProvider = userData['authProvider'] ?? '';
+                          final hasPassword = userData['hasPassword'] ?? false;
+
+                          // Only show if logged in with Google and no password yet
+                          if (authProvider == 'google' && !hasPassword) {
+                            return _buildTile(
+                              context,
+                              icon: Icons.lock_outline,
+                              color: Colors.deepOrange,
+                              title: 'Thêm mật khẩu',
+                              subtitle: 'Đăng nhập bằng email/password',
+                              onTap: () => _showAddPasswordDialog(context),
+                            );
+                          }
+
+                          return const SizedBox();
+                        },
+                      ),
+
+                      if (user!.email == 'admin@gmail.com' ||
+                          user!.email == 'anhlasinhvien2k51@gmail.com')
                         _buildTile(
                           context,
                           icon: Icons.dashboard,
@@ -258,43 +292,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         icon: Icons.notifications_outlined,
                         color: Colors.blue,
                         title: 'Thông báo',
-                        subtitle: 'Cài đặt thông báo đẩy',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tính năng đang phát triển'),
-                            ),
-                          );
-                        },
+                        subtitle: 'Xem thông báo của bạn',
+                        onTap: () => context.push('/notifications'),
                       ),
 
-                      _buildTile(
-                        context,
-                        icon: Icons.privacy_tip_outlined,
-                        color: Colors.purple,
-                        title: 'Quyền riêng tư',
-                        subtitle: 'Quản lý dữ liệu và quyền truy cập',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tính năng đang phát triển'),
-                            ),
-                          );
-                        },
-                      ),
                       _buildTile(
                         context,
                         icon: Icons.help_outline,
                         color: Colors.green,
                         title: 'Trợ giúp',
                         subtitle: 'Hỏi đáp và hỗ trợ',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tính năng đang phát triển'),
-                            ),
-                          );
-                        },
+                        onTap: () => context.push('/settings/help'),
                       ),
                       const SizedBox(height: 24),
                       SizedBox(
@@ -464,6 +472,150 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               color: Theme.of(context).iconTheme.color?.withOpacity(0.5),
             ),
         onTap: onTap,
+      ),
+    );
+  }
+
+  Future<void> _showAddPasswordDialog(BuildContext context) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    bool obscurePassword = true;
+    bool obscureConfirm = true;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Thêm mật khẩu',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Thêm mật khẩu để có thể đăng nhập bằng email/password',
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: obscurePassword,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Mật khẩu mới',
+                  labelStyle: const TextStyle(color: Colors.white70),
+                  filled: true,
+                  fillColor: const Color(0xFF1C1C1E),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white70,
+                    ),
+                    onPressed: () {
+                      setDialogState(() => obscurePassword = !obscurePassword);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmController,
+                obscureText: obscureConfirm,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Xác nhận mật khẩu',
+                  labelStyle: const TextStyle(color: Colors.white70),
+                  filled: true,
+                  fillColor: const Color(0xFF1C1C1E),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white70,
+                    ),
+                    onPressed: () {
+                      setDialogState(() => obscureConfirm = !obscureConfirm);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final password = passwordController.text.trim();
+                final confirm = confirmController.text.trim();
+
+                if (password.isEmpty || confirm.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Vui lòng nhập đầy đủ')),
+                  );
+                  return;
+                }
+
+                if (password != confirm) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Mật khẩu không khớp')),
+                  );
+                  return;
+                }
+
+                if (password.length < 6) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Mật khẩu phải ít nhất 6 ký tự'),
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(ctx);
+
+                try {
+                  await AuthService().linkEmailPassword(password);
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✅ Đã thêm mật khẩu thành công!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    setState(() {}); // Refresh UI
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          e.toString().replaceAll('Exception: ', ''),
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+              child: const Text('Thêm'),
+            ),
+          ],
+        ),
       ),
     );
   }

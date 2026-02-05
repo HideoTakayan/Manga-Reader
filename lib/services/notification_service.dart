@@ -8,146 +8,95 @@ class NotificationService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
 
-  /// Kiểm tra xem người dùng đã bật chuông cho truyện này chưa
-  Stream<bool> streamSubscriptionStatus(String comicId) {
+  // Không cần init FCM hay xin quyền nữa
+
+  /// Lấy danh sách thông báo (Kết hợp Global Notifs + Filter theo Following)
+  Stream<List<Map<String, dynamic>>> streamUserNotifications() async* {
     final userId = _auth.currentUser?.uid;
-    if (userId == null) return Stream.value(false);
-
-    return _db
-        .collection('users')
-        .doc(userId)
-        .collection('comic_subscriptions')
-        .doc(comicId)
-        .snapshots()
-        .map((doc) => doc.exists);
-  }
-
-  /// Bật/Tắt nhận thông báo (Bấm chuông)
-  Future<void> toggleSubscription(String comicId) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return;
-
-    final docRef = _db
-        .collection('users')
-        .doc(userId)
-        .collection('comic_subscriptions')
-        .doc(comicId);
-
-    final doc = await docRef.get();
-
-    // Sử dụng Batch để cập nhật cả user sub và tổng số sub của truyện
-    final batch = _db.batch();
-    final comicRef = _db.collection('comics').doc(comicId);
-
-    // Reference đến danh sách những người đăng ký của truyện này
-    final subscriberRef = _db
-        .collection('comics')
-        .doc(comicId)
-        .collection('subscribers')
-        .doc(userId);
-
-    if (doc.exists) {
-      // Unsubscribe
-      batch.delete(docRef);
-      batch.delete(subscriberRef);
-      batch.set(comicRef, {
-        'notificationCount': FieldValue.increment(-1),
-      }, SetOptions(merge: true));
-    } else {
-      // Subscribe
-      batch.set(docRef, {'subscribedAt': FieldValue.serverTimestamp()});
-      batch.set(subscriberRef, {
-        'subscribedAt': FieldValue.serverTimestamp(),
-        'userId': userId,
-      });
-      batch.set(comicRef, {
-        'notificationCount': FieldValue.increment(1),
-      }, SetOptions(merge: true));
+    if (userId == null) {
+      yield [];
+      return;
     }
 
-    await batch.commit();
+    // Lắng nghe collection 'notifications' chung (được tạo bởi Admin)
+    final notifStream = _db
+        .collection('notifications')
+        .orderBy('timestamp', descending: true)
+        .limit(50) // Giới hạn 50 tin mới nhất
+        .snapshots();
+
+    // Mỗi khi có thông báo mới trên hệ thống
+    await for (final snapshot in notifStream) {
+      try {
+        // 1. Lấy danh sách các truyện user đang THEO DÕI (Tim ❤️)
+        // Thay vì dùng 'comic_subscriptions' (cái chuông), ta dùng 'following' (trái tim)
+        final followingSnap = await _db
+            .collection('users')
+            .doc(userId)
+            .collection('following')
+            .get();
+
+        final followingIds = followingSnap.docs.map((d) => d.id).toSet();
+
+        // 2. Lọc thông báo: Chỉ lấy tin hệ thống HOẶC tin về truyện đang theo dõi
+        final filteredNotifications = snapshot.docs
+            .where((doc) {
+              final data = doc.data();
+              final comicId = data['comicId'];
+
+              // Logic lọc:
+              // - Nếu không có comicId (tin hệ thống) -> Lấy
+              // - Nếu có comicId và user đang follow -> Lấy
+              if (comicId == null || comicId == '') return true; // System notif
+              return followingIds.contains(comicId);
+            })
+            .map((doc) {
+              // Map dữ liệu để UI dễ dùng
+              return {...doc.data(), 'id': doc.id};
+            })
+            .toList();
+
+        yield filteredNotifications;
+      } catch (e) {
+        print('Error filtering notifications: $e');
+        yield [];
+      }
+    }
   }
 
-  /// Gửi thông báo đến tất cả người đăng ký của một truyện
+  /// Đánh dấu đã đọc thông báo (Lưu vào local/user prefs nếu cần, hoặc bỏ qua)
+  /// Vì dùng Global Stream nên việc mark read cho từng user hơi khó nếu không lưu sub-collection.
+  /// Tạm thời hàm này có thể disable hoặc implement kiểu lưu list id đã đọc vào local user settings.
+  Future<void> markAsRead(String notificationId) async {
+    // Logic đánh dấu đã đọc (Optional)
+    print('Mark read: $notificationId (Todo implementation)');
+  }
+
+  // --- STUB METHODS FOR COMPATIBILITY ---
+  // Các phương thức này được giữ lại để tránh lỗi compile ở các file khác
+  // do chúng ta đã loại bỏ tính năng FCM Push và nút Chuông.
+
+  Future<void> initialize() async {
+    // Không cần xin quyền nữa
+  }
+
+  Stream<bool> streamSubscriptionStatus(String comicId) {
+    return Stream.value(false); // Luôn trả về false
+  }
+
+  Future<void> toggleSubscription(String comicId) async {
+    // Không làm gì cả
+  }
+
+  Stream<int> streamComicNotificationCount(String comicId) {
+    return Stream.value(0);
+  }
+
   Future<void> notifySubscribers({
     required String comicId,
     required String title,
     required String body,
   }) async {
-    try {
-      final snapshot = await _db
-          .collection('comics')
-          .doc(comicId)
-          .collection('subscribers')
-          .get();
-
-      if (snapshot.docs.isEmpty) return;
-
-      final batch = _db.batch();
-      final timestamp = FieldValue.serverTimestamp();
-
-      for (var doc in snapshot.docs) {
-        final userId = doc.id;
-        final notifRef = _db
-            .collection('users')
-            .doc(userId)
-            .collection('notifications')
-            .doc();
-
-        batch.set(notifRef, {
-          'comicId': comicId,
-          'title': title,
-          'body': body,
-          'isRead': false,
-          'timestamp': timestamp,
-          'type': 'comic_update',
-        });
-      }
-
-      await batch.commit();
-      print('Đã gửi thông báo cho ${snapshot.docs.length} người đăng ký.');
-    } catch (e) {
-      print('Lỗi khi gửi thông báo: $e');
-    }
-  }
-
-  /// Lấy tổng số người bật chuông của một truyện
-  Stream<int> streamComicNotificationCount(String comicId) {
-    return _db
-        .collection('comics')
-        .doc(comicId)
-        .snapshots()
-        .map((doc) => (doc.data()?['notificationCount'] as num?)?.toInt() ?? 0);
-  }
-
-  /// Lấy danh sách thông báo của người dùng
-  Stream<List<Map<String, dynamic>>> streamUserNotifications() {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return Stream.value([]);
-
-    return _db
-        .collection('users')
-        .doc(userId)
-        .collection('notifications')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => {...doc.data(), 'id': doc.id})
-              .toList(),
-        );
-  }
-
-  /// Đánh dấu đã đọc thông báo
-  Future<void> markAsRead(String notificationId) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return;
-
-    await _db
-        .collection('users')
-        .doc(userId)
-        .collection('notifications')
-        .doc(notificationId)
-        .update({'isRead': true});
+    // Không làm gì vì Admin Dashboard đã tự ghi vào Firestore notifications collection
   }
 }

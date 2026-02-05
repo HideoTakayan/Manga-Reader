@@ -26,6 +26,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   GoogleSignInAccount? _driveAccount;
   late StreamSubscription<GoogleSignInAccount?> _authSubscription;
 
+  // Danh sách Admin
+  final _adminEmails = ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +53,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   void _checkAdmin() {
-    if (user?.email != 'admin@gmail.com') {
+    if (!_adminEmails.contains(user?.email)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.go('/');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -69,13 +72,23 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     // Lấy số lượng user từ Firestore
     int userCount = 0;
     try {
+      // Cách 1: Thử dùng Aggregation Count (nhanh & rẻ)
       final userSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .count()
           .get();
       userCount = userSnapshot.count ?? 0;
     } catch (e) {
-      debugPrint('Error loading user stats: $e');
+      debugPrint('Error loading user stats (count): $e');
+      // Cách 2: Fallback dùng query snapshot nếu count() lỗi (ví dụ do rules cũ)
+      try {
+        final docs = await FirebaseFirestore.instance.collection('users').get();
+        userCount = docs.size;
+      } catch (e2) {
+        debugPrint('Error loading user stats (fallback): $e2');
+        // Permission denied -> Set userCount = -1 để UI biết
+        userCount = -1;
+      }
     }
 
     if (mounted) {
@@ -87,7 +100,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (user?.email != 'admin@gmail.com') {
+    if (!_adminEmails.contains(user?.email)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -154,7 +167,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       const SizedBox(width: 16),
                       _StatCard(
                         title: 'Người dùng',
-                        value: '${_stats['users']}',
+                        value: _stats['users'] == -1
+                            ? 'N/A'
+                            : '${_stats['users']}',
                         icon: Icons.people,
                         color: Colors.orangeAccent,
                       ),

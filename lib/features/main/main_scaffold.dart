@@ -9,8 +9,10 @@ class MainScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
     final isAdmin =
-        FirebaseAuth.instance.currentUser?.email == 'admin@gmail.com';
+        currentUserEmail == 'admin@gmail.com' ||
+        currentUserEmail == 'anhlasinhvien2k51@gmail.com';
 
     // Ánh xạ index của nhánh điều hướng (branch index) sang index hiển thị trên TabBar
     int selectedIndex = navigationShell.currentIndex;
@@ -66,7 +68,7 @@ class MainScaffold extends StatelessWidget {
               icon: Icon(Icons.search),
               label: 'Tìm kiếm',
             ),
-            if (FirebaseAuth.instance.currentUser?.email == 'admin@gmail.com')
+            if (isAdmin)
               const NavigationDestination(
                 icon: Icon(Icons.admin_panel_settings),
                 label: 'Quản trị',

@@ -8,7 +8,6 @@ import 'package:photo_view/photo_view_gallery.dart';
 import '../../data/models_cloud.dart';
 import '../../features/shared/drive_image.dart';
 import 'reader_provider.dart';
-import '../../services/notification_service.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
   final String chapterId;
@@ -530,33 +529,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               }
                             },
                           ),
-                          // Notification Count
-                          StreamBuilder<int>(
-                            stream: NotificationService.instance
-                                .streamComicNotificationCount(
-                                  state.comic?.id ?? '',
-                                ),
-                            builder: (context, snapshot) {
-                              final count = snapshot.data ?? 0;
-                              return Row(
-                                children: [
-                                  const Icon(
-                                    Icons.notifications_none,
-                                    size: 16,
-                                    color: Colors.white70,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    _formatCount(count),
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
+
                           IconButton(
                             icon: const Icon(
                               Icons.arrow_forward_ios,
@@ -1134,33 +1107,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             await notifier.toggleFollow();
                           },
                         ),
-                        // Notification Count
-                        StreamBuilder<int>(
-                          stream: NotificationService.instance
-                              .streamComicNotificationCount(
-                                state.comic?.id ?? '',
-                              ),
-                          builder: (context, snapshot) {
-                            final count = snapshot.data ?? 0;
-                            return Row(
-                              children: [
-                                const Icon(
-                                  Icons.notifications_none,
-                                  size: 16,
-                                  color: Colors.white70,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  _formatCount(count),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
+
                         // Resize Icon
                         IconButton(
                           icon: const Icon(
@@ -1239,10 +1186,4 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
       },
     );
   }
-}
-
-String _formatCount(int count) {
-  if (count < 1000) return count.toString();
-  if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}k';
-  return '${(count / 1000000).toStringAsFixed(1)}m';
 }

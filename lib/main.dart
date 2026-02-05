@@ -14,7 +14,10 @@ Future<void> main() async {
   PaintingBinding.instance.imageCache
     ..maximumSize = 100
     ..maximumSizeBytes = 80 << 20; // ~80MB
+
   await _initFirebase();
+
+  // Notification Service không cần init phức tạp nữa (Thuần In-App)
 
   try {
     await DriveService.instance.restorePreviousSession();

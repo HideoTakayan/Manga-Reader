@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../data/drive_service.dart';
@@ -94,15 +95,42 @@ class _EditComicDialogState extends State<EditComicDialog> {
         newCoverFile: _newCoverFile,
       );
 
+      // --- LOGIC GỬI THÔNG BÁO ---
+      // 1. Phát hiện thay đổi
+      List<String> changes = [];
+      if (_newCoverFile != null) changes.add('Ảnh bìa mới');
+      if (_status != widget.comic.status) {
+        changes.add('Trạng thái: $_status');
+      }
+      if (_titleController.text.trim() != widget.comic.title) {
+        changes.add('Đổi tên truyện');
+      }
+
+      // 2. Nếu có thay đổi quan trọng -> Tạo thông báo
+      if (changes.isNotEmpty) {
+        final body = 'Cập nhật: ${changes.join(', ')}';
+        await FirebaseFirestore.instance.collection('notifications').add({
+          'type': 'info_update', // Loại 2: Cập nhật thông tin
+          'comicId': widget.comic.id,
+          'comicTitle': _titleController.text.trim(),
+          'title': '${_titleController.text.trim()} vừa cập nhật thông tin',
+          'body': body,
+          'timestamp': FieldValue.serverTimestamp(),
+          'sender': 'admin',
+        });
+      }
+      // ----------------------------
+
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cập nhật truyện thành công!')),
+          const SnackBar(content: Text('Cập nhật & Đã gửi thông báo!')),
         );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isUploading = false);
+        // ... err handling
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));

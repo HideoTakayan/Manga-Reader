@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../data/models_cloud.dart';
@@ -354,6 +355,19 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
         title: _titleController.text,
         file: _file!,
       );
+
+      // --- LOGIC GỬI THÔNG BÁO ---
+      // Tạo thông báo "Chương mới" (Loại 1)
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'type': 'new_chapter', // Loại 1: Chương mới
+        'comicId': widget.comicId,
+        'title': 'Truyện có chương mới!',
+        'body': 'Đã cập nhật ${_titleController.text}',
+        'timestamp': FieldValue.serverTimestamp(),
+        'sender': 'admin',
+      });
+      // ----------------------------
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {

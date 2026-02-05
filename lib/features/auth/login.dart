@@ -71,6 +71,21 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    EasyLoading.show(status: 'Đang đăng nhập...');
+
+    try {
+      await _auth.signInWithGoogle();
+      EasyLoading.dismiss();
+
+      if (mounted) {
+        context.go('/');
+      }
+    } catch (e) {
+      EasyLoading.showError(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
   InputDecoration _inputDecoration(
     String label,
     IconData icon, {
@@ -313,6 +328,53 @@ class _LoginPageState extends State<LoginPage> {
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.3,
                     ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Divider with "hoặc"
+              Row(
+                children: [
+                  Expanded(child: Divider(color: Colors.grey.shade700)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'hoặc',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: Colors.grey.shade700)),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Google Sign-In Button
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black87,
+                    side: BorderSide(color: Colors.grey.shade300),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: _signInWithGoogle,
+                  icon: Icon(
+                    Icons.g_mobiledata_rounded,
+                    size: 32,
+                    color: Colors.red.shade600,
+                  ),
+                  label: const Text(
+                    'Đăng nhập bằng Google',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),

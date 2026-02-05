@@ -9,7 +9,6 @@ import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/history_service.dart';
 import '../../services/interaction_service.dart';
-import '../../services/notification_service.dart';
 
 class ComicDetailPage extends StatefulWidget {
   final String comicId;
@@ -315,34 +314,6 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                               fontSize: 12,
                                             ),
                                           ),
-                                          const SizedBox(width: 16),
-                                          // Notification Subscriptions Count
-                                          StreamBuilder<int>(
-                                            stream: NotificationService.instance
-                                                .streamComicNotificationCount(
-                                                  widget.comicId,
-                                                ),
-                                            builder: (context, snapshot) {
-                                              final count = snapshot.data ?? 0;
-                                              return Row(
-                                                children: [
-                                                  const Icon(
-                                                    Icons.notifications_none,
-                                                    size: 16,
-                                                    color: Colors.white70,
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    _formatCount(count),
-                                                    style: const TextStyle(
-                                                      color: Colors.white70,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          ),
                                         ],
                                       );
                                     },
@@ -586,42 +557,6 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
               right: 10,
               child: Row(
                 children: [
-                  // Nút Chuông Thông Báo
-                  StreamBuilder<bool>(
-                    stream: NotificationService.instance
-                        .streamSubscriptionStatus(widget.comicId),
-                    builder: (context, snapshot) {
-                      final isSubscribed = snapshot.data ?? false;
-                      return IconButton(
-                        icon: Icon(
-                          isSubscribed
-                              ? Icons.notifications_active
-                              : Icons.notifications_none,
-                          color: isSubscribed ? Colors.yellow : Colors.white,
-                        ),
-                        onPressed: () async {
-                          await NotificationService.instance.toggleSubscription(
-                            widget.comicId,
-                          );
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  isSubscribed
-                                      ? 'Đã tắt thông báo cho truyện này'
-                                      : 'Đã bật thông báo thành công!',
-                                ),
-                                backgroundColor: isSubscribed
-                                    ? Colors.red
-                                    : Colors.green,
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    },
-                  ),
                   // Nút Theo Dõi (Tim)
                   StreamBuilder<bool>(
                     stream: followService.isFollowing(widget.comicId),

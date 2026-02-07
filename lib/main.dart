@@ -5,6 +5,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 import 'data/drive_service.dart';
+import 'services/folder_service.dart';
+import 'services/notification_service.dart';
+import 'services/background_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
 
@@ -17,7 +20,12 @@ Future<void> main() async {
 
   await _initFirebase();
 
-  // Notification Service không cần init phức tạp nữa (Thuần In-App)
+  // Khởi tạo hệ thống thư mục
+  await FolderService.init();
+
+  // Init Notification System (Local + Firestore Listener)
+  await NotificationService.instance.initialize();
+  await BackgroundService.initialize();
 
   try {
     await DriveService.instance.restorePreviousSession();
@@ -25,13 +33,13 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('⚠️ Drive Session Restore Failed: $e');
   }
-  runApp(const ProviderScope(child: ComicApp()));
+  runApp(const ProviderScope(child: MangaApp()));
   Future.microtask(() async {
     try {
-      await DriveService.instance.getComics();
-      debugPrint('✅ Comics preloaded in background');
+      await DriveService.instance.getMangas();
+      debugPrint('✅ Mangas preloaded in background');
     } catch (e) {
-      debugPrint('⚠️ Comics preload failed: $e');
+      debugPrint('⚠️ Mangas preload failed: $e');
     }
   });
 }
@@ -50,14 +58,14 @@ Future<void> _initFirebase() async {
   }
 }
 
-class ComicApp extends ConsumerWidget {
-  const ComicApp({super.key});
+class MangaApp extends ConsumerWidget {
+  const MangaApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Luôn bắt buộc Dark Mode
     return MaterialApp.router(
-      title: 'Comic Reader',
+      title: 'Manga Reader',
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark, // Bắt buộc chế độ tối (Dark Mode)
       routerConfig: appRouter,

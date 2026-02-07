@@ -6,16 +6,16 @@ import '../../data/drive_service.dart';
 import '../../data/models_cloud.dart';
 import '../shared/drive_image.dart';
 
-class EditComicDialog extends StatefulWidget {
-  final CloudComic comic;
+class EditMangaDialog extends StatefulWidget {
+  final CloudManga manga;
 
-  const EditComicDialog({super.key, required this.comic});
+  const EditMangaDialog({super.key, required this.manga});
 
   @override
-  State<EditComicDialog> createState() => _EditComicDialogState();
+  State<EditMangaDialog> createState() => _EditMangaDialogState();
 }
 
-class _EditComicDialogState extends State<EditComicDialog> {
+class _EditMangaDialogState extends State<EditMangaDialog> {
   late TextEditingController _titleController;
   late TextEditingController _authorController;
   late TextEditingController _descriptionController;
@@ -30,17 +30,17 @@ class _EditComicDialogState extends State<EditComicDialog> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.comic.title);
-    _authorController = TextEditingController(text: widget.comic.author);
+    _titleController = TextEditingController(text: widget.manga.title);
+    _authorController = TextEditingController(text: widget.manga.author);
     _descriptionController = TextEditingController(
-      text: widget.comic.description,
+      text: widget.manga.description,
     );
     _genresController = TextEditingController(
-      text: widget.comic.genres.join(', '),
+      text: widget.manga.genres.join(', '),
     );
-    _status = widget.comic.status.isEmpty
+    _status = widget.manga.status.isEmpty
         ? 'Đang Cập Nhật'
-        : widget.comic.status;
+        : widget.manga.status;
 
     // Ensure status is valid
     if (!_statusOptions.contains(_status)) {
@@ -81,8 +81,8 @@ class _EditComicDialogState extends State<EditComicDialog> {
     setState(() => _isUploading = true);
 
     try {
-      await DriveService.instance.updateComic(
-        comicId: widget.comic.id,
+      await DriveService.instance.updateManga(
+        mangaId: widget.manga.id,
         title: _titleController.text.trim(),
         author: _authorController.text.trim(),
         description: _descriptionController.text.trim(),
@@ -99,10 +99,10 @@ class _EditComicDialogState extends State<EditComicDialog> {
       // 1. Phát hiện thay đổi
       List<String> changes = [];
       if (_newCoverFile != null) changes.add('Ảnh bìa mới');
-      if (_status != widget.comic.status) {
+      if (_status != widget.manga.status) {
         changes.add('Trạng thái: $_status');
       }
-      if (_titleController.text.trim() != widget.comic.title) {
+      if (_titleController.text.trim() != widget.manga.title) {
         changes.add('Đổi tên truyện');
       }
 
@@ -111,8 +111,8 @@ class _EditComicDialogState extends State<EditComicDialog> {
         final body = 'Cập nhật: ${changes.join(', ')}';
         await FirebaseFirestore.instance.collection('notifications').add({
           'type': 'info_update', // Loại 2: Cập nhật thông tin
-          'comicId': widget.comic.id,
-          'comicTitle': _titleController.text.trim(),
+          'mangaId': widget.manga.id,
+          'mangaTitle': _titleController.text.trim(),
           'title': '${_titleController.text.trim()} vừa cập nhật thông tin',
           'body': body,
           'timestamp': FieldValue.serverTimestamp(),
@@ -172,7 +172,7 @@ class _EditComicDialogState extends State<EditComicDialog> {
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(6),
                           child: DriveImage(
-                            fileId: widget.comic.coverFileId,
+                            fileId: widget.manga.coverFileId,
                             fit: BoxFit.cover,
                           ),
                         ),

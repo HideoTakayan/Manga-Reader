@@ -18,7 +18,7 @@ class HistoryPage extends StatefulWidget {
 
 class _HistoryPageState extends State<HistoryPage> {
   List<ReadingHistory> _historyList = [];
-  List<CloudComic> _comics = [];
+  List<CloudManga> _mangas = []; // Renamed from _comics
   bool _isLoading = true;
 
   @override
@@ -36,7 +36,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
     try {
       // 1. Tải danh sách truyện từ Drive (Metadata)
-      final comics = await DriveService.instance.getComics(
+      final mangas = await DriveService.instance.getMangas(
         forceRefresh: forceRefresh,
       );
 
@@ -45,7 +45,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
       if (mounted) {
         setState(() {
-          _comics = comics;
+          _mangas = mangas;
           _historyList = hList;
           _isLoading = false;
         });
@@ -73,18 +73,18 @@ class _HistoryPageState extends State<HistoryPage> {
 
     // 3. Chiến lược gộp lịch sử (Merge Strategy):
     // - Ưu tiên bản ghi có 'updatedAt' mới nhất
-    // - Gộp dựa trên comicId
+    // - Gộp dựa trên mangaId
     final historyMap = <String, ReadingHistory>{};
     for (var h in localHistory) {
-      historyMap[h.comicId] = h;
+      historyMap[h.mangaId] = h;
     }
     for (var h in cloudHistory) {
-      if (historyMap.containsKey(h.comicId)) {
-        if (h.updatedAt.isAfter(historyMap[h.comicId]!.updatedAt)) {
-          historyMap[h.comicId] = h;
+      if (historyMap.containsKey(h.mangaId)) {
+        if (h.updatedAt.isAfter(historyMap[h.mangaId]!.updatedAt)) {
+          historyMap[h.mangaId] = h;
         }
       } else {
-        historyMap[h.comicId] = h;
+        historyMap[h.mangaId] = h;
       }
     }
 
@@ -237,10 +237,10 @@ class _HistoryPageState extends State<HistoryPage> {
           itemBuilder: (context, index) {
             final item = _historyList[index];
 
-            final comic = _comics.firstWhere(
-              (c) => c.id == item.comicId,
-              orElse: () => CloudComic(
-                id: item.comicId,
+            final manga = _mangas.firstWhere(
+              (c) => c.id == item.mangaId,
+              orElse: () => CloudManga(
+                id: item.mangaId,
                 title: 'Truyện không tồn tại',
                 author: 'Unknown',
                 description: '',
@@ -253,7 +253,7 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             );
 
-            if (comic.coverFileId.isEmpty) return const SizedBox.shrink();
+            if (manga.coverFileId.isEmpty) return const SizedBox.shrink();
 
             final date =
                 "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
@@ -272,14 +272,14 @@ class _HistoryPageState extends State<HistoryPage> {
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: DriveImage(
-                    fileId: comic.coverFileId,
+                    fileId: manga.coverFileId,
                     width: 60,
                     height: 80,
                     fit: BoxFit.cover,
                   ),
                 ),
                 title: Text(
-                  comic.title,
+                  manga.title,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),

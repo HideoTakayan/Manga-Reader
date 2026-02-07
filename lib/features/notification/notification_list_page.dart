@@ -64,9 +64,9 @@ class NotificationListPage extends StatelessWidget {
                   }
                   // Điều hướng đến truyện/chapter
                   if (context.mounted) {
-                    final comicId = note['comicId'];
-                    if (comicId != null) {
-                      context.push('/detail/$comicId');
+                    final mangaId = note['mangaId'] ?? note['comicId'];
+                    if (mangaId != null) {
+                      context.push('/detail/$mangaId');
                     }
                   }
                 },

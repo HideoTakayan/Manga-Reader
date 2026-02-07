@@ -7,8 +7,8 @@ import '../../data/drive_service.dart';
 import 'package:path/path.dart' as path;
 
 class ChapterManagerPage extends StatefulWidget {
-  final CloudComic comic;
-  const ChapterManagerPage({super.key, required this.comic});
+  final CloudManga manga;
+  const ChapterManagerPage({super.key, required this.manga});
 
   @override
   State<ChapterManagerPage> createState() => _ChapterManagerPageState();
@@ -29,7 +29,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 
   Future<void> _loadChapters() async {
     setState(() => _isLoading = true);
-    final chapters = await DriveService.instance.getChapters(widget.comic.id);
+    final chapters = await DriveService.instance.getChapters(widget.manga.id);
     if (mounted) {
       setState(() {
         _chapters = chapters;
@@ -95,7 +95,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     setState(() => _isSavingOrder = true);
     try {
       final newOrder = _chapters.map((c) => c.id).toList();
-      await DriveService.instance.saveChapterOrder(widget.comic.id, newOrder);
+      await DriveService.instance.saveChapterOrder(widget.manga.id, newOrder);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã lưu thứ tự chương mới!')),
@@ -117,7 +117,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.comic.title),
+        title: Text(widget.manga.title),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         actions: [
@@ -295,7 +295,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         onPressed: () async {
           await showDialog(
             context: context,
-            builder: (_) => _AddChapterDialog(comicId: widget.comic.id),
+            builder: (_) => _AddChapterDialog(mangaId: widget.manga.id),
           );
           _refresh();
         },
@@ -309,8 +309,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 }
 
 class _AddChapterDialog extends StatefulWidget {
-  final String comicId;
-  const _AddChapterDialog({required this.comicId});
+  final String mangaId;
+  const _AddChapterDialog({required this.mangaId});
 
   @override
   State<_AddChapterDialog> createState() => _AddChapterDialogState();
@@ -351,7 +351,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     setState(() => _isUploading = true);
     try {
       await DriveService.instance.addChapter(
-        comicId: widget.comicId,
+        mangaId: widget.mangaId,
         title: _titleController.text,
         file: _file!,
       );
@@ -360,7 +360,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       // Tạo thông báo "Chương mới" (Loại 1)
       await FirebaseFirestore.instance.collection('notifications').add({
         'type': 'new_chapter', // Loại 1: Chương mới
-        'comicId': widget.comicId,
+        'mangaId': widget.mangaId, // Updated field
         'title': 'Truyện có chương mới!',
         'body': 'Đã cập nhật ${_titleController.text}',
         'timestamp': FieldValue.serverTimestamp(),

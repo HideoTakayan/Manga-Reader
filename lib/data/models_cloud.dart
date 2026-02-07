@@ -1,4 +1,4 @@
-class CloudComic {
+class CloudManga {
   final String id; // ID thư mục
   final String title;
   final String author;
@@ -11,7 +11,7 @@ class CloudComic {
   final int likeCount;
   final List<String> chapterOrder; // Danh sách ID chương/file theo thứ tự
 
-  CloudComic({
+  CloudManga({
     required this.id,
     required this.title,
     required this.author,
@@ -26,6 +26,8 @@ class CloudComic {
   });
 
   Map<String, dynamic> toMap() {
+    // Keys kept as is for Firestore compatibility if needed,
+    // but the object logic is now Manga.
     return {
       'id': id,
       'title': title,
@@ -41,8 +43,8 @@ class CloudComic {
     };
   }
 
-  factory CloudComic.fromMap(Map<String, dynamic> map) {
-    return CloudComic(
+  factory CloudManga.fromMap(Map<String, dynamic> map) {
+    return CloudManga(
       id: map['id'] ?? '',
       title: map['title'] ?? '',
       author: map['author'] ?? '',
@@ -100,4 +102,13 @@ class CloudChapter {
       viewCount: map['viewCount'] ?? 0,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is CloudChapter && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
 }

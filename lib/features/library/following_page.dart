@@ -17,15 +17,15 @@ class _FollowingPageState extends State<FollowingPage> {
   // Key để force rebuild FutureBuilder khi refresh
   int _refreshKey = 0;
 
-  Future<List<CloudComic>> _getFollowedComics(List<String> followedIds) async {
-    final allComics = await DriveService.instance.getComics(
+  Future<List<CloudManga>> _getFollowedMangas(List<String> followedIds) async {
+    final allMangas = await DriveService.instance.getMangas(
       forceRefresh: false,
     );
-    return allComics.where((c) => followedIds.contains(c.id)).toList();
+    return allMangas.where((c) => followedIds.contains(c.id)).toList();
   }
 
   Future<void> _handleRefresh() async {
-    await DriveService.instance.getComics(forceRefresh: true);
+    await DriveService.instance.getMangas(forceRefresh: true);
     if (mounted) {
       setState(() {
         _refreshKey++;
@@ -73,20 +73,20 @@ class _FollowingPageState extends State<FollowingPage> {
 
         final followedIds = docs.map((d) => d.id).toList();
 
-        return FutureBuilder<List<CloudComic>>(
+        return FutureBuilder<List<CloudManga>>(
           key: ValueKey(_refreshKey), // Đánh dấu rebuild khi key thay đổi
-          future: _getFollowedComics(followedIds),
-          builder: (context, comicSnapshot) {
+          future: _getFollowedMangas(followedIds),
+          builder: (context, mangaSnapshot) {
             // Hiển thị dữ liệu cũ nếu có để tránh giật lag, hoặc hiện loading
-            if (comicSnapshot.connectionState == ConnectionState.waiting &&
-                !comicSnapshot.hasData) {
+            if (mangaSnapshot.connectionState == ConnectionState.waiting &&
+                !mangaSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final comics = comicSnapshot.data ?? [];
+            final mangas = mangaSnapshot.data ?? [];
 
-            if (comics.isEmpty &&
-                comicSnapshot.connectionState == ConnectionState.done) {
+            if (mangas.isEmpty &&
+                mangaSnapshot.connectionState == ConnectionState.done) {
               // ...
               return RefreshIndicator(
                 onRefresh: _handleRefresh,
@@ -113,9 +113,9 @@ class _FollowingPageState extends State<FollowingPage> {
                   horizontal: 12,
                   vertical: 8,
                 ),
-                itemCount: comics.length,
+                itemCount: mangas.length,
                 itemBuilder: (context, index) {
-                  final comic = comics[index];
+                  final manga = mangas[index];
 
                   return Card(
                     color: Theme.of(context).cardColor,
@@ -131,14 +131,14 @@ class _FollowingPageState extends State<FollowingPage> {
                       leading: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: DriveImage(
-                          fileId: comic.coverFileId,
+                          fileId: manga.coverFileId,
                           width: 60,
                           height: 80,
                           fit: BoxFit.cover,
                         ),
                       ),
                       title: Text(
-                        comic.title,
+                        manga.title,
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -146,7 +146,7 @@ class _FollowingPageState extends State<FollowingPage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        'Tác giả: ${comic.author}',
+                        'Tác giả: ${manga.author}',
                         style: Theme.of(context).textTheme.bodySmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -155,7 +155,7 @@ class _FollowingPageState extends State<FollowingPage> {
                         Icons.chevron_right,
                         color: Theme.of(context).iconTheme.color,
                       ),
-                      onTap: () => context.push('/detail/${comic.id}'),
+                      onTap: () => context.push('/detail/${manga.id}'),
                     ),
                   );
                 },

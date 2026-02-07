@@ -7,6 +7,10 @@ import '../../data/models.dart';
 import '../../data/models_cloud.dart';
 import '../shared/drive_image.dart';
 import '../../services/notification_service.dart';
+import '../../services/permission_service.dart';
+import '../../services/folder_service.dart';
+
+import '../../services/sync_service.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -28,23 +32,79 @@ class _HomeContent extends StatefulWidget {
 }
 
 class _HomeContentState extends State<_HomeContent> {
-  late Future<List<CloudComic>> _comicsFuture;
+  late Future<List<CloudManga>> _mangasFuture;
 
   @override
   void initState() {
     super.initState();
-    _comicsFuture = DriveService.instance.getComics();
+    _mangasFuture = DriveService.instance.getMangas();
+
+    // Tự động đồng bộ lịch sử đọc offline lên Cloud
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SyncService.instance.syncPendingHistory();
+    });
+
+    // Check permission immediately
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkStoragePermission();
+    });
+  }
+
+  Future<void> _checkStoragePermission() async {
+    final hasPermission = await PermissionService.hasStoragePermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cấp quyền truy cập'),
+          content: const Text(
+            'Để lưu truyện vào thư mục "/MangaReader" ở bộ nhớ máy (giống Mihon) và dễ dàng quản lý file, ứng dụng cần quyền truy cập bộ nhớ.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Để sau'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                final granted =
+                    await PermissionService.requestStoragePermission();
+                if (granted) {
+                  // Re-init folder service to use new path
+                  await FolderService.init();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '✅ Đã cấp quyền! Folder MangaReader đã được tạo.',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Cấp quyền'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _comicsFuture = DriveService.instance.getComics(forceRefresh: true);
+      _mangasFuture = DriveService.instance.getMangas(forceRefresh: true);
     });
-    await _comicsFuture;
+    await _mangasFuture;
   }
 
-  Comic _fromCloud(CloudComic c) {
-    return Comic(
+  Manga _fromCloud(CloudManga c) {
+    return Manga(
       id: c.id,
       title: c.title,
       author: c.author,
@@ -54,14 +114,14 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  List<Comic> _getNewUpdates(List<Comic> all) {
+  List<Manga> _getNewUpdates(List<Manga> all) {
     // Sắp xếp mặc định theo thời gian cập nhật giảm dần (được xử lý ở DriveService)
     // Lấy 10 truyện mới nhất
     return all.take(10).toList();
   }
 
-  List<Comic> _getRandom(List<Comic> all, int count) {
-    final list = List<Comic>.from(all)..shuffle();
+  List<Manga> _getRandom(List<Manga> all, int count) {
+    final list = List<Manga>.from(all)..shuffle();
     return list.take(count).toList();
   }
 
@@ -75,17 +135,17 @@ class _HomeContentState extends State<_HomeContent> {
         stream: DriveService.instance.onAuthStateChanged,
         initialData: DriveService.instance.currentUser,
         builder: (context, authSnapshot) {
-          return FutureBuilder<List<CloudComic>>(
-            future: _comicsFuture,
+          return FutureBuilder<List<CloudManga>>(
+            future: _mangasFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final cloudComics = snapshot.data ?? [];
-              final allComics = cloudComics.map(_fromCloud).toList();
+              final cloudMangas = snapshot.data ?? [];
+              final allMangas = cloudMangas.map(_fromCloud).toList();
 
-              if (allComics.isEmpty) {
+              if (allMangas.isEmpty) {
                 return CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
@@ -119,12 +179,12 @@ class _HomeContentState extends State<_HomeContent> {
               }
 
               // 1. Mới cập nhật (10 truyện mới nhất)
-              final newUpdates = _getNewUpdates(allComics);
+              final newUpdates = _getNewUpdates(allMangas);
 
               // 2. Random cho các mục khác
-              final featured = _getRandom(allComics, 10);
-              final hotToday = _getRandom(allComics, 10);
-              final trending = _getRandom(allComics, 10);
+              final featured = _getRandom(allMangas, 10);
+              final hotToday = _getRandom(allMangas, 10);
+              final trending = _getRandom(allMangas, 10);
 
               return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -211,24 +271,30 @@ class _HomeContentState extends State<_HomeContent> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: _AutoSlideBanner(comics: featured),
+                      child: _AutoSlideBanner(mangas: featured),
                     ),
                   ),
 
                   // 🔥 Mục Truyện Hot Hôm Nay
                   _SectionTitle(
                     label: '🔥 Truyện Hot Hôm Nay',
-                    onViewAll: () {},
+                    onViewAll: () => context.push('/mangas'),
                   ),
-                  _MangaReaderCarousel(comics: hotToday),
+                  _MangaReaderCarousel(mangas: hotToday),
 
                   // 🆕 Mới cập nhật (Top 10 mới nhất)
-                  _SectionTitle(label: '🆕 Mới Cập Nhật', onViewAll: () {}),
-                  _MangaReaderCarousel(comics: newUpdates),
+                  _SectionTitle(
+                    label: '🆕 Mới Cập Nhật',
+                    onViewAll: () => context.push('/mangas'),
+                  ),
+                  _MangaReaderCarousel(mangas: newUpdates),
 
                   // 🏆 Top Trending (Random 10)
-                  _SectionTitle(label: '🏆 Top Trending', onViewAll: () {}),
-                  SliverToBoxAdapter(child: _RankList(comics: trending)),
+                  _SectionTitle(
+                    label: '🏆 Top Trending',
+                    onViewAll: () => context.push('/mangas'),
+                  ),
+                  SliverToBoxAdapter(child: _RankList(mangas: trending)),
                 ],
               );
             },
@@ -259,10 +325,6 @@ class _SectionTitle extends StatelessWidget {
                 fontSize: 18,
               ),
             ),
-            TextButton(
-              onPressed: onViewAll,
-              child: const Text('', style: TextStyle(color: Colors.redAccent)),
-            ),
           ],
         ),
       ),
@@ -271,8 +333,8 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _MangaReaderCarousel extends StatelessWidget {
-  final List<Comic> comics;
-  const _MangaReaderCarousel({required this.comics});
+  final List<Manga> mangas;
+  const _MangaReaderCarousel({required this.mangas});
 
   @override
   Widget build(BuildContext context) {
@@ -282,10 +344,10 @@ class _MangaReaderCarousel extends StatelessWidget {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: comics.length,
+          itemCount: mangas.length,
           separatorBuilder: (_, __) => const SizedBox(width: 10),
           itemBuilder: (context, index) {
-            final c = comics[index];
+            final c = mangas[index];
             return GestureDetector(
               onTap: () => context.push('/detail/${c.id}'),
               child: SizedBox(
@@ -354,16 +416,16 @@ class _MangaReaderCarousel extends StatelessWidget {
 }
 
 class _RankList extends StatelessWidget {
-  final List<Comic> comics;
-  const _RankList({required this.comics});
+  final List<Manga> mangas;
+  const _RankList({required this.mangas});
 
   @override
   Widget build(BuildContext context) {
     final rankColors = [Colors.amber, Colors.orangeAccent, Colors.redAccent];
 
     return Column(
-      children: List.generate(comics.length, (i) {
-        final c = comics[i];
+      children: List.generate(mangas.length, (i) {
+        final c = mangas[i];
         final color = i < 3 ? rankColors[i] : Colors.white54;
 
         return ListTile(
@@ -420,8 +482,8 @@ class _RankList extends StatelessWidget {
 }
 
 class _AutoSlideBanner extends StatefulWidget {
-  final List<Comic> comics;
-  const _AutoSlideBanner({required this.comics});
+  final List<Manga> mangas;
+  const _AutoSlideBanner({required this.mangas});
 
   @override
   State<_AutoSlideBanner> createState() => _AutoSlideBannerState();
@@ -445,9 +507,9 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (!mounted) return;
-      if (widget.comics.isEmpty) return;
+      if (widget.mangas.isEmpty) return;
 
-      final nextPage = (_currentPage + 1) % widget.comics.length;
+      final nextPage = (_currentPage + 1) % widget.mangas.length;
       _controller.animateToPage(
         nextPage,
         duration: const Duration(milliseconds: 600),
@@ -466,7 +528,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.comics.isEmpty) return const SizedBox.shrink();
+    if (widget.mangas.isEmpty) return const SizedBox.shrink();
 
     return Column(
       children: [
@@ -474,10 +536,10 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
           height: 180,
           child: PageView.builder(
             controller: _controller,
-            itemCount: widget.comics.length,
+            itemCount: widget.mangas.length,
             onPageChanged: (i) => setState(() => _currentPage = i),
             itemBuilder: (context, index) {
-              final c = widget.comics[index];
+              final c = widget.mangas[index];
               return GestureDetector(
                 onTap: () => context.push('/detail/${c.id}'),
                 child: Padding(
@@ -548,7 +610,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
         // Chấm nhỏ báo trang hiện tại
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(widget.comics.length, (i) {
+          children: List.generate(widget.mangas.length, (i) {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               margin: const EdgeInsets.symmetric(horizontal: 3),

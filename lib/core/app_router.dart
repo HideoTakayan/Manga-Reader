@@ -2,61 +2,58 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// Các trang
 import '../features/home/home_page.dart';
 import '../features/library/library_page.dart';
-
+import '../features/library/custom_library_page.dart';
+import '../features/library/edit_categories_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/settings/account/account_page.dart';
-import '../features/settings/account/edit_profile_page.dart';
 import '../features/settings/help_page.dart';
 import '../features/auth/login.dart';
-import '../features/detail/comic_detail_page.dart';
+import '../features/detail/manga_detail_page.dart';
 import '../features/reader/reader_page.dart';
 import '../features/search/search_page.dart';
 import '../features/main/main_scaffold.dart';
 import '../features/notification/notification_list_page.dart';
-
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/chapter_manager_page.dart';
+import '../features/downloads/download_queue_page.dart';
 import '../data/models_cloud.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/auth-check',
   routes: [
-    // Màn hình kiểm tra trạng thái đăng nhập
     GoRoute(path: '/auth-check', builder: (_, __) => const _AuthCheckPage()),
-
-    // Trang đăng nhập
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
-    // Shell Route cho giao diện chính có thanh điều hướng dưới cùng (BottomNavigationBar)
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return MainScaffold(navigationShell: navigationShell);
       },
       branches: [
-        // Tab 1: Home
+        // Index 0: Trang chủ
         StatefulShellBranch(
           routes: [GoRoute(path: '/', builder: (_, __) => const HomePage())],
         ),
-        // Tab 2: Library (Following)
-        StatefulShellBranch(
-          routes: [
-            GoRoute(path: '/library', builder: (_, __) => const LibraryPage()),
-          ],
-        ),
-        // Tab 3: Search
+        // Index 1: Thư viện
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/search',
-              builder: (context, state) =>
-                  SearchPage(initialGenre: state.uri.queryParameters['genre']),
+              path: '/my-library',
+              builder: (_, __) => const CustomLibraryPage(),
             ),
           ],
         ),
-        // Tab 4: Control (Admin)
+        // Index 2: Theo dõi
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/following',
+              builder: (_, __) => const LibraryPage(),
+            ),
+          ],
+        ),
+        // Index 3: Admin (Sẽ bị ẩn ở UI nếu k phải admin)
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -65,7 +62,7 @@ final GoRouter appRouter = GoRouter(
             ),
           ],
         ),
-        // Tab 5: Settings
+        // Index 4: Cài đặt
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -75,14 +72,12 @@ final GoRouter appRouter = GoRouter(
                 GoRoute(
                   path: 'account',
                   builder: (_, __) => const AccountPage(),
-                  routes: [
-                    GoRoute(
-                      path: 'edit',
-                      builder: (_, __) => const EditProfilePage(),
-                    ),
-                  ],
                 ),
                 GoRoute(path: 'help', builder: (_, __) => const HelpPage()),
+                GoRoute(
+                  path: 'categories',
+                  builder: (_, __) => const EditCategoriesPage(),
+                ),
               ],
             ),
           ],
@@ -90,51 +85,41 @@ final GoRouter appRouter = GoRouter(
       ],
     ),
 
-    // Chi tiết truyện (Không hiện BottomBar -> Nằm ngoài Shell Route)
     GoRoute(
       path: '/detail/:id',
       builder: (context, state) =>
-          ComicDetailPage(comicId: state.pathParameters['id']!),
+          MangaDetailPage(mangaId: state.pathParameters['id']!),
     ),
-
-    // Đọc truyện (Không hiện BottomBar)
     GoRoute(
       path: '/reader/:chapterId',
       builder: (context, state) =>
           ReaderPage(chapterId: state.pathParameters['chapterId']!),
     ),
-
-    // Tìm kiếm (Trang riêng biệt - Dùng cho nút Tìm kiếm ở Home)
     GoRoute(
       path: '/search-global',
       builder: (context, state) =>
           SearchPage(initialGenre: state.uri.queryParameters['genre']),
     ),
-
-    // Thông báo
     GoRoute(
       path: '/notifications',
       builder: (context, state) => const NotificationListPage(),
     ),
-
-    // Admin Dashboard
-    GoRoute(path: '/admin', builder: (_, __) => const AdminDashboardPage()),
-
-    // Chapter Manager
+    GoRoute(
+      path: '/downloads',
+      builder: (context, state) => const DownloadQueuePage(),
+    ),
     GoRoute(
       path: '/admin/chapters',
       builder: (context, state) {
-        final comic = state.extra as CloudComic;
-        return ChapterManagerPage(comic: comic);
+        final manga = state.extra as CloudManga;
+        return ChapterManagerPage(manga: manga);
       },
     ),
   ],
 );
 
-/// Trang kiểm tra login
 class _AuthCheckPage extends StatelessWidget {
   const _AuthCheckPage();
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -145,14 +130,12 @@ class _AuthCheckPage extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
         if (!snapshot.hasData) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => context.go('/login'),
           );
           return const SizedBox.shrink();
         }
-
         WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/'));
         return const SizedBox.shrink();
       },

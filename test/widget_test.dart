@@ -7,14 +7,14 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:manga_reader/main.dart';
+import 'package:manga_reader/main.dart'; // Ensure package name wraps correctly
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const ComicApp());
+    await tester.pumpWidget(const MangaApp());
 
     // Verify that the app builds without crashing
-    expect(find.byType(ComicApp), findsOneWidget);
+    expect(find.byType(MangaApp), findsOneWidget);
   });
 }

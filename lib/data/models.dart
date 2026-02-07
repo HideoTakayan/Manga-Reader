@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 /// --------------------
-/// 📚 Comic Model
+/// 📚 Manga Model
 /// --------------------
-class Comic {
+class Manga {
   final String id;
   final String title;
   final String coverUrl;
@@ -11,7 +11,7 @@ class Comic {
   final String description;
   final List<String> genres;
 
-  const Comic({
+  const Manga({
     required this.id,
     required this.title,
     required this.coverUrl,
@@ -21,8 +21,8 @@ class Comic {
   });
 
   // === JSON ===
-  factory Comic.fromJson(Map<String, dynamic> json) {
-    return Comic(
+  factory Manga.fromJson(Map<String, dynamic> json) {
+    return Manga(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       coverUrl: json['coverUrl']?.toString() ?? '',
@@ -53,14 +53,14 @@ class Comic {
     };
   }
 
-  factory Comic.fromMap(Map<String, dynamic> map) {
+  factory Manga.fromMap(Map<String, dynamic> map) {
     final rawGenres = map['genres'];
-    return Comic(
-      id: map['id'] as String,
-      title: map['title'] as String,
-      coverUrl: map['coverUrl'] as String,
-      author: map['author'] as String,
-      description: map['description'] as String,
+    return Manga(
+      id: map['id']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      coverUrl: map['coverUrl']?.toString() ?? '',
+      author: map['author']?.toString() ?? '',
+      description: map['description']?.toString() ?? '',
       genres: _parseGenres(rawGenres),
     );
   }
@@ -89,7 +89,7 @@ class Comic {
     return [];
   }
 
-  Comic copyWith({
+  Manga copyWith({
     String? id,
     String? title,
     String? coverUrl,
@@ -97,7 +97,7 @@ class Comic {
     String? description,
     List<String>? genres,
   }) {
-    return Comic(
+    return Manga(
       id: id ?? this.id,
       title: title ?? this.title,
       coverUrl: coverUrl ?? this.coverUrl,
@@ -110,7 +110,7 @@ class Comic {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is Comic && runtimeType == other.runtimeType && id == other.id;
+      other is Manga && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
@@ -121,20 +121,20 @@ class Comic {
 /// --------------------
 class Chapter {
   final String id;
-  final String comicId;
+  final String mangaId;
   final String name;
   final int number;
 
   const Chapter({
     required this.id,
-    required this.comicId,
+    required this.mangaId,
     required this.name,
     required this.number,
   });
 
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
     id: json['id']?.toString() ?? '',
-    comicId: json['comicId']?.toString() ?? '',
+    mangaId: (json['mangaId'] ?? json['comicId'])?.toString() ?? '',
     name: json['name']?.toString() ?? '',
     number: (json['number'] is int)
         ? json['number']
@@ -143,7 +143,8 @@ class Chapter {
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'comicId': comicId,
+    'mangaId': mangaId,
+    'comicId': mangaId, // Backward compatibility
     'name': name,
     'number': number,
   };
@@ -166,7 +167,7 @@ class Chapter {
 /// --------------------
 class Comment {
   final String id;
-  final String comicId;
+  final String mangaId;
   final String userId;
   final String userName;
   final String userAvatar;
@@ -178,7 +179,7 @@ class Comment {
 
   const Comment({
     required this.id,
-    required this.comicId,
+    required this.mangaId,
     required this.userId,
     required this.userName,
     required this.userAvatar,
@@ -192,7 +193,7 @@ class Comment {
   factory Comment.fromJson(Map<String, dynamic> json) {
     return Comment(
       id: json['id']?.toString() ?? '',
-      comicId: json['comicId']?.toString() ?? '',
+      mangaId: (json['mangaId'] ?? json['comicId'])?.toString() ?? '',
       userId: json['userId']?.toString() ?? '',
       userName: json['userName']?.toString() ?? 'Ẩn danh',
       userAvatar:
@@ -216,7 +217,8 @@ class Comment {
   Map<String, dynamic> toJson() {
     final map = {
       'id': id,
-      'comicId': comicId,
+      'mangaId': mangaId,
+      'comicId': mangaId, // Backward compatibility
       'userId': userId,
       'userName': userName,
       'userAvatar': userAvatar,
@@ -241,7 +243,7 @@ class Comment {
 
   Comment copyWith({
     String? id,
-    String? comicId,
+    String? mangaId,
     String? userId,
     String? userName,
     String? userAvatar,
@@ -253,7 +255,7 @@ class Comment {
   }) {
     return Comment(
       id: id ?? this.id,
-      comicId: comicId ?? this.comicId,
+      mangaId: mangaId ?? this.mangaId,
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
       userAvatar: userAvatar ?? this.userAvatar,
@@ -278,8 +280,8 @@ class Comment {
 /// 🕰️ Reading History Model
 /// --------------------
 class ReadingHistory {
-  final String userId; // Added field for user segregation
-  final String comicId;
+  final String userId;
+  final String mangaId;
   final String chapterId;
   final String? chapterTitle;
   final int lastPageIndex;
@@ -287,7 +289,7 @@ class ReadingHistory {
 
   const ReadingHistory({
     required this.userId,
-    required this.comicId,
+    required this.mangaId,
     required this.chapterId,
     this.chapterTitle,
     required this.lastPageIndex,
@@ -296,8 +298,8 @@ class ReadingHistory {
 
   factory ReadingHistory.fromMap(Map<String, dynamic> map) {
     return ReadingHistory(
-      userId: map['userId'] as String? ?? 'guest', // Fallback for old data
-      comicId: map['comicId'] as String,
+      userId: map['userId'] as String? ?? 'guest',
+      mangaId: (map['mangaId'] ?? map['comicId']) as String,
       chapterId: map['chapterId'] as String,
       chapterTitle: map['chapterTitle'] as String?,
       lastPageIndex: map['lastPageIndex'] as int? ?? 0,
@@ -308,7 +310,8 @@ class ReadingHistory {
   Map<String, dynamic> toMap() {
     return {
       'userId': userId,
-      'comicId': comicId,
+      'mangaId': mangaId,
+      'comicId': mangaId, // Backward compatibility for DB/Cloud
       'chapterId': chapterId,
       'chapterTitle': chapterTitle,
       'lastPageIndex': lastPageIndex,

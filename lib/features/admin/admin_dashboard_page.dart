@@ -10,7 +10,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
-import 'edit_comic_dialog.dart';
+import 'edit_manga_dialog.dart'; // Renamed import
 import 'chapter_manager_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
@@ -21,7 +21,7 @@ class AdminDashboardPage extends StatefulWidget {
 }
 
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
-  Map<String, int> _stats = {'comics': 0, 'users': 0, 'chapters': 0};
+  Map<String, int> _stats = {'mangas': 0, 'users': 0, 'chapters': 0};
   final user = FirebaseAuth.instance.currentUser;
   GoogleSignInAccount? _driveAccount;
   late StreamSubscription<GoogleSignInAccount?> _authSubscription;
@@ -66,8 +66,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Future<void> _loadStats() async {
-    final comics = await DriveService.instance.getComics();
-    final comicCount = comics.length;
+    final mangas = await DriveService.instance.getMangas();
+    final mangaCount = mangas.length;
 
     // Lấy số lượng user từ Firestore
     int userCount = 0;
@@ -93,7 +93,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     if (mounted) {
       setState(() {
-        _stats = {'comics': comicCount, 'users': userCount, 'chapters': 0};
+        _stats = {'mangas': mangaCount, 'users': userCount, 'chapters': 0};
       });
     }
   }
@@ -160,7 +160,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     children: [
                       _StatCard(
                         title: 'Truyện',
-                        value: '${_stats['comics']}',
+                        value: '${_stats['mangas']}',
                         icon: Icons.book,
                         color: Colors.blueAccent,
                       ),
@@ -187,10 +187,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         onPressed: () async {
                           final result = await showDialog(
                             context: context,
-                            builder: (_) => const _AddComicDialog(),
+                            builder: (_) => const _AddMangaDialog(),
                           );
                           if (result == true) {
-                            _loadStats(); // Refresh stats if comic added
+                            _loadStats(); // Refresh stats if manga added
                           }
                         },
                         icon: const Icon(Icons.add),
@@ -210,7 +210,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ),
             ),
           ),
-          _buildComicGrid(),
+          _buildMangaGrid(),
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
@@ -301,17 +301,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  Widget _buildComicGrid() {
-    return FutureBuilder<List<CloudComic>>(
-      future: DriveService.instance.getComics(),
+  Widget _buildMangaGrid() {
+    return FutureBuilder<List<CloudManga>>(
+      future: DriveService.instance.getMangas(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SliverToBoxAdapter(
             child: Center(child: CircularProgressIndicator()),
           );
         }
-        final comics = snapshot.data ?? [];
-        if (comics.isEmpty) {
+        final mangas = snapshot.data ?? [];
+        if (mangas.isEmpty) {
           return const SliverToBoxAdapter(
             child: Center(child: Text('Chưa có truyện nào')),
           );
@@ -327,9 +327,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               mainAxisSpacing: 12,
             ),
             delegate: SliverChildBuilderDelegate((context, index) {
-              final comic = comics[index];
-              return _AdminComicCard(comic: comic, onRefresh: _loadStats);
-            }, childCount: comics.length),
+              final manga = mangas[index];
+              return _AdminMangaCard(manga: manga, onRefresh: _loadStats);
+            }, childCount: mangas.length),
           ),
         );
       },
@@ -337,11 +337,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 }
 
-class _AdminComicCard extends StatelessWidget {
-  final CloudComic comic;
+class _AdminMangaCard extends StatelessWidget {
+  final CloudManga manga;
   final VoidCallback onRefresh;
 
-  const _AdminComicCard({required this.comic, required this.onRefresh});
+  const _AdminMangaCard({required this.manga, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +364,7 @@ class _AdminComicCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: DriveImage(fileId: comic.coverFileId, fit: BoxFit.cover),
+                child: DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
               ),
               Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -372,7 +372,7 @@ class _AdminComicCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      comic.title,
+                      manga.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -380,7 +380,7 @@ class _AdminComicCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      comic.author,
+                      manga.author,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -423,7 +423,7 @@ class _AdminComicCard extends StatelessWidget {
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
-                                    ChapterManagerPage(comic: comic),
+                                    ChapterManagerPage(manga: manga),
                               ),
                             );
                           },
@@ -442,7 +442,7 @@ class _AdminComicCard extends StatelessWidget {
                             Navigator.pop(ctx);
                             await showDialog(
                               context: context,
-                              builder: (_) => EditComicDialog(comic: comic),
+                              builder: (_) => EditMangaDialog(manga: manga),
                             );
                             onRefresh();
                           },
@@ -467,7 +467,7 @@ class _AdminComicCard extends StatelessWidget {
                                   style: Theme.of(context).textTheme.titleLarge,
                                 ),
                                 content: Text(
-                                  'Bạn có chắc muốn xóa truyện "${comic.title}" không? Hành động này không thể hoàn tác.',
+                                  'Bạn có chắc muốn xóa truyện "${manga.title}" không? Hành động này không thể hoàn tác.',
                                   style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                                 actions: [
@@ -483,26 +483,35 @@ class _AdminComicCard extends StatelessWidget {
                                   ),
                                   TextButton(
                                     onPressed: () async {
-                                      Navigator.pop(
-                                        dialogContext,
-                                      ); // Đóng hộp thoại
-                                      // Hiển thị loading
+                                      // 1. Đóng hộp thoại xác nhận ngay lập tức
+                                      Navigator.pop(dialogContext);
+
+                                      // 2. Hiển thị loading overlay - dùng rootNavigator để tránh pop lộn trang
                                       showDialog(
                                         context: context,
                                         barrierDismissible: false,
+                                        useRootNavigator: true,
                                         builder: (_) => const Center(
                                           child: CircularProgressIndicator(),
                                         ),
                                       );
+
                                       try {
-                                        await DriveService.instance.deleteComic(
-                                          comic.id,
+                                        // 3. Thực hiện xóa (Hàm này giờ đã xóa khỏi cache trước nên rất nhanh)
+                                        await DriveService.instance.deleteManga(
+                                          manga.id,
                                         );
+
                                         if (context.mounted) {
-                                          Navigator.pop(
+                                          // 4. Đóng loading bằng rootNavigator
+                                          Navigator.of(
                                             context,
-                                          ); // Đóng loading
-                                          onRefresh(); // Làm mới danh sách
+                                            rootNavigator: true,
+                                          ).pop();
+
+                                          // 5. Cập nhật giao diện
+                                          onRefresh();
+
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
@@ -513,9 +522,12 @@ class _AdminComicCard extends StatelessWidget {
                                         }
                                       } catch (e) {
                                         if (context.mounted) {
-                                          Navigator.pop(
+                                          // Đóng loading nếu lỗi
+                                          Navigator.of(
                                             context,
-                                          ); // Close loading
+                                            rootNavigator: true,
+                                          ).pop();
+
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
@@ -547,67 +559,14 @@ class _AdminComicCard extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
+class _AddMangaDialog extends StatefulWidget {
+  const _AddMangaDialog();
 
   @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 30),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).textTheme.bodyLarge?.color,
-              ),
-            ),
-            Text(
-              title,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  State<_AddMangaDialog> createState() => _AddMangaDialogState();
 }
 
-class _AddComicDialog extends StatefulWidget {
-  const _AddComicDialog();
-
-  @override
-  State<_AddComicDialog> createState() => _AddComicDialogState();
-}
-
-class _AddComicDialogState extends State<_AddComicDialog> {
+class _AddMangaDialogState extends State<_AddMangaDialog> {
   final _titleController = TextEditingController();
   final _authorController = TextEditingController();
   final _descController = TextEditingController();
@@ -636,7 +595,7 @@ class _AddComicDialogState extends State<_AddComicDialog> {
 
     setState(() => _isUploading = true);
     try {
-      await DriveService.instance.addComic(
+      await DriveService.instance.addManga(
         title: _titleController.text,
         author: _authorController.text,
         description: _descController.text,
@@ -746,6 +705,61 @@ class _AddComicDialogState extends State<_AddComicDialog> {
           child: const Text('Lưu'),
         ),
       ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatCard({
+    required this.title,
+    required this.value,
+    this.icon = Icons.analytics,
+    this.color = Colors.blueAccent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 32, color: color),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

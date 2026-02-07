@@ -6,11 +6,11 @@ class InteractionService {
 
   InteractionService._();
 
-  /// Tăng tổng lượt xem của một bộ truyện (Comic View) lên 1 đơn vị
-  /// Dữ liệu được lưu trong Collection 'comics' trên Firestore
-  Future<void> incrementComicView(String comicId) async {
+  /// Tăng tổng lượt xem của một bộ truyện (Manga View) lên 1 đơn vị
+  /// Dữ liệu được lưu trong Collection 'comics' trên Firestore (Giữ nguyên tên collection cũ)
+  Future<void> incrementMangaView(String mangaId) async {
     try {
-      final ref = _db.collection('comics').doc(comicId);
+      final ref = _db.collection('comics').doc(mangaId);
       await ref.set({
         'viewCount': FieldValue.increment(1),
       }, SetOptions(merge: true));
@@ -21,12 +21,12 @@ class InteractionService {
 
   /// Tăng lượt xem của một chương cụ thể (Chapter View)
   /// Đồng thời gọi hàm tăng lượt xem tổng của truyện đó
-  Future<void> incrementChapterView(String comicId, String chapterId) async {
+  Future<void> incrementChapterView(String mangaId, String chapterId) async {
     try {
       // 1. Tăng view count trong subcollection 'chapters'
       final chapterRef = _db
           .collection('comics')
-          .doc(comicId)
+          .doc(mangaId)
           .collection('chapters')
           .doc(chapterId);
 
@@ -34,8 +34,8 @@ class InteractionService {
         'viewCount': FieldValue.increment(1),
       }, SetOptions(merge: true));
 
-      // 2. Tăng view tổng của comic luôn để đảm bảo tính nhất quán
-      await incrementComicView(comicId);
+      // 2. Tăng view tổng của manga luôn để đảm bảo tính nhất quán
+      await incrementMangaView(mangaId);
     } catch (e) {
       print('Lỗi khi tăng lượt xem chapter: $e');
     }
@@ -43,11 +43,11 @@ class InteractionService {
 
   /// Lấy thống kê lượt xem của TẤT CẢ các chương trong một bộ truyện
   /// Trả về Map<ChapterId, ViewCount> để hiển thị bên cạnh tên chương
-  Future<Map<String, int>> getChapterViews(String comicId) async {
+  Future<Map<String, int>> getChapterViews(String mangaId) async {
     try {
       final snapshot = await _db
           .collection('comics')
-          .doc(comicId)
+          .doc(mangaId)
           .collection('chapters')
           .get();
 
@@ -64,7 +64,7 @@ class InteractionService {
 
   /// Lấy thống kê (Lượt xem, Lượt thích) của TOÀN BỘ truyện có trong hệ thống
   /// Dùng để map dữ liệu vào danh sách truyện lấy từ Drive
-  Future<Map<String, Map<String, int>>> getAllComicStats() async {
+  Future<Map<String, Map<String, int>>> getAllMangaStats() async {
     try {
       final snapshot = await _db.collection('comics').get();
       final map = <String, Map<String, int>>{};
@@ -85,8 +85,8 @@ class InteractionService {
 
   /// Luồng sự kiện theo dõi thời gian thực (Realtime Stream) thống kê của một truyện
   /// Giúp cập nhật UI ngay lập tức khi có lượt xem hoặc lượt thích mới
-  Stream<Map<String, int>> streamComicStats(String comicId) {
-    return _db.collection('comics').doc(comicId).snapshots().map((doc) {
+  Stream<Map<String, int>> streamMangaStats(String mangaId) {
+    return _db.collection('comics').doc(mangaId).snapshots().map((doc) {
       if (!doc.exists || doc.data() == null) {
         return {'viewCount': 0, 'likeCount': 0};
       }
@@ -99,10 +99,10 @@ class InteractionService {
   }
 
   /// Luồng sự kiện theo dõi thời gian thực lượt xem của TẤT CẢ các chương trong một truyện
-  Stream<Map<String, int>> streamChapterViews(String comicId) {
+  Stream<Map<String, int>> streamChapterViews(String mangaId) {
     return _db
         .collection('comics')
-        .doc(comicId)
+        .doc(mangaId)
         .collection('chapters')
         .snapshots()
         .map((snapshot) {

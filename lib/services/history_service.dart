@@ -20,7 +20,7 @@ class HistoryService {
           .collection('users')
           .doc(uid)
           .collection('history')
-          .doc(history.comicId)
+          .doc(history.mangaId)
           .set({...history.toMap(), 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
       print('Lỗi khi lưu lịch sử lên cloud: $e');
@@ -29,7 +29,7 @@ class HistoryService {
 
   /// Truy xuất lịch sử đọc của một bộ truyện cụ thể
   /// Giúp người dùng tiếp tục đọc từ chương đang dang dở
-  Future<ReadingHistory?> getHistoryForComic(String comicId) async {
+  Future<ReadingHistory?> getHistoryForManga(String mangaId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return null;
 
@@ -38,7 +38,7 @@ class HistoryService {
           .collection('users')
           .doc(uid)
           .collection('history')
-          .doc(comicId)
+          .doc(mangaId)
           .get();
 
       if (doc.exists && doc.data() != null) {
@@ -55,6 +55,7 @@ class HistoryService {
     }
     return null;
   }
+
   Future<List<ReadingHistory>> getAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
@@ -82,7 +83,7 @@ class HistoryService {
   }
 
   /// Xoá lịch sử đọc của một bộ truyện cụ thể khỏi danh sách
-  Future<void> deleteHistory(String comicId) async {
+  Future<void> deleteHistory(String mangaId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
@@ -91,7 +92,7 @@ class HistoryService {
           .collection('users')
           .doc(uid)
           .collection('history')
-          .doc(comicId)
+          .doc(mangaId)
           .delete();
     } catch (e) {
       print('Lỗi khi xoá lịch sử truyện: $e');

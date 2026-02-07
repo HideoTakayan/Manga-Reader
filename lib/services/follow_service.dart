@@ -5,20 +5,20 @@ class FollowService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Stream<bool> isFollowing(String comicId) {
+  Stream<bool> isFollowing(String mangaId) {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return const Stream.empty();
     return _db
         .collection('users')
         .doc(uid)
         .collection('following')
-        .doc(comicId)
+        .doc(mangaId)
         .snapshots()
         .map((snap) => snap.exists);
   }
 
-  Future<void> followComic({
-    required String comicId,
+  Future<void> followManga({
+    required String mangaId,
     required String title,
     required String coverUrl,
   }) async {
@@ -28,38 +28,39 @@ class FollowService {
         .collection('users')
         .doc(uid)
         .collection('following')
-        .doc(comicId);
+        .doc(mangaId);
     await ref.set({
-      'comicId': comicId,
+      'mangaId': mangaId,
+      'comicId': mangaId, // Backward compatibility
       'title': title,
       'coverUrl': coverUrl,
       'followedAt': FieldValue.serverTimestamp(),
     });
 
-    // Tăng lượt yêu thích toàn cục
-    await _db.collection('comics').doc(comicId).set({
+    // Tăng lượt yêu thích toàn cục (vẫn dùng collection 'comics')
+    await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(1),
     }, SetOptions(merge: true));
   }
 
-  Future<void> unfollowComic(String comicId) async {
+  Future<void> unfollowManga(String mangaId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) throw Exception('Chưa đăng nhập');
     final ref = _db
         .collection('users')
         .doc(uid)
         .collection('following')
-        .doc(comicId);
+        .doc(mangaId);
     await ref.delete();
 
     // Giảm lượt yêu thích toàn cục
-    await _db.collection('comics').doc(comicId).set({
+    await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(-1),
     }, SetOptions(merge: true));
   }
 
   Future<void> toggleFollow(
-    String comicId, {
+    String mangaId, {
     String? title,
     String? coverUrl,
   }) async {
@@ -70,13 +71,13 @@ class FollowService {
         .collection('users')
         .doc(uid)
         .collection('following')
-        .doc(comicId);
+        .doc(mangaId);
     final doc = await ref.get();
 
     if (doc.exists) {
       await ref.delete();
       // Giảm lượt yêu thích toàn cục
-      await _db.collection('comics').doc(comicId).set({
+      await _db.collection('comics').doc(mangaId).set({
         'likeCount': FieldValue.increment(-1),
       }, SetOptions(merge: true));
     } else {
@@ -84,13 +85,14 @@ class FollowService {
         throw Exception('Missing info for follow');
       }
       await ref.set({
-        'comicId': comicId,
+        'mangaId': mangaId,
+        'comicId': mangaId, // Backward compatibility
         'title': title,
         'coverUrl': coverUrl,
         'followedAt': FieldValue.serverTimestamp(),
       });
       // Tăng lượt yêu thích toàn cục
-      await _db.collection('comics').doc(comicId).set({
+      await _db.collection('comics').doc(mangaId).set({
         'likeCount': FieldValue.increment(1),
       }, SetOptions(merge: true));
     }

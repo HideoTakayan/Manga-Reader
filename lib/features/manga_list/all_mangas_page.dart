@@ -4,25 +4,24 @@ import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 
-class AllComicsPage extends StatefulWidget {
-  const AllComicsPage({super.key});
+class AllMangasPage extends StatefulWidget {
+  const AllMangasPage({super.key});
 
   @override
-  State<AllComicsPage> createState() => _AllComicsPageState();
+  State<AllMangasPage> createState() => _AllMangasPageState();
 }
 
-class _AllComicsPageState extends State<AllComicsPage> {
-  // DriveService.getComics returns a Future, needing FutureBuilder.
+class _AllMangasPageState extends State<AllMangasPage> {
   String _sortCriteria = 'new';
-  late Future<List<CloudComic>> _comicsFuture;
+  late Future<List<CloudManga>> _mangasFuture;
 
   @override
   void initState() {
     super.initState();
-    _comicsFuture = DriveService.instance.getComics();
+    _mangasFuture = DriveService.instance.getMangas();
   }
 
-  void _sortComics(String criteria) {
+  void _sortMangas(String criteria) {
     setState(() {
       _sortCriteria = criteria;
     });
@@ -30,7 +29,7 @@ class _AllComicsPageState extends State<AllComicsPage> {
 
   void _refresh() {
     setState(() {
-      _comicsFuture = DriveService.instance.getComics();
+      _mangasFuture = DriveService.instance.getMangas();
     });
   }
 
@@ -51,7 +50,7 @@ class _AllComicsPageState extends State<AllComicsPage> {
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort, color: Colors.white),
-            onSelected: _sortComics,
+            onSelected: _sortMangas,
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'new', child: Text('Mới nhất')),
               const PopupMenuItem(value: 'az', child: Text('A → Z')),
@@ -59,8 +58,8 @@ class _AllComicsPageState extends State<AllComicsPage> {
           ),
         ],
       ),
-      body: FutureBuilder<List<CloudComic>>(
-        future: _comicsFuture,
+      body: FutureBuilder<List<CloudManga>>(
+        future: _mangasFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return _buildShimmerGrid();
@@ -75,16 +74,16 @@ class _AllComicsPageState extends State<AllComicsPage> {
             );
           }
 
-          var comics = snapshot.data ?? [];
+          var mangas = snapshot.data ?? [];
 
           // Sorting
           if (_sortCriteria == 'new') {
-            comics.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+            mangas.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
           } else if (_sortCriteria == 'az') {
-            comics.sort((a, b) => a.title.compareTo(b.title));
+            mangas.sort((a, b) => a.title.compareTo(b.title));
           }
 
-          if (comics.isEmpty) {
+          if (mangas.isEmpty) {
             return _buildEmptyState();
           }
 
@@ -96,11 +95,11 @@ class _AllComicsPageState extends State<AllComicsPage> {
               crossAxisSpacing: 12,
               childAspectRatio: 0.65,
             ),
-            itemCount: comics.length,
+            itemCount: mangas.length,
             itemBuilder: (context, index) {
-              final comic = comics[index];
+              final manga = mangas[index];
               return GestureDetector(
-                onTap: () => context.push('/detail/${comic.id}'),
+                onTap: () => context.push('/detail/${manga.id}'),
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A1A1D),
@@ -124,7 +123,7 @@ class _AllComicsPageState extends State<AllComicsPage> {
                             top: Radius.circular(12),
                           ),
                           child: DriveImage(
-                            fileId: comic.coverFileId,
+                            fileId: manga.coverFileId,
                             fit: BoxFit.cover,
                             width: double.infinity,
                             height: double.infinity,
@@ -141,7 +140,7 @@ class _AllComicsPageState extends State<AllComicsPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                comic.title,
+                                manga.title,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -154,7 +153,7 @@ class _AllComicsPageState extends State<AllComicsPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    comic.author,
+                                    manga.author,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(

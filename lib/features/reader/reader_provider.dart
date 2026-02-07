@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,8 @@ import 'package:pdfx/pdfx.dart';
 import '../../services/follow_service.dart';
 import '../../services/history_service.dart';
 import '../../services/interaction_service.dart';
+
+import '../../core/utils/chapter_utils.dart';
 
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
@@ -31,7 +34,7 @@ class ReaderState {
   final bool isLiked;
   final bool isFollowed;
   final String? comicId;
-  final CloudComic? comic;
+  final CloudManga? comic;
   final bool hasReachedEnd;
   final bool hasReachedStart;
 
@@ -68,7 +71,7 @@ class ReaderState {
     bool? isLiked,
     bool? isFollowed,
     String? comicId,
-    CloudComic? comic,
+    CloudManga? comic,
     bool? hasReachedEnd,
     bool? hasReachedStart,
   }) {
@@ -109,71 +112,66 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     try {
       // ========================================
-      // TỐI ƯU HÓA: Gọi API song song (Parallel API Calls)
-      // Trước đây: 6 gọi tuần tự (~5s)
-      // Hiện tại: Chạy song song các tác vụ độc lập (~2s)
+      // CHECK OFFLINE MODE TRƯỚC
       // ========================================
-
-      // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
-      // Hai tác vụ này độc lập nên có thể chạy song song
-      final downloadFuture = DriveService.instance.downloadFile(chapterId);
-      final metaFuture = DriveService.instance.getFile(chapterId);
-
-      // Chờ metadata trước (cần để lấy comicId)
-      final fileMeta = await metaFuture;
-      if (fileMeta == null ||
-          fileMeta['parents'] == null ||
-          (fileMeta['parents'] as List).isEmpty) {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: 'Không tìm thấy thông tin chương truyện',
-        );
-        return;
-      }
-
-      final comicId = (fileMeta['parents'] as List).first as String;
-
-      // Giai đoạn 2: Sau khi có comicId, tải danh sách chapter và thông tin truyện song song
-      // trong khi việc tải file vẫn đang chạy ngầm
-      final chaptersFuture = DriveService.instance.getChapters(comicId);
-      final comicsFuture = DriveService.instance.getComics();
-
-      // Kiểm tra trạng thái theo dõi song song (không chặn)
-      Future<bool> followFuture = Future.value(false);
-      if (FirebaseAuth.instance.currentUser != null) {
-        final followService = FollowService();
-        followFuture = followService.isFollowing(comicId).first;
-      }
-
-      // Chờ tất cả các tác vụ song song hoàn tất
-      final results = await Future.wait([
-        chaptersFuture,
-        comicsFuture,
-        downloadFuture,
-        followFuture,
-      ]);
-
-      final chapters = results[0] as List<CloudChapter>;
-      final comics = results[1] as List<CloudComic>;
-      final fileBytes = results[2] as Uint8List?;
-      final followed = results[3] as bool;
-
-      // Find current chapter in list
-      final currentChapter = chapters.firstWhereOrNull(
-        (c) => c.id == chapterId,
+      final isDownloaded = await DatabaseHelper.instance.isChapterDownloaded(
+        chapterId,
       );
 
-      // Kiểm tra file tải về
-      if (fileBytes == null) {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: 'Lỗi tải nội dung chương truyện',
-        );
+      if (isDownloaded) {
+        debugPrint('📂 OFFLINE MODE: Đọc từ file local');
+        await _loadOfflineChapter(chapterId);
         return;
       }
 
-      // Giai đoạn 3: Giải nén ảnh (Tác vụ nặng CPU, không thể chạy song song với API calls)
-      final fileType = currentChapter?.fileType ?? 'zip';
+      // ========================================
+      // ONLINE MODE: Fetch từ Drive
+      // ========================================
+      debugPrint('🌐 ONLINE MODE: Tải từ Google Drive');
+      await _loadOnlineChapter(chapterId);
+    } catch (e) {
+      debugPrint('Error loading reader: $e');
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Đã xảy ra lỗi: $e',
+      );
+    }
+  }
+
+  /// OFFLINE MODE: Đọc file local (NHANH!)
+  Future<void> _loadOfflineChapter(String chapterId) async {
+    try {
+      // 1. Lấy thông tin download từ database
+      final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
+
+      if (downloadInfo == null) {
+        debugPrint('⚠️ Download info not found, fallback to online');
+        await _loadOnlineChapter(chapterId);
+        return;
+      }
+
+      final localPath = downloadInfo['localPath'] as String;
+      final mangaId = downloadInfo['mangaId'] as String;
+      final chapterTitle = downloadInfo['chapterTitle'] as String?;
+
+      debugPrint('📁 Local path: $localPath');
+
+      // 2. Đọc file từ local
+      final file = File(localPath);
+      if (!await file.exists()) {
+        debugPrint('⚠️ File not found, fallback to online');
+        // Xóa record lỗi
+        await DatabaseHelper.instance.deleteDownload(chapterId);
+        await _loadOnlineChapter(chapterId);
+        return;
+      }
+
+      final fileBytes = await file.readAsBytes();
+      debugPrint('✅ Đọc file thành công (${fileBytes.length} bytes)');
+
+      // 3. Extract images (giống online mode)
+      // Detect file type từ extension
+      final fileType = localPath.endsWith('.pdf') ? 'pdf' : 'zip';
       List<Uint8List> images = [];
 
       if (fileType == 'pdf') {
@@ -190,37 +188,322 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Tìm thông tin comic tương ứng
-      final fetchedComic = comics.firstWhereOrNull((c) => c.id == comicId);
+      debugPrint('✅ Extracted ${images.length} images');
 
-      // Update state with all data
+      // 4. Load chapters list và manga info (background - không block UI)
+      // Tạo state tạm thời để hiển thị reader ngay
       state = state.copyWith(
         isLoading: false,
-        chapters: chapters,
-        currentChapter: currentChapter,
         pages: images,
         currentPageIndex: 0,
-        isFollowed: followed,
-        isLiked: false,
-        comicId: comicId,
-        comic: fetchedComic,
+        comicId: mangaId,
+        currentChapter: CloudChapter(
+          id: chapterId,
+          title: chapterTitle ?? 'Chapter',
+          fileId: '',
+          fileType: fileType,
+          uploadedAt: DateTime.now(),
+          viewCount: 0,
+        ),
       );
 
-      // Lưu lịch sử đọc (chạy ngầm, không chặn UI)
+      debugPrint('✅ Reader hiển thị (OFFLINE MODE)');
+
+      // [Offline Navigation] Load local chapters list
+      try {
+        var downloadedMaps = await DatabaseHelper.instance.getDownloadsByManga(
+          mangaId,
+        );
+
+        // [Fallback 1] Nếu query theo ID thất bại, load tất cả và lọc (phòng lỗi SQL/ID)
+        if (downloadedMaps.isEmpty) {
+          final all = await DatabaseHelper.instance.getAllDownloads();
+          downloadedMaps = all
+              .where((d) => d['mangaId'].toString() == mangaId)
+              .toList();
+        }
+
+        // [Fallback 2 - ULTIMATE] Scan Folder (Mihon Style)
+        // Fix lỗi khi ID trong Database bị sai lệch hoặc không khớp:
+        // -> Gom tất cả các chapter nằm cùng thư mục với chapter hiện tại.
+        if (downloadedMaps.length <= 1) {
+          try {
+            final currentFile = File(localPath);
+            final parentDir = currentFile.parent.path;
+
+            final all = await DatabaseHelper.instance.getAllDownloads();
+            final siblingMaps = all.where((d) {
+              final path = d['localPath'] as String?;
+              if (path == null) return false;
+              // Kiểm tra xem có nằm chung thư mục không (Simple Contains check)
+              return path.contains(parentDir);
+            }).toList();
+
+            if (siblingMaps.length > downloadedMaps.length) {
+              debugPrint(
+                '📂 FS Scan found ${siblingMaps.length} chapters in $parentDir',
+              );
+
+              // 🔧 SILENT REPAIR: Update database records to unify mangaId
+              for (final map in siblingMaps) {
+                if (map['mangaId'].toString() != mangaId) {
+                  debugPrint(
+                    '🛠️ Repairing chapter ${map['chapterId']} -> $mangaId',
+                  );
+                  await DatabaseHelper.instance.updateDownloadMangaId(
+                    map['chapterId'].toString(),
+                    mangaId,
+                  );
+                }
+              }
+
+              downloadedMaps = siblingMaps;
+            }
+          } catch (e) {
+            debugPrint('FS Fallback error: $e');
+          }
+        }
+
+        // [Fallback 3] Ít nhất phải có chương hiện tại để không bị lỗi màn hình trắng
+        if (downloadedMaps.isEmpty && downloadInfo != null) {
+          downloadedMaps = [downloadInfo];
+        }
+
+        if (downloadedMaps.isNotEmpty) {
+          final localChapters = downloadedMaps
+              .map((d) {
+                try {
+                  final path = d['localPath'] as String? ?? '';
+                  final type = path.toLowerCase().endsWith('.pdf')
+                      ? 'pdf'
+                      : 'cbz';
+                  return CloudChapter(
+                    id: d['chapterId'].toString(),
+                    title:
+                        d['chapterTitle'] as String? ??
+                        d['chapterId'].toString(),
+                    fileId: d['chapterId'].toString(),
+                    fileType: type,
+                    uploadedAt: DateTime.fromMillisecondsSinceEpoch(
+                      (d['downloadDate'] as int?) ?? 0,
+                    ),
+                    viewCount: 0,
+                  );
+                } catch (e) {
+                  debugPrint('Error mapping chapter: $e');
+                  return null;
+                }
+              })
+              .whereType<CloudChapter>()
+              .toList();
+
+          // Deduplicate and Sort using ChapterUtils (clean list immediately)
+          final sortedChapters = await ChapterUtils.mergeChapters(
+            [], // No online chapters yet
+            localChapters,
+            mangaId,
+          );
+          state = state.copyWith(chapters: sortedChapters);
+
+          // [DEBUG]
+          debugPrint('------- DEBUG OFFLINE NAV -------');
+          debugPrint('Current Chapter ID: $chapterId');
+          debugPrint(
+            'Sorted List IDs: ${sortedChapters.map((c) => c.id).toList()}',
+          );
+          debugPrint(
+            'Sorted List Titles: ${sortedChapters.map((c) => c.title).toList()}',
+          );
+          final index = sortedChapters.indexWhere((c) => c.id == chapterId);
+          debugPrint('Current Index: $index');
+          debugPrint('---------------------------------');
+
+          debugPrint(
+            '✅ Loaded ${sortedChapters.length} offline chapters for navigation',
+          );
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error loading offline chapters: $e');
+      }
+
+      // 5. Load metadata sau (background)
+      _loadMetadataInBackground(mangaId, chapterId);
+
+      // 6. Lưu lịch sử đọc
       _saveProgress();
-
-      // Tăng lượt xem (chạy ngầm)
-      InteractionService.instance.incrementChapterView(comicId, chapterId);
-
-      // Tải trước các chương liền kề (Prefetch) để chuyển trang mượt mà
-      _prefetchAdjacentChapters();
     } catch (e) {
-      debugPrint('Error loading reader: $e');
+      debugPrint('Error in offline mode: $e');
+      // Fallback to online
+      await _loadOnlineChapter(chapterId);
+    }
+  }
+
+  /// ONLINE MODE: Fetch từ Drive (CHẬM nhưng đầy đủ)
+  Future<void> _loadOnlineChapter(String chapterId) async {
+    // ========================================
+    // TỐI ƯU HÓA: Gọi API song song (Parallel API Calls)
+    // Trước đây: 6 gọi tuần tự (~5s)
+    // Hiện tại: Chạy song song các tác vụ độc lập (~2s)
+    // ========================================
+
+    // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
+    // Hai tác vụ này độc lập nên có thể chạy song song
+    final downloadFuture = DriveService.instance.downloadFile(chapterId);
+    final metaFuture = DriveService.instance.getFile(chapterId);
+
+    // Chờ metadata trước (cần để lấy comicId)
+    final fileMeta = await metaFuture;
+    if (fileMeta == null ||
+        fileMeta['parents'] == null ||
+        (fileMeta['parents'] as List).isEmpty) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Đã xảy ra lỗi: $e',
+        errorMessage: 'Không tìm thấy thông tin chương truyện',
       );
+      return;
     }
+
+    final comicId = (fileMeta['parents'] as List).first as String;
+
+    // Giai đoạn 2: Sau khi có comicId, tải danh sách chapter và thông tin truyện song song
+    // trong khi việc tải file vẫn đang chạy ngầm
+    final chaptersFuture = DriveService.instance.getChapters(comicId);
+    final comicsFuture = DriveService.instance.getMangas();
+
+    // Kiểm tra trạng thái theo dõi song song (không chặn)
+    Future<bool> followFuture = Future.value(false);
+    if (FirebaseAuth.instance.currentUser != null) {
+      final followService = FollowService();
+      followFuture = followService.isFollowing(comicId).first;
+    }
+
+    // Chờ tất cả các tác vụ song song hoàn tất
+    final results = await Future.wait<dynamic>([
+      chaptersFuture,
+      comicsFuture,
+      downloadFuture,
+      followFuture,
+    ]);
+
+    final chapters = results[0] as List<CloudChapter>;
+    final comics = results[1] as List<CloudManga>;
+    final fileBytes = results[2] as Uint8List?;
+    final followed = results[3] as bool;
+
+    // Find current chapter in list
+    final currentChapter = chapters.firstWhereOrNull((c) => c.id == chapterId);
+
+    // Kiểm tra file tải về
+    if (fileBytes == null) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Lỗi tải nội dung chương truyện',
+      );
+      return;
+    }
+
+    // Giai đoạn 3: Giải nén ảnh (Tác vụ nặng CPU, không thể chạy song song với API calls)
+    final fileType = currentChapter?.fileType ?? 'zip';
+    List<Uint8List> images = [];
+
+    if (fileType == 'pdf') {
+      images = await _extractImagesFromPdf(fileBytes);
+    } else {
+      images = await _extractImagesFromZip(fileBytes);
+    }
+
+    if (images.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Không tìm thấy ảnh trong file truyện',
+      );
+      return;
+    }
+
+    // Tìm thông tin comic tương ứng
+    final fetchedComic = comics.firstWhereOrNull((c) => c.id == comicId);
+
+    // Update state with all data
+    state = state.copyWith(
+      isLoading: false,
+      chapters: chapters,
+      currentChapter: currentChapter,
+      pages: images,
+      currentPageIndex: 0,
+      isFollowed: followed,
+      isLiked: false,
+      comicId: comicId,
+      comic: fetchedComic,
+    );
+
+    // Lưu lịch sử đọc (chạy ngầm, không chặn UI)
+    _saveProgress();
+
+    // Tăng lượt xem (chạy ngầm)
+    InteractionService.instance.incrementChapterView(comicId, chapterId);
+
+    // Tải trước các chương liền kề (Prefetch) để chuyển trang mượt mà
+    _prefetchAdjacentChapters();
+  }
+
+  /// Load metadata trong background (không block UI)
+  void _loadMetadataInBackground(String mangaId, String chapterId) {
+    Future.microtask(() async {
+      try {
+        debugPrint('🔄 Loading metadata in background...');
+
+        // Fetch chapters list và manga info
+        final chaptersFuture = DriveService.instance.getChapters(mangaId);
+        final mangasFuture = DriveService.instance.getMangas();
+
+        Future<bool> followFuture = Future.value(false);
+        if (FirebaseAuth.instance.currentUser != null) {
+          final followService = FollowService();
+          followFuture = followService.isFollowing(mangaId).first;
+        }
+
+        final results = await Future.wait([
+          chaptersFuture,
+          mangasFuture,
+          followFuture,
+        ]);
+
+        final onlineChapters = results[0] as List<CloudChapter>;
+        final mangas = results[1] as List<CloudManga>;
+        final followed = results[2] as bool;
+
+        final currentChapter = onlineChapters.firstWhereOrNull(
+          (c) => c.id == chapterId,
+        );
+        final manga = mangas.firstWhereOrNull((m) => m.id == mangaId);
+
+        // 🔧 FIX: Merge online + offline chapters (giống manga_detail_page.dart)
+        final mergedChapters = await ChapterUtils.mergeChapters(
+          onlineChapters,
+          state.chapters,
+          mangaId,
+        );
+
+        // Update state với metadata đầy đủ
+        state = state.copyWith(
+          chapters: mergedChapters.isNotEmpty ? mergedChapters : onlineChapters,
+          currentChapter: currentChapter,
+          comic: manga,
+          isFollowed: followed,
+        );
+
+        debugPrint('✅ Metadata loaded (${mergedChapters.length} chapters)');
+
+        // Tăng lượt xem
+        InteractionService.instance.incrementChapterView(mangaId, chapterId);
+
+        // Prefetch adjacent chapters
+        _prefetchAdjacentChapters();
+      } catch (e) {
+        debugPrint('⚠️ Error loading metadata: $e');
+        // Không cần xử lý lỗi vì reader đã hiển thị
+      }
+    });
   }
 
   /// Tải trước chương trước và sau chạy ngầm để tăng tốc độ chuyển chương
@@ -357,7 +640,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       final userId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
       final history = ReadingHistory(
         userId: userId,
-        comicId: state.comicId!,
+        mangaId: state.comicId!,
         chapterId: state.currentChapter!.id,
         chapterTitle: state.currentChapter?.title,
         lastPageIndex: state.currentPageIndex,
@@ -410,8 +693,31 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isLoadingNextChapter: true, hasReachedEnd: false);
 
     try {
-      // Download next chapter content
-      final fileBytes = await DriveService.instance.downloadFile(nextChapterId);
+      // 1. Check Offline first & Download content
+      Uint8List? fileBytes;
+      final downloadInfo = await DatabaseHelper.instance.getDownload(
+        nextChapterId,
+      );
+
+      if (downloadInfo != null) {
+        final localPath = downloadInfo['localPath'] as String;
+        final file = File(localPath);
+        if (await file.exists()) {
+          debugPrint('📂 Reading NEXT chapter from local: $localPath');
+          try {
+            fileBytes = await file.readAsBytes();
+          } catch (e) {
+            debugPrint('⚠️ Error reading local file: $e');
+          }
+        }
+      }
+
+      // 2. If not found local, download online
+      if (fileBytes == null) {
+        debugPrint('🌐 Downloading NEXT chapter from Drive');
+        fileBytes = await DriveService.instance.downloadFile(nextChapterId);
+      }
+
       if (fileBytes == null) {
         state = state.copyWith(isLoadingNextChapter: false);
         return;
@@ -482,8 +788,31 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isLoadingPrevChapter: true, hasReachedStart: false);
 
     try {
-      // Download previous chapter content
-      final fileBytes = await DriveService.instance.downloadFile(prevChapterId);
+      // 1. Check Offline first & Download content
+      Uint8List? fileBytes;
+      final downloadInfo = await DatabaseHelper.instance.getDownload(
+        prevChapterId,
+      );
+
+      if (downloadInfo != null) {
+        final localPath = downloadInfo['localPath'] as String;
+        final file = File(localPath);
+        if (await file.exists()) {
+          debugPrint('📂 Reading PREV chapter from local: $localPath');
+          try {
+            fileBytes = await file.readAsBytes();
+          } catch (e) {
+            debugPrint('⚠️ Error reading local file: $e');
+          }
+        }
+      }
+
+      // 2. If not found local, download online
+      if (fileBytes == null) {
+        debugPrint('🌐 Downloading PREV chapter from Drive');
+        fileBytes = await DriveService.instance.downloadFile(prevChapterId);
+      }
+
       if (fileBytes == null) {
         state = state.copyWith(isLoadingPrevChapter: false);
         return;
@@ -556,15 +885,15 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           final isFollowed = await followService.isFollowing(comicId).first;
 
           if (isFollowed) {
-            await followService.unfollowComic(comicId);
+            await followService.unfollowManga(comicId);
             state = state.copyWith(isFollowed: false);
           } else {
-            final comics = await DriveService.instance.getComics();
+            final comics = await DriveService.instance.getMangas();
             final comic = comics.firstWhereOrNull((c) => c.id == comicId);
 
             if (comic != null) {
-              await followService.followComic(
-                comicId: comicId,
+              await followService.followManga(
+                mangaId: comicId,
                 title: comic.title,
                 coverUrl: DriveService.instance.getThumbnailLink(
                   comic.coverFileId,

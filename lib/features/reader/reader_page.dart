@@ -1126,9 +1126,21 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
               Expanded(
                 child: ListView.builder(
                   controller: scrollController,
-                  itemCount: widget.chapters.length,
+                  // Tự động deduplicate trong UI (Biện pháp cuối cùng)
+                  itemCount: () {
+                    final seen = <String>{};
+                    return widget.chapters.where((c) => seen.add(c.id)).length;
+                  }(),
                   itemBuilder: (context, index) {
-                    final chapter = widget.chapters[index];
+                    // Re-calculate unique list for safety (though inefficient, it guarantees 100%)
+                    final seen = <String>{};
+                    final uniqueChapters = widget.chapters
+                        .where((c) => seen.add(c.id))
+                        .toList();
+
+                    if (index >= uniqueChapters.length) return const SizedBox();
+
+                    final chapter = uniqueChapters[index];
                     final isSelected = chapter.id == widget.currentChapter?.id;
 
                     // Format date: dd/MM/yyyy

@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service.dart';
 
+import '../library/edit_categories_page.dart';
+
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -285,6 +287,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           subtitle: 'Thống kê & Quản lý',
                           onTap: () => context.push('/admin'),
                         ),
+
+                      _buildTile(
+                        context,
+                        icon: Icons.category_outlined,
+                        color: Colors.purpleAccent,
+                        title: 'Hạng mục',
+                        subtitle: 'Quản lý danh mục thư viện',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const EditCategoriesPage(),
+                          ),
+                        ),
+                      ),
+
+                      _buildTile(
+                        context,
+                        icon: Icons.download_outlined,
+                        color: Colors.teal,
+                        title: 'Hàng đợi tải xuống',
+                        subtitle: 'Quản lý các chương đang tải',
+                        onTap: () => context.push('/downloads'),
+                      ),
 
                       const SizedBox(height: 8), // Khoảng cách giữa các mục
                       _buildTile(

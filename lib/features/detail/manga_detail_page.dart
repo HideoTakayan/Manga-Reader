@@ -9,18 +9,24 @@ import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/history_service.dart';
 import '../../services/interaction_service.dart';
+import '../../services/library_service.dart';
+import '../../services/download_service.dart';
+import '../../services/folder_service.dart';
+import '../../core/utils/chapter_sort_helper.dart';
+import '../../core/utils/chapter_utils.dart';
+import '../shared/library_dialogs.dart';
 
-class ComicDetailPage extends StatefulWidget {
-  final String comicId;
-  const ComicDetailPage({super.key, required this.comicId});
+class MangaDetailPage extends StatefulWidget {
+  final String mangaId;
+  const MangaDetailPage({super.key, required this.mangaId});
 
   @override
-  State<ComicDetailPage> createState() => _ComicDetailPageState();
+  State<MangaDetailPage> createState() => _MangaDetailPageState();
 }
 
-class _ComicDetailPageState extends State<ComicDetailPage> {
+class _MangaDetailPageState extends State<MangaDetailPage> {
   ReadingHistory? _history;
-  CloudComic? _comic;
+  CloudManga? _manga;
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
   bool _isDescriptionExpanded = false;
@@ -28,6 +34,18 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   // Dữ liệu giả cho phần bình luận (chức năng comment chưa hoàn thiện)
   List<String> comments = [];
   final TextEditingController _commentController = TextEditingController();
+
+  // Helper chuyển đổi CloudManga -> Local Manga
+  Manga _cloudToLocal(CloudManga cm) {
+    return Manga(
+      id: cm.id,
+      title: cm.title,
+      coverUrl: cm.coverFileId,
+      author: cm.author,
+      description: cm.description,
+      genres: cm.genres,
+    );
+  }
 
   @override
   void initState() {
@@ -41,53 +59,163 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     super.dispose();
   }
 
-  /// Tải dữ liệu tổng hợp cho trang chi tiết (Truyện, Chapters, Lịch sử)
-  /// Sử dụng `forceRefresh` để lấy dữ liệu mới nhất nếu được gọi từ thao tác pull-to-refresh
+  /// Tải dữ liệu tổng hợp cho trang chi tiết (Offline First Strategy)
   Future<void> _fetchData() async {
-    // Nếu chưa có dữ liệu truyện, hiển thị loading
-    if (_comic == null) {
+    if (_manga == null) {
       if (mounted) setState(() => _isLoading = true);
     }
 
     try {
-      // 1. Lấy thông tin chi tiết của truyện từ Drive Service
-      final comics = await DriveService.instance.getComics(forceRefresh: true);
-      final comic = comics.firstWhere(
-        (c) => c.id == widget.comicId,
-        orElse: () => CloudComic(
-          id: '',
-          title: '',
-          coverFileId: '',
-          author: '',
-          status: '',
-          description: '',
-          updatedAt: DateTime.now(),
-          genres: [],
-          chapterOrder: [],
-        ),
+      // --- 1. OFFLINE FIRST: Try Load Local Data ---
+      CloudManga? localData;
+      List<CloudChapter> localChaptersList = [];
+
+      // A. Try DB Info
+      Manga? dbManga = await DatabaseHelper.instance.getLocalManga(
+        widget.mangaId,
       );
 
-      if (comic.id.isEmpty) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
+      // B. If no DB Info, recover metadata from Downloaded Chapters (Backward Compatibility)
+      if (dbManga == null) {
+        final downloads = await DatabaseHelper.instance.getDownloadsByManga(
+          widget.mangaId,
+        );
+        if (downloads.isNotEmpty) {
+          final first = downloads.first;
+          final String title = first['mangaTitle'] ?? 'Manga Offline';
+
+          String coverPath = '';
+          try {
+            if (await FolderService.hasCover(title)) {
+              coverPath = await FolderService.getCoverPath(title);
+            }
+          } catch (_) {}
+
+          dbManga = Manga(
+            id: widget.mangaId,
+            title: title,
+            coverUrl: coverPath,
+            author: 'Vô danh (Offline)',
+            description:
+                'Không có thông tin chi tiết (Tải từ phiên bản cũ hoặc chưa đồng bộ). Bạn vẫn có thể đọc bình thường.',
+            genres: [],
+          );
+        }
       }
 
-      // 2. Lấy danh sách các chương
-      final chapters = await DriveService.instance.getChapters(widget.comicId);
+      if (dbManga != null) {
+        // Construct CloudManga wrapper for UI
+        localData = CloudManga(
+          id: dbManga.id,
+          title: dbManga.title,
+          coverFileId: dbManga.coverUrl,
+          author: dbManga.author,
+          status: 'Offline',
+          description: dbManga.description,
+          updatedAt: DateTime.now(),
+          genres: dbManga.genres,
+          chapterOrder: [],
+        );
 
-      // 3. Tải lịch sử đọc
+        final downloadedMaps = await DatabaseHelper.instance
+            .getDownloadsByManga(widget.mangaId);
+
+        // 🔧 FIX: Deduplicate downloaded chapters (phòng trường hợp DB có duplicate)
+        final Map<String, Map<String, dynamic>> uniqueDownloads = {};
+        for (final d in downloadedMaps) {
+          final chapterId = d['chapterId'] as String;
+          // Giữ entry mới nhất (downloadDate cao nhất)
+          if (!uniqueDownloads.containsKey(chapterId) ||
+              (d['downloadDate'] ?? 0) >
+                  (uniqueDownloads[chapterId]!['downloadDate'] ?? 0)) {
+            uniqueDownloads[chapterId] = d;
+          }
+        }
+
+        localChaptersList = uniqueDownloads.values.map((d) {
+          return CloudChapter(
+            id: d['chapterId'],
+            title: d['chapterTitle'] ?? d['chapterId'],
+            fileId: d['chapterId'],
+            fileType: 'cbz',
+            uploadedAt: DateTime.fromMillisecondsSinceEpoch(
+              d['downloadDate'] ?? 0,
+            ),
+            viewCount: 0,
+          );
+        }).toList();
+
+        // Sort numeric ascending (Match Online Mode)
+        localChaptersList = ChapterSortHelper.sort(localChaptersList);
+      }
+
+      // Show local data immediately if available
+      if (localData != null && mounted) {
+        // FIX: Xử lý deduplicate và sort ngay cho data offline để tránh hiển thị trùng/lộn xộn
+        final processedLocal = await ChapterUtils.mergeChapters(
+          [],
+          localChaptersList,
+          widget.mangaId,
+        );
+
+        if (mounted) {
+          setState(() {
+            _manga = localData;
+            _chapters = processedLocal;
+            // Keep loading true to verify network
+          });
+        }
+      }
+
+      // --- 2. NETWORK SYNC (Try to get fresh data) ---
+      final mangas = await DriveService.instance.getMangas(forceRefresh: true);
+      final manga = mangas.firstWhere(
+        (c) => c.id == widget.mangaId,
+        orElse: () => throw Exception('Manga not found on server'),
+      );
+
+      final chapters = await DriveService.instance.getChapters(widget.mangaId);
+
+      // Save fresh info to local DB
+      await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(manga));
       await _fetchHistory();
+
+      // 🔧 FIX: Advanced Deduplication & Sort (Centralized)
+      // Gọi helper để xử lý logic gộp và sắp xếp nhất quán
+      final deduplicatedChapters = await ChapterUtils.mergeChapters(
+        chapters,
+        localChaptersList,
+        widget.mangaId,
+      );
 
       if (mounted) {
         setState(() {
-          _comic = comic;
-          _chapters = chapters;
+          _manga = manga;
+          _chapters = deduplicatedChapters;
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Error loading comic detail: $e');
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('⚠️ Network fetch failed (Offline Mode): $e');
+
+      // If we have local data, consider it a success state (Offline Mode)
+      if (_manga != null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          if (e.toString().contains('SocketException') ||
+              e.toString().contains('ClientException')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Đang xem chế độ Offline'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } else {
+        // Real error (No local data, no network)
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -97,17 +225,17 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
 
     // Bước 1: Thử lấy dữ liệu từ Cloud Firestore (nếu người dùng đã đăng nhập)
     if (userId != null) {
-      history = await HistoryService.instance.getHistoryForComic(
-        widget.comicId,
+      history = await HistoryService.instance.getHistoryForManga(
+        widget.mangaId,
       );
     }
 
     // Bước 2: Nếu không có trên Cloud (hoặc guest), tìm trong Local Database
     if (history == null) {
       final localUserId = userId ?? 'guest';
-      history = await DatabaseHelper.instance.getHistoryForComic(
+      history = await DatabaseHelper.instance.getHistoryForManga(
         localUserId,
-        widget.comicId,
+        widget.mangaId,
       );
     }
 
@@ -118,16 +246,14 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     }
   }
 
-  // Helper method removed as its merged into _fetchData
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final comic = _comic;
-    if (comic == null || comic.id.isEmpty) {
+    final manga = _manga;
+    if (manga == null || manga.id.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Lỗi')),
         body: const Center(child: Text('Không tìm thấy truyện')),
@@ -155,7 +281,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                       // Background mờ
                       Positioned.fill(
                         child: DriveImage(
-                          fileId: comic.coverFileId,
+                          fileId: manga.coverFileId,
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -193,7 +319,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                 width: 120,
                                 height: 160,
                                 child: DriveImage(
-                                  fileId: comic.coverFileId,
+                                  fileId: manga.coverFileId,
                                   fit: BoxFit.cover,
                                 ),
                               ),
@@ -205,7 +331,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    comic.title,
+                                    manga.title,
                                     style: theme.textTheme.titleLarge?.copyWith(
                                       color: Colors
                                           .white, // Always white on dark header
@@ -225,7 +351,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                       const SizedBox(width: 4),
                                       Expanded(
                                         child: Text(
-                                          comic.author,
+                                          manga.author,
                                           style: const TextStyle(
                                             color: Colors.white70,
                                             fontSize: 13,
@@ -245,7 +371,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        comic.status,
+                                        manga.status,
                                         style: const TextStyle(
                                           color: Colors.white70,
                                           fontSize: 13,
@@ -274,13 +400,13 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                   const SizedBox(height: 8),
                                   StreamBuilder<Map<String, int>>(
                                     stream: InteractionService.instance
-                                        .streamComicStats(widget.comicId),
+                                        .streamMangaStats(widget.mangaId),
                                     builder: (context, statsSnapshot) {
                                       final stats =
                                           statsSnapshot.data ??
                                           {
-                                            'viewCount': comic.viewCount,
-                                            'likeCount': comic.likeCount,
+                                            'viewCount': manga.viewCount,
+                                            'likeCount': manga.likeCount,
                                           };
                                       final viewCount = stats['viewCount'] ?? 0;
                                       final likeCount = stats['likeCount'] ?? 0;
@@ -335,13 +461,13 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       scrollDirection: Axis.horizontal,
-                      itemCount: comic.genres.isNotEmpty
-                          ? comic.genres.length
+                      itemCount: manga.genres.isNotEmpty
+                          ? manga.genres.length
                           : 1,
                       separatorBuilder: (_, __) => const SizedBox(width: 8),
                       itemBuilder: (context, index) {
-                        final genre = comic.genres.isNotEmpty
-                            ? comic.genres[index]
+                        final genre = manga.genres.isNotEmpty
+                            ? manga.genres[index]
                             : "Manhwa"; // Default if empty
                         return InkWell(
                           onTap: () {
@@ -393,7 +519,57 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                             fontSize: 16,
                           ),
                         ),
-                        // Đã xóa nút xem thêm chương ở đây vì đã hiển thị hết danh sách
+                        // Action Menu
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          onSelected: (value) async {
+                            if (value == 'download_all') {
+                              _downloadManyChapters(chapters);
+                            } else if (value == 'download_latest_10') {
+                              _downloadManyChapters(chapters.take(10).toList());
+                            } else if (value == 'delete_all') {
+                              _deleteAllDownloads(chapters);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'download_all',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.download_rounded,
+                                    color: Colors.blue,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Tải tất cả'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'download_latest_10',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.download_for_offline_outlined,
+                                    color: Colors.orange,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text('Tải 10 chương mới nhất'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete_all',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline, color: Colors.red),
+                                  SizedBox(width: 12),
+                                  Text('Xóa tất cả tải xuống'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -427,7 +603,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                comic.description,
+                                manga.description,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   height: 1.4,
                                   color: Colors.white70,
@@ -437,7 +613,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                     ? TextOverflow.visible
                                     : TextOverflow.ellipsis,
                               ),
-                              if (comic.description.length > 150)
+                              if (manga.description.length > 150)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
@@ -505,7 +681,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                 // Sử dụng StreamBuilder để cập nhật lượt xem thời gian thực cho từng chapter
                                 StreamBuilder<Map<String, int>>(
                                   stream: InteractionService.instance
-                                      .streamChapterViews(widget.comicId),
+                                      .streamChapterViews(widget.mangaId),
                                   builder: (context, snapshot) {
                                     final viewsMap = snapshot.data ?? {};
                                     final views =
@@ -530,6 +706,211 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                                   },
                                 ),
                               ],
+                            ),
+                            const SizedBox(width: 12),
+                            // Download Icon với 3 trạng thái
+                            StreamBuilder<Map<String, DownloadTask>>(
+                              stream: DownloadService.instance.downloadStream,
+                              builder: (context, downloadSnapshot) {
+                                final task = downloadSnapshot.data?[ch.id];
+
+                                // Nếu đang tải
+                                if (task?.status ==
+                                    DownloadStatus.downloading) {
+                                  return SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        CircularProgressIndicator(
+                                          value: task!.progress,
+                                          strokeWidth: 3,
+                                          valueColor:
+                                              const AlwaysStoppedAnimation<
+                                                Color
+                                              >(Colors.blue),
+                                          backgroundColor: Colors.grey
+                                              .withOpacity(0.3),
+                                        ),
+                                        Text(
+                                          '${(task.progress * 100).toInt()}%',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color:
+                                                theme.brightness ==
+                                                    Brightness.dark
+                                                ? Colors.white
+                                                : Colors.black,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
+                                // Nếu đang chờ trong queue
+                                if (task?.status == DownloadStatus.queued) {
+                                  return SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation<Color>(
+                                            Colors.orange,
+                                          ),
+                                      backgroundColor: Colors.grey.withOpacity(
+                                        0.3,
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                // Nếu bị tạm dừng
+                                if (task?.status == DownloadStatus.paused) {
+                                  return IconButton(
+                                    icon: const Icon(
+                                      Icons.pause_circle,
+                                      size: 28,
+                                      color: Colors.orange,
+                                    ),
+                                    onPressed: () {
+                                      DownloadService.instance.resumeDownload(
+                                        ch.id,
+                                      );
+                                    },
+                                  );
+                                }
+
+                                // Nếu lỗi
+                                if (task?.status == DownloadStatus.failed) {
+                                  return IconButton(
+                                    icon: const Icon(
+                                      Icons.error,
+                                      size: 28,
+                                      color: Colors.red,
+                                    ),
+                                    onPressed: () {
+                                      DownloadService.instance.retryDownload(
+                                        ch.id,
+                                      );
+                                    },
+                                  );
+                                }
+
+                                // Kiểm tra đã tải chưa
+                                return FutureBuilder<bool>(
+                                  future: DownloadService.instance.isDownloaded(
+                                    ch.id,
+                                    mangaId: widget
+                                        .mangaId, // Use cache for faster check
+                                  ),
+                                  builder: (context, snapshot) {
+                                    final isDownloaded = snapshot.data ?? false;
+
+                                    return IconButton(
+                                      icon: Icon(
+                                        isDownloaded
+                                            ? Icons.check_circle
+                                            : Icons.download_outlined,
+                                        size: 28,
+                                        color: isDownloaded
+                                            ? Colors.green
+                                            : theme.iconTheme.color
+                                                  ?.withOpacity(0.6),
+                                      ),
+                                      onPressed: () async {
+                                        if (isDownloaded) {
+                                          // Xóa download
+                                          final confirm = await showDialog<bool>(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              backgroundColor: theme.cardColor,
+                                              title: Text(
+                                                'Xóa chương đã tải?',
+                                                style:
+                                                    theme.textTheme.titleLarge,
+                                              ),
+                                              content: Text(
+                                                'Bạn có chắc muốn xóa "${ch.title}" khỏi bộ nhớ máy?',
+                                                style:
+                                                    theme.textTheme.bodyMedium,
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        context,
+                                                        false,
+                                                      ),
+                                                  child: const Text('Hủy'),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                        context,
+                                                        true,
+                                                      ),
+                                                  child: const Text(
+                                                    'Xóa',
+                                                    style: TextStyle(
+                                                      color: Colors.red,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+
+                                          if (confirm == true) {
+                                            await DownloadService.instance
+                                                .deleteDownload(ch.id);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Đã xóa chương',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        } else {
+                                          // Tải chapter
+                                          await DownloadService.instance
+                                              .addToQueue(
+                                                chapterId: ch.id,
+                                                mangaId: widget.mangaId,
+                                                mangaTitle: manga.title,
+                                                chapterTitle: ch.title,
+                                                fileType: ch.fileType,
+                                                mangaInfo: _manga != null
+                                                    ? _cloudToLocal(_manga!)
+                                                    : null,
+                                              );
+
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Đã thêm vào hàng đợi tải',
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    );
+                                  },
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -557,9 +938,99 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
               right: 10,
               child: Row(
                 children: [
+                  // Nút Download All Chapters
+                  IconButton(
+                    icon: const Icon(Icons.download, color: Colors.white),
+                    onPressed: () async {
+                      // Hỏi có muốn thêm vào thư viện không
+                      final addToLibrary = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: theme.cardColor,
+                          title: Text(
+                            'Tải tất cả chương?',
+                            style: theme.textTheme.titleLarge,
+                          ),
+                          content: Text(
+                            'Bạn có muốn thêm truyện vào thư viện để dễ quản lý không?',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Không'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Có'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (addToLibrary == null) return;
+
+                      // Nếu chọn thêm vào thư viện
+                      if (addToLibrary) {
+                        final selectedCats = await LibraryService.instance
+                            .streamMangaCategories(widget.mangaId)
+                            .first;
+                        if (context.mounted) {
+                          _showSetCategoryDialog(context, selectedCats);
+                        }
+                      }
+
+                      // Bắt đầu tải tất cả chapters
+                      for (final chapter in chapters) {
+                        await DownloadService.instance.addToQueue(
+                          chapterId: chapter.id,
+                          mangaId: widget.mangaId,
+                          mangaTitle: manga.title,
+                          chapterTitle: chapter.title,
+                          fileType: chapter.fileType,
+                          mangaInfo: _manga != null
+                              ? _cloudToLocal(_manga!)
+                              : null,
+                        );
+                      }
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Đã thêm ${chapters.length} chương vào hàng đợi tải',
+                            ),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  // Nút Đặt vào Thư viện (Folder) - Mới
+                  StreamBuilder<List<String>>(
+                    stream: LibraryService.instance.streamMangaCategories(
+                      widget.mangaId,
+                    ),
+                    builder: (context, snapshot) {
+                      final selectedCats = snapshot.data ?? [];
+                      final isInLibrary = selectedCats.isNotEmpty;
+                      return IconButton(
+                        icon: Icon(
+                          isInLibrary
+                              ? Icons.folder_special
+                              : Icons.create_new_folder_outlined,
+                          color: isInLibrary
+                              ? Colors.orangeAccent
+                              : Colors.white,
+                        ),
+                        onPressed: () =>
+                            _showSetCategoryDialog(context, selectedCats),
+                      );
+                    },
+                  ),
                   // Nút Theo Dõi (Tim)
                   StreamBuilder<bool>(
-                    stream: followService.isFollowing(widget.comicId),
+                    stream: followService.isFollowing(widget.mangaId),
                     builder: (context, snapshot) {
                       final isFollowed = snapshot.data ?? false;
                       return IconButton(
@@ -601,7 +1072,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                             );
 
                             if (confirm == true) {
-                              await followService.unfollowComic(widget.comicId);
+                              await followService.unfollowManga(widget.mangaId);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -612,11 +1083,11 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                             }
                           } else {
                             // Follow
-                            await followService.followComic(
-                              comicId: comic.id,
-                              title: comic.title,
+                            await followService.followManga(
+                              mangaId: manga.id,
+                              title: manga.title,
                               coverUrl: DriveService.instance.getThumbnailLink(
-                                comic.coverFileId,
+                                manga.coverFileId,
                               ),
                             );
                             if (context.mounted) {
@@ -752,5 +1223,110 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     if (count < 1000) return count.toString();
     if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}k';
     return '${(count / 1000000).toStringAsFixed(1)}m';
+  }
+
+  void _showSetCategoryDialog(
+    BuildContext context,
+    List<String> currentSelected,
+  ) {
+    LibraryDialogs.showSetCategoryDialog(context, [
+      widget.mangaId,
+    ], currentSelected);
+  }
+
+  Future<void> _downloadManyChapters(List<CloudChapter> chapters) async {
+    if (chapters.isEmpty) return;
+    if (_manga == null) return;
+
+    int addedCount = 0;
+
+    for (final chapter in chapters) {
+      // Check if downloaded or queued
+      final isDownloaded = await DownloadService.instance.isDownloaded(
+        chapter.id,
+        mangaId: widget.mangaId,
+      );
+      if (isDownloaded) continue;
+
+      final status = DownloadService.instance.getDownloadStatus(chapter.id);
+      if (status != DownloadStatus.idle && status != DownloadStatus.failed) {
+        continue;
+      }
+
+      // Add to queue
+      await DownloadService.instance.addToQueue(
+        chapterId: chapter.id,
+        mangaId: widget.mangaId,
+        mangaTitle: _manga!.title,
+        chapterTitle: chapter.title,
+        fileType: chapter.fileType,
+        mangaInfo: _cloudToLocal(_manga!),
+      );
+      addedCount++;
+    }
+
+    if (mounted && addedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã thêm $addedCount chương vào hàng đợi tải'),
+          backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: 'Xem',
+            textColor: Colors.white,
+            onPressed: () => context.push('/downloads'),
+          ),
+        ),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tất cả chương đã được tải hoặc đang tải'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteAllDownloads(List<CloudChapter> chapters) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: const Text('Xóa tải xuống?'),
+        content: const Text(
+          'Bạn có chắc muốn xóa tất cả tải xuống của truyện này?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    int deletedCount = 0;
+    for (final chapter in chapters) {
+      final isDownloaded = await DownloadService.instance.isDownloaded(
+        chapter.id,
+        mangaId: widget.mangaId,
+      );
+
+      if (isDownloaded) {
+        await DownloadService.instance.deleteDownload(chapter.id);
+        deletedCount++;
+      }
+    }
+
+    if (mounted && deletedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã xóa $deletedCount chương tải xuống')),
+      );
+    }
   }
 }

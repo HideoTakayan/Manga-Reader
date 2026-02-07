@@ -16,7 +16,7 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   String query = '';
-  List<CloudComic> allComics = [];
+  List<CloudManga> allMangas = []; // Renamed from allComics
   bool isLoading = true;
 
   // Filters (Bộ lọc)
@@ -31,20 +31,20 @@ class _SearchPageState extends State<SearchPage> {
     if (widget.initialGenre != null) {
       genreFilters[widget.initialGenre!] = GenreFilterState.included;
     }
-    _loadComics();
+    _loadMangas();
   }
 
-  Future<void> _loadComics({bool forceRefresh = false}) async {
-    final comics = await DriveService.instance.getComics(
+  Future<void> _loadMangas({bool forceRefresh = false}) async {
+    final mangas = await DriveService.instance.getMangas(
       forceRefresh: forceRefresh,
     );
     if (mounted) {
       setState(() {
-        allComics = comics;
+        allMangas = mangas;
 
         // Trích xuất danh sách thể loại duy nhất từ tất cả truyện
         final genres = <String>{};
-        for (var c in comics) {
+        for (var c in mangas) {
           genres.addAll(c.genres);
         }
         allGenres = genres.toList()..sort();
@@ -258,7 +258,7 @@ class _SearchPageState extends State<SearchPage> {
           ? const Center(child: CircularProgressIndicator())
           : Builder(
               builder: (context) {
-                final comics = allComics.where((c) {
+                final mangas = allMangas.where((c) {
                   final q = query.toLowerCase();
                   final matchesQuery =
                       c.title.toLowerCase().contains(q) ||
@@ -282,9 +282,9 @@ class _SearchPageState extends State<SearchPage> {
                   return matchesQuery && matchesGenre && matchesStatus;
                 }).toList();
 
-                if (comics.isEmpty) {
+                if (mangas.isEmpty) {
                   return RefreshIndicator(
-                    onRefresh: () => _loadComics(forceRefresh: true),
+                    onRefresh: () => _loadMangas(forceRefresh: true),
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: const [
@@ -301,24 +301,24 @@ class _SearchPageState extends State<SearchPage> {
                 }
 
                 return RefreshIndicator(
-                  onRefresh: () => _loadComics(forceRefresh: true),
+                  onRefresh: () => _loadMangas(forceRefresh: true),
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: comics.length,
+                    itemCount: mangas.length,
                     itemBuilder: (context, i) {
-                      final comic = comics[i];
+                      final manga = mangas[i];
                       return ListTile(
                         leading: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: DriveImage(
-                            fileId: comic.coverFileId,
+                            fileId: manga.coverFileId,
                             width: 50,
                             height: 70,
                             fit: BoxFit.cover,
                           ),
                         ),
                         title: Text(
-                          comic.title,
+                          manga.title,
                           style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
@@ -326,12 +326,12 @@ class _SearchPageState extends State<SearchPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              comic.author,
+                              manga.author,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
-                            if (comic.genres.isNotEmpty)
+                            if (manga.genres.isNotEmpty)
                               Text(
-                                comic.genres.take(3).join(', '),
+                                manga.genres.take(3).join(', '),
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       fontSize: 12,
@@ -344,7 +344,7 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                           ],
                         ),
-                        onTap: () => context.push('/detail/${comic.id}'),
+                        onTap: () => context.push('/detail/${manga.id}'),
                       );
                     },
                   ),

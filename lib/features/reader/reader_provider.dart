@@ -112,22 +112,22 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     try {
       // ========================================
-      // CHECK OFFLINE MODE TRƯỚC
+      // KIỂM TRA CHẾ ĐỘ NGOẠI TUYẾN TRƯỚC
       // ========================================
       final isDownloaded = await DatabaseHelper.instance.isChapterDownloaded(
         chapterId,
       );
 
       if (isDownloaded) {
-        debugPrint('📂 OFFLINE MODE: Đọc từ file local');
+        debugPrint('📂 CHẾ ĐỘ NGOẠI TUYẾN: Đọc từ tệp cục bộ');
         await _loadOfflineChapter(chapterId);
         return;
       }
 
       // ========================================
-      // ONLINE MODE: Fetch từ Drive
+      // CHẾ ĐỘ TRỰC TUYẾN: Lấy từ Drive
       // ========================================
-      debugPrint('🌐 ONLINE MODE: Tải từ Google Drive');
+      debugPrint('🌐 CHẾ ĐỘ TRỰC TUYẾN: Tải từ Google Drive');
       await _loadOnlineChapter(chapterId);
     } catch (e) {
       debugPrint('Error loading reader: $e');
@@ -138,14 +138,16 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// OFFLINE MODE: Đọc file local (NHANH!)
+  /// CHẾ ĐỘ NGOẠI TUYẾN: Đọc tệp cục bộ (NHANH!)
   Future<void> _loadOfflineChapter(String chapterId) async {
     try {
-      // 1. Lấy thông tin download từ database
+      // 1. Lấy thông tin tải xuống từ cơ sở dữ liệu
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
 
       if (downloadInfo == null) {
-        debugPrint('⚠️ Download info not found, fallback to online');
+        debugPrint(
+          '⚠️ Không tìm thấy thông tin tải xuống, dự phòng sang trực tuyến',
+        );
         await _loadOnlineChapter(chapterId);
         return;
       }
@@ -156,11 +158,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       debugPrint('📁 Local path: $localPath');
 
-      // 2. Đọc file từ local
+      // 2. Đọc tệp từ cục bộ
       final file = File(localPath);
       if (!await file.exists()) {
-        debugPrint('⚠️ File not found, fallback to online');
-        // Xóa record lỗi
+        debugPrint('⚠️ Không tìm thấy tệp, dự phòng sang trực tuyến');
+        // Xóa bản ghi lỗi
         await DatabaseHelper.instance.deleteDownload(chapterId);
         await _loadOnlineChapter(chapterId);
         return;
@@ -169,8 +171,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       final fileBytes = await file.readAsBytes();
       debugPrint('✅ Đọc file thành công (${fileBytes.length} bytes)');
 
-      // 3. Extract images (giống online mode)
-      // Detect file type từ extension
+      // 3. Trích xuất ảnh (giống chế độ trực tuyến)
+      // Phát hiện loại tệp từ phần mở rộng
       final fileType = localPath.endsWith('.pdf') ? 'pdf' : 'zip';
       List<Uint8List> images = [];
 
@@ -190,8 +192,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       debugPrint('✅ Extracted ${images.length} images');
 
-      // 4. Load chapters list và manga info (background - không block UI)
-      // Tạo state tạm thời để hiển thị reader ngay
+      // 4. Tải danh sách chương và thông tin truyện (ngầm - không chặn UI)
+      // Tạo trạng thái tạm thời để hiển thị trình đọc ngay
       state = state.copyWith(
         isLoading: false,
         pages: images,
@@ -209,13 +211,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       debugPrint('✅ Reader hiển thị (OFFLINE MODE)');
 
-      // [Offline Navigation] Load local chapters list
+      // [Điều hướng Ngoại tuyến] Tải danh sách chương cục bộ
       try {
         var downloadedMaps = await DatabaseHelper.instance.getDownloadsByManga(
           mangaId,
         );
 
-        // [Fallback 1] Nếu query theo ID thất bại, load tất cả và lọc (phòng lỗi SQL/ID)
+        // [Dự phòng 1] Nếu truy vấn theo ID thất bại, tải tất cả và lọc (phòng lỗi SQL/ID)
         if (downloadedMaps.isEmpty) {
           final all = await DatabaseHelper.instance.getAllDownloads();
           downloadedMaps = all
@@ -223,9 +225,9 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
               .toList();
         }
 
-        // [Fallback 2 - ULTIMATE] Scan Folder (Mihon Style)
-        // Fix lỗi khi ID trong Database bị sai lệch hoặc không khớp:
-        // -> Gom tất cả các chapter nằm cùng thư mục với chapter hiện tại.
+        // [Dự phòng 2 ] Quét thư mục
+        // Sửa lỗi khi ID trong Cơ sở dữ liệu bị sai lệch hoặc không khớp:
+        // -> Gom tất cả các chương nằm cùng thư mục với chương hiện tại.
         if (downloadedMaps.length <= 1) {
           try {
             final currentFile = File(localPath);
@@ -235,7 +237,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
             final siblingMaps = all.where((d) {
               final path = d['localPath'] as String?;
               if (path == null) return false;
-              // Kiểm tra xem có nằm chung thư mục không (Simple Contains check)
+              // Kiểm tra xem có nằm chung thư mục không (Kiểm tra chứa đơn giản)
               return path.contains(parentDir);
             }).toList();
 
@@ -244,7 +246,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
                 '📂 FS Scan found ${siblingMaps.length} chapters in $parentDir',
               );
 
-              // 🔧 SILENT REPAIR: Update database records to unify mangaId
+              //  SỬA CHỮA NGẦM: Cập nhật bản ghi cơ sở dữ liệu để đồng nhất mangaId
               for (final map in siblingMaps) {
                 if (map['mangaId'].toString() != mangaId) {
                   debugPrint(
@@ -297,9 +299,9 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
               .whereType<CloudChapter>()
               .toList();
 
-          // Deduplicate and Sort using ChapterUtils (clean list immediately)
+          // Xóa trùng lặp và Sắp xếp sử dụng ChapterUtils (danh sách sạch ngay lập tức)
           final sortedChapters = await ChapterUtils.mergeChapters(
-            [], // No online chapters yet
+            [], // Chưa có chương trực tuyến
             localChapters,
             mangaId,
           );
@@ -326,7 +328,6 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         debugPrint('⚠️ Error loading offline chapters: $e');
       }
 
-      // 5. Load metadata sau (background)
       _loadMetadataInBackground(mangaId, chapterId);
 
       // 6. Lưu lịch sử đọc
@@ -338,12 +339,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// ONLINE MODE: Fetch từ Drive (CHẬM nhưng đầy đủ)
+  /// CHẾ ĐỘ TRỰC TUYẾN: Lấy từ Drive 
   Future<void> _loadOnlineChapter(String chapterId) async {
     // ========================================
     // TỐI ƯU HÓA: Gọi API song song (Parallel API Calls)
-    // Trước đây: 6 gọi tuần tự (~5s)
-    // Hiện tại: Chạy song song các tác vụ độc lập (~2s)
+    // Chạy song song các tác vụ độc lập (~2s)
     // ========================================
 
     // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
@@ -365,7 +365,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     final comicId = (fileMeta['parents'] as List).first as String;
 
-    // Giai đoạn 2: Sau khi có comicId, tải danh sách chapter và thông tin truyện song song
+    // Giai đoạn 2: Sau khi có comicId, tải danh sách chương và thông tin truyện song song
     // trong khi việc tải file vẫn đang chạy ngầm
     final chaptersFuture = DriveService.instance.getChapters(comicId);
     final comicsFuture = DriveService.instance.getMangas();
@@ -390,7 +390,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     final fileBytes = results[2] as Uint8List?;
     final followed = results[3] as bool;
 
-    // Find current chapter in list
+    // Tìm chương hiện tại trong danh sách
     final currentChapter = chapters.firstWhereOrNull((c) => c.id == chapterId);
 
     // Kiểm tra file tải về
@@ -402,7 +402,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       return;
     }
 
-    // Giai đoạn 3: Giải nén ảnh (Tác vụ nặng CPU, không thể chạy song song với API calls)
+    // Giai đoạn 3: Giải nén ảnh (Tác vụ nặng CPU, không thể chạy song song với các cuộc gọi API)
     final fileType = currentChapter?.fileType ?? 'zip';
     List<Uint8List> images = [];
 
@@ -420,10 +420,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       return;
     }
 
-    // Tìm thông tin comic tương ứng
+    // Tìm thông tin truyện tương ứng
     final fetchedComic = comics.firstWhereOrNull((c) => c.id == comicId);
 
-    // Update state with all data
+    // Cập nhật trạng thái với tất cả dữ liệu
     state = state.copyWith(
       isLoading: false,
       chapters: chapters,
@@ -446,13 +446,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     _prefetchAdjacentChapters();
   }
 
-  /// Load metadata trong background (không block UI)
+  /// Tải siêu dữ liệu chạy ngầm (không chặn UI)
   void _loadMetadataInBackground(String mangaId, String chapterId) {
     Future.microtask(() async {
       try {
         debugPrint('🔄 Loading metadata in background...');
 
-        // Fetch chapters list và manga info
+        // Tải danh sách chương và thông tin truyện
         final chaptersFuture = DriveService.instance.getChapters(mangaId);
         final mangasFuture = DriveService.instance.getMangas();
 
@@ -477,14 +477,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         );
         final manga = mangas.firstWhereOrNull((m) => m.id == mangaId);
 
-        // 🔧 FIX: Merge online + offline chapters (giống manga_detail_page.dart)
+        // 🔧 SỬA: Gộp chương trực tuyến + ngoại tuyến (giống manga_detail_page.dart)
         final mergedChapters = await ChapterUtils.mergeChapters(
           onlineChapters,
           state.chapters,
           mangaId,
         );
 
-        // Update state với metadata đầy đủ
+        // Cập nhật trạng thái với siêu dữ liệu đầy đủ
         state = state.copyWith(
           chapters: mergedChapters.isNotEmpty ? mergedChapters : onlineChapters,
           currentChapter: currentChapter,
@@ -497,11 +497,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         // Tăng lượt xem
         InteractionService.instance.incrementChapterView(mangaId, chapterId);
 
-        // Prefetch adjacent chapters
+        // Tải trước các chương liền kề
         _prefetchAdjacentChapters();
       } catch (e) {
         debugPrint('⚠️ Error loading metadata: $e');
-        // Không cần xử lý lỗi vì reader đã hiển thị
+        // Không cần xử lý lỗi vì trình đọc đã hiển thị
       }
     });
   }
@@ -513,7 +513,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       final nextId = getNextChapterId();
       final prevId = getPrevChapterId();
 
-      // Tải và quên (Fire and forget) - kết quả sẽ được cache bởi DriveService
+      // Tải và quên (Fire and forget) - kết quả sẽ được lưu vào bộ nhớ tạm bởi DriveService
       if (nextId != null) {
         DriveService.instance
             .downloadFile(nextId)
@@ -533,7 +533,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     });
   }
 
-  // Trích xuất ảnh từ file ZIP/CBZ
+  // Trích xuất ảnh từ tệp ZIP/CBZ
   Future<List<Uint8List>> _extractImagesFromZip(Uint8List fileBytes) async {
     final archive = ZipDecoder().decodeBytes(fileBytes);
     final List<Uint8List> images = [];
@@ -557,7 +557,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return images;
   }
 
-  // Trích xuất ảnh từ file PDF
+  // Trích xuất ảnh từ tệp PDF
   Future<List<Uint8List>> _extractImagesFromPdf(Uint8List fileBytes) async {
     try {
       final document = await PdfDocument.openData(fileBytes);
@@ -610,7 +610,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return a.length.compareTo(b.length);
   }
 
-  // So sánh chuỗi đơn giản cho tên chapter/page
+  // So sánh chuỗi đơn giản cho tên chương/trang
   int _compareChapterNames(String a, String b) {
     return _naturalSort(a, b);
   }
@@ -646,10 +646,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         lastPageIndex: state.currentPageIndex,
         updatedAt: DateTime.now(),
       );
-      // 2. Lưu vào DB nội bộ (SQLite) để xem offline
+      // 2. Lưu vào CSDL nội bộ (SQLite) để xem ngoại tuyến
       await DatabaseHelper.instance.saveHistory(history);
 
-      // 3. Đồng bộ lên Cloud (Firestore)
+      // 3. Đồng bộ lên Đám mây (Firestore)
       await HistoryService.instance.saveHistory(history);
     } catch (e) {
       debugPrint("Error saving history: $e");
@@ -680,12 +680,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
   /// Tải chương tiếp theo một cách mượt mà không cần load lại trang
   Future<void> loadNextChapter() async {
-    // Prevent multiple calls
+    // Ngăn chặn gọi nhiều lần
     if (state.isLoadingNextChapter) return;
 
     final nextChapterId = getNextChapterId();
     if (nextChapterId == null) {
-      // No more chapters
+      // Không còn chương nào
       state = state.copyWith(hasReachedEnd: true);
       return;
     }
@@ -693,7 +693,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isLoadingNextChapter: true, hasReachedEnd: false);
 
     try {
-      // 1. Check Offline first & Download content
+      // 1. Kiểm tra Ngoại tuyến trước và Tải nội dung
       Uint8List? fileBytes;
       final downloadInfo = await DatabaseHelper.instance.getDownload(
         nextChapterId,
@@ -703,7 +703,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         final localPath = downloadInfo['localPath'] as String;
         final file = File(localPath);
         if (await file.exists()) {
-          debugPrint('📂 Reading NEXT chapter from local: $localPath');
+          debugPrint('📂 Đọc chương TIẾP THEO từ cục bộ: $localPath');
           try {
             fileBytes = await file.readAsBytes();
           } catch (e) {
@@ -712,9 +712,9 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         }
       }
 
-      // 2. If not found local, download online
+      // 2. Nếu không tìm thấy cục bộ, hãy tải trực tuyến
       if (fileBytes == null) {
-        debugPrint('🌐 Downloading NEXT chapter from Drive');
+        debugPrint('🌐 Tải chương TIẾP THEO từ Drive');
         fileBytes = await DriveService.instance.downloadFile(nextChapterId);
       }
 
@@ -723,12 +723,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Find next chapter metadata
+      // Tìm siêu dữ liệu chương tiếp theo
       final nextChapter = state.chapters.firstWhereOrNull(
         (c) => c.id == nextChapterId,
       );
 
-      // Extract images
+      // Trích xuất ảnh
       final fileType = nextChapter?.fileType ?? 'zip';
       List<Uint8List> images = [];
 
@@ -743,7 +743,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Update state with new chapter
+      // Cập nhật trạng thái với chương mới
       state = state.copyWith(
         isLoadingNextChapter: false,
         currentChapter: nextChapter,
@@ -752,10 +752,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         hasReachedEnd: false,
       );
 
-      // Save progress for new chapter
+      // Lưu tiến trình cho chương mới
       _saveProgress();
 
-      // Increment View Count
+      // Tăng lượt xem
       if (state.comicId != null && nextChapter != null) {
         InteractionService.instance.incrementChapterView(
           state.comicId!,
@@ -768,19 +768,19 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// Reset the hasReachedEnd flag
+  /// Đặt lại cờ hasReachedEnd
   void resetEndReached() {
     state = state.copyWith(hasReachedEnd: false);
   }
 
   /// Tải chương trước đó một cách mượt mà không cần load lại trang
   Future<void> loadPrevChapter() async {
-    // Prevent multiple calls
+    // Ngăn chặn gọi nhiều lần
     if (state.isLoadingPrevChapter) return;
 
     final prevChapterId = getPrevChapterId();
     if (prevChapterId == null) {
-      // No previous chapters
+      // Không có chương trước
       state = state.copyWith(hasReachedStart: true);
       return;
     }
@@ -788,7 +788,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isLoadingPrevChapter: true, hasReachedStart: false);
 
     try {
-      // 1. Check Offline first & Download content
+      // 1. Kiểm tra Ngoại tuyến trước và Tải nội dung
       Uint8List? fileBytes;
       final downloadInfo = await DatabaseHelper.instance.getDownload(
         prevChapterId,
@@ -798,7 +798,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         final localPath = downloadInfo['localPath'] as String;
         final file = File(localPath);
         if (await file.exists()) {
-          debugPrint('📂 Reading PREV chapter from local: $localPath');
+          debugPrint('📂 Đọc chương TRƯỚC từ cục bộ: $localPath');
           try {
             fileBytes = await file.readAsBytes();
           } catch (e) {
@@ -807,9 +807,9 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         }
       }
 
-      // 2. If not found local, download online
+      // 2. Nếu không tìm thấy cục bộ, hãy tải trực tuyến
       if (fileBytes == null) {
-        debugPrint('🌐 Downloading PREV chapter from Drive');
+        debugPrint('🌐 Tải chương TRƯỚC từ Drive');
         fileBytes = await DriveService.instance.downloadFile(prevChapterId);
       }
 
@@ -818,12 +818,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Find previous chapter metadata
+      // Tìm siêu dữ liệu chương trước
       final prevChapter = state.chapters.firstWhereOrNull(
         (c) => c.id == prevChapterId,
       );
 
-      // Extract images
+      // Trích xuất ảnh
       final fileType = prevChapter?.fileType ?? 'zip';
       List<Uint8List> images = [];
 
@@ -838,7 +838,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      // Update state with previous chapter (start at last page)
+      // Cập nhật trạng thái với chương trước (bắt đầu từ trang cuối)
       state = state.copyWith(
         isLoadingPrevChapter: false,
         currentChapter: prevChapter,
@@ -847,10 +847,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         hasReachedStart: false,
       );
 
-      // Save progress for new chapter
+      // Lưu tiến trình cho chương mới
       _saveProgress();
 
-      // Increment View Count
+      // Tăng lượt xem
       if (state.comicId != null && prevChapter != null) {
         InteractionService.instance.incrementChapterView(
           state.comicId!,
@@ -863,7 +863,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// Reset the hasReachedStart flag
+  /// Đặt lại cờ hasReachedStart
   void resetStartReached() {
     state = state.copyWith(hasReachedStart: false);
   }

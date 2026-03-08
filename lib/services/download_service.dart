@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 import '../data/database_helper.dart';
-import '../data/drive_service.dart'; // Maybe needed
+import '../data/drive_service.dart';
 import '../data/models.dart';
 import 'folder_service.dart';
 import 'download_cache.dart';
@@ -13,7 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'notification_service.dart';
 import 'background_service.dart';
 
-/// Trạng thái download của một chapter
+/// Trạng thái tải của một chương
 enum DownloadStatus {
   idle, // Chưa tải
   queued, // Đang chờ trong hàng đợi
@@ -24,7 +24,7 @@ enum DownloadStatus {
   cancelled, // Đã hủy
 }
 
-/// Model chứa thông tin download
+/// Mô hình chứa thông tin tải xuống
 class DownloadTask {
   final String chapterId;
   final String mangaId;
@@ -103,29 +103,27 @@ class DownloadTask {
   }
 }
 
-/// Service quản lý download truyện
 class DownloadService {
   static final DownloadService instance = DownloadService._internal();
   DownloadService._internal() {
     _activeDownloads = 0;
-    restoreQueue(); // Restore queue on init
+    restoreQueue(); 
   }
-
-  // Hàng đợi download
+  // Hàng đợi tải xuống
   final Map<String, DownloadTask> _downloadQueue = {};
 
-  // Stream controller để UI lắng nghe
+  // Bộ điều khiển luồng để giao diện người dùng (UI) lắng nghe
   final _downloadController =
       StreamController<Map<String, DownloadTask>>.broadcast();
 
   Stream<Map<String, DownloadTask>> get downloadStream =>
       _downloadController.stream;
 
-  // Số lượng download đồng thời tối đa
+  // Số lượng tải xuống đồng thời tối đa
   static const int _maxConcurrentDownloads = 2;
   int _activeDownloads = 0;
 
-  /// Thêm chapter vào hàng đợi download
+  /// Thêm chương vào hàng đợi tải xuống
   Future<void> addToQueue({
     required String chapterId,
     required String mangaId,
@@ -134,7 +132,7 @@ class DownloadService {
     String fileType = 'cbz',
     Manga? mangaInfo,
   }) async {
-    // Save info for Offline mode (Detail Page)
+    // Lưu thông tin cho chế độ Ngoại tuyến (Trang Chi tiết)
     if (mangaInfo != null) {
       DatabaseHelper.instance.saveLocalManga(mangaInfo);
     }
@@ -148,13 +146,13 @@ class DownloadService {
       return;
     }
 
-    // Kiểm tra đã có trong queue chưa
+    // Kiểm tra đã có trong hàng đợi chưa
     if (_downloadQueue.containsKey(chapterId)) {
       debugPrint('⚠️ Chapter $chapterId đã có trong hàng đợi');
       return;
     }
 
-    // Tạo task mới
+    // Tạo tác vụ mới
     final task = DownloadTask(
       chapterId: chapterId,
       mangaId: mangaId,
@@ -171,7 +169,7 @@ class DownloadService {
     _processQueue();
   }
 
-  /// Xử lý hàng đợi download
+  /// Xử lý hàng đợi tải xuống
   void _processQueue() {
     if (_activeDownloads == 0 && _downloadQueue.isEmpty) {
       WakelockPlus.disable();
@@ -187,7 +185,7 @@ class DownloadService {
 
     if (_activeDownloads >= _maxConcurrentDownloads) return;
 
-    // Tìm task đầu tiên đang queued
+    // Tìm tác vụ đầu tiên đang chờ trong hàng đợi
     final queuedTask = _downloadQueue.values.firstWhere(
       (task) => task.status == DownloadStatus.queued,
       orElse: () => DownloadTask(
@@ -205,15 +203,13 @@ class DownloadService {
     _downloadChapter(queuedTask);
   }
 
-  /// Tải một chapter
+  /// Tải một chương
   Future<void> _downloadChapter(DownloadTask task) async {
     _activeDownloads++;
     task.status = DownloadStatus.downloading;
     _notifyListeners();
 
-    // Init notification (just in case)
     await NotificationService.instance.initLocalNotifications();
-
     final notifId = task.chapterId.hashCode;
     await NotificationService.instance.showDownloadProgress(
       notifId,
@@ -224,13 +220,11 @@ class DownloadService {
 
     try {
       debugPrint('📥 Bắt đầu tải: ${task.chapterTitle}');
-
       // 1. Tạo thư mục đích (Theo tên truyện)
       final mangaFolderPath = await FolderService.getMangaPathByTitle(
         task.mangaTitle,
       );
-
-      // --- Metadata & Cover (Local Source Support) ---
+      // --- Siêu dữ liệu & Ảnh bìa (Hỗ trợ nguồn cục bộ) ---
       try {
         final manga = await DatabaseHelper.instance.getLocalManga(task.mangaId);
         if (manga != null) {
@@ -256,7 +250,7 @@ class DownloadService {
       }
       // -----------------------------------------------
 
-      // 2. Tải file từ Google Drive (có progress + notify)
+      // 2. Tải tệp từ Google Drive (có tiến trình + thông báo)
       DateTime lastNotifTime = DateTime.now();
 
       final fileBytes = await DriveService.instance.downloadFileWithProgress(
@@ -268,9 +262,8 @@ class DownloadService {
           task.progress = progress;
           task.downloadedBytes = received;
           task.totalBytes = total;
-          _notifyListeners(); // Update App UI
+          _notifyListeners();
 
-          // Update Notification (Throttle: 800ms để tránh lag UI System)
           if (DateTime.now().difference(lastNotifTime).inMilliseconds > 800) {
             await NotificationService.instance.showDownloadProgress(
               notifId,
@@ -287,7 +280,7 @@ class DownloadService {
         throw Exception('Không thể tải file từ Google Drive');
       }
 
-      // 3. Lưu file vào máy (Tên chương sanitized)
+      // 3. Lưu tệp vào máy (Tên chương đã được làm sạch)
       final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
       String fileName = safeChapterTitle;
       if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
@@ -297,7 +290,7 @@ class DownloadService {
       final file = File(filePath);
       await file.writeAsBytes(fileBytes);
 
-      // 4. Lưu thông tin vào database
+      // 4. Lưu thông tin vào cơ sở dữ liệu
       await DatabaseHelper.instance.saveDownload(
         chapterId: task.chapterId,
         mangaId: task.mangaId,
@@ -307,25 +300,20 @@ class DownloadService {
         fileSize: fileBytes.length,
       );
 
-      // 4.5. Update cache
       await DownloadCache.instance.addChapter(task.chapterId, task.mangaId);
 
-      // 5. Cập nhật trạng thái
       task.status = DownloadStatus.completed;
       task.progress = 1.0;
       debugPrint(
         '✅ Tải xong: ${task.chapterTitle} (${_formatBytes(fileBytes.length)})',
       );
 
-      // Notify Success
       await NotificationService.instance.showDownloadComplete(
         notifId,
         'Tải xong',
         task.chapterTitle,
       );
 
-      // 6. Auto remove khỏi queue sau khi completed
-      // Delay 1 giây để user thấy "completed" trước khi ẩn
       Future.delayed(const Duration(seconds: 1), () {
         _downloadQueue.remove(task.chapterId);
         _notifyListeners();
@@ -336,7 +324,6 @@ class DownloadService {
       task.status = DownloadStatus.failed;
       task.errorMessage = e.toString();
 
-      // Notify Error
       await NotificationService.instance.showDownloadComplete(
         notifId,
         'Lỗi tải',
@@ -347,19 +334,16 @@ class DownloadService {
       _activeDownloads--;
       _notifyListeners();
 
-      // Tiếp tục xử lý queue
       _processQueue();
     }
   }
 
-  /// Hủy download
   Future<void> cancelDownload(String chapterId) async {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
 
     if (task.status == DownloadStatus.downloading) {
-      // TODO: Implement cancel logic (cần dùng dio để có thể cancel)
       task.status = DownloadStatus.cancelled;
     }
 
@@ -367,7 +351,6 @@ class DownloadService {
     _notifyListeners();
   }
 
-  /// Tạm dừng download
   void pauseDownload(String chapterId) {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
@@ -380,21 +363,21 @@ class DownloadService {
     }
   }
 
-  /// Tiếp tục download
+  /// Tiếp tục tải xuống
   void resumeDownload(String chapterId) {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
     if (task.status == DownloadStatus.paused) {
       task.status = DownloadStatus.queued;
-      task.progress = 0.0; // Reset progress
+      task.progress = 0.0; // Đặt lại tiến trình
       _notifyListeners();
       _processQueue();
       debugPrint('▶️ Tiếp tục: ${task.chapterTitle}');
     }
   }
 
-  /// Thử lại download (khi failed)
+  /// Thử lại quá trình tải (khi bị lỗi)
   void retryDownload(String chapterId) {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
@@ -409,7 +392,7 @@ class DownloadService {
     }
   }
 
-  /// Tạm dừng tất cả downloads
+  /// Tạm dừng tất cả tải xuống
   void pauseAll() {
     for (final task in _downloadQueue.values) {
       if (task.status == DownloadStatus.downloading ||
@@ -421,7 +404,7 @@ class DownloadService {
     debugPrint('⏸️ Tạm dừng tất cả downloads');
   }
 
-  /// Tiếp tục tất cả downloads
+  /// Tiếp tục tất cả tải xuống
   void resumeAll() {
     for (final task in _downloadQueue.values) {
       if (task.status == DownloadStatus.paused) {
@@ -441,26 +424,26 @@ class DownloadService {
     debugPrint('🗑️ Đã xóa hàng đợi');
   }
 
-  /// Xóa chapter đã tải
+  /// Xóa chương đã tải
   Future<void> deleteDownload(String chapterId) async {
     try {
-      // 1. Lấy thông tin download
+      // 1. Lấy thông tin tải xuống
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
       if (downloadInfo == null) return;
 
       final mangaId = downloadInfo['mangaId'] as String;
 
-      // 2. Xóa file
+      // 2. Xóa tệp
       final filePath = downloadInfo['localPath'] as String;
       final file = File(filePath);
       if (await file.exists()) {
         await file.delete();
       }
 
-      // 3. Xóa khỏi database
+      // 3. Xóa khỏi cơ sở dữ liệu
       await DatabaseHelper.instance.deleteDownload(chapterId);
 
-      // 4. Update cache
+      // 4. Cập nhật bộ nhớ đệm
       await DownloadCache.instance.removeChapter(chapterId, mangaId);
 
       debugPrint('🗑️ Đã xóa download: $chapterId');
@@ -475,12 +458,12 @@ class DownloadService {
         final folderPath = await FolderService.getMangaPathByTitle(mangaTitle);
         final dir = Directory(folderPath);
         if (await dir.exists()) {
-          // Xóa toàn bộ folder bao gồm cover.jpg, details.json
+          // Xóa toàn bộ thư mục bao gồm cover.jpg, details.json
           await dir.delete(recursive: true);
           debugPrint('✅ Đã xóa sạch folder: $folderPath');
         }
 
-        // Clear cache entry hoàn toàn
+        // Xóa hoàn toàn mục nhập trong bộ nhớ đệm
         await DownloadCache.instance.removeManga(mangaId);
       }
     } catch (e) {
@@ -488,23 +471,23 @@ class DownloadService {
     }
   }
 
-  /// Kiểm tra chapter đã tải chưa
+  /// Kiểm tra chương đã tải chưa
   ///
-  /// Sử dụng DownloadCache để check nhanh hơn
+  /// Sử dụng DownloadCache để kiểm tra nhanh hơn
   Future<bool> isDownloaded(String chapterId, {String? mangaId}) async {
     if (mangaId != null) {
-      // Sử dụng cache (nhanh)
+      // Sử dụng bộ nhớ đệm (nhanh)
       return await DownloadCache.instance.isChapterDownloaded(
         chapterId,
         mangaId,
       );
     }
 
-    // Fallback: query database trực tiếp
+    // Dự phòng: truy vấn cơ sở dữ liệu trực tiếp
     return await DatabaseHelper.instance.isChapterDownloaded(chapterId);
   }
 
-  /// Lấy trạng thái download của chapter
+  /// Lấy trạng thái tải của chương
   DownloadStatus getDownloadStatus(String chapterId) {
     if (_downloadQueue.containsKey(chapterId)) {
       return _downloadQueue[chapterId]!.status;
@@ -512,7 +495,7 @@ class DownloadService {
     return DownloadStatus.idle;
   }
 
-  /// Lấy progress của chapter đang tải
+  /// Lấy tiến trình của chương đang tải
   double getDownloadProgress(String chapterId) {
     if (_downloadQueue.containsKey(chapterId)) {
       return _downloadQueue[chapterId]!.progress;
@@ -520,13 +503,13 @@ class DownloadService {
     return 0.0;
   }
 
-  /// Thông báo listeners & Persist Queue
+  /// Thông báo cho các trình lắng nghe & Lưu trữ hàng đợi
   void _notifyListeners() {
     _downloadController.add(Map.from(_downloadQueue));
     _saveQueue();
   }
 
-  // Persistent Queue Storage
+  // Lưu trữ hàng đợi bền bỉ
   static const String _queuePrefsKey = 'download_queue_prefs';
 
   Future<void> _saveQueue() async {
@@ -556,11 +539,11 @@ class DownloadService {
         for (final jsonStr in jsonList) {
           try {
             final task = DownloadTask.fromJson(jsonDecode(jsonStr));
-            // Reset status processing -> queued
+            // Đặt lại trạng thái đang xử lý -> đang chờ trong hàng đợi
             if (task.status == DownloadStatus.downloading) {
               task.status = DownloadStatus.queued;
             }
-            // Skip completed/cancelled tasks if any remain
+            // Bỏ qua các tác vụ đã hoàn thành/bị hủy nếu còn lại
             if (task.status == DownloadStatus.completed ||
                 task.status == DownloadStatus.cancelled) {
               continue;
@@ -572,9 +555,9 @@ class DownloadService {
         }
 
         _notifyListeners();
-        // Auto-resume if queue not empty
+        // Tự động tiếp tục nếu hàng đợi không trống
         if (_downloadQueue.isNotEmpty) {
-          // Wait a bit for other services to init
+          // Chờ một chút để các dịch vụ khác khởi tạo
           Future.delayed(const Duration(seconds: 2), () {
             _processQueue();
           });
@@ -585,7 +568,7 @@ class DownloadService {
     }
   }
 
-  /// Format bytes thành string dễ đọc
+  /// Định dạng byte thành chuỗi dễ đọc
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) {
@@ -597,15 +580,15 @@ class DownloadService {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  /// Xóa toàn bộ download của một manga (file, folder, db, cache)
+  /// Xóa toàn bộ tệp tải xuống của một truyện (tệp, thư mục, cơ sở dữ liệu, bộ nhớ đệm)
   Future<void> deleteMangaDownloads(String mangaId, String mangaTitle) async {
     try {
       debugPrint('🗑️ Đang xóa toàn bộ download manga: $mangaTitle');
 
-      // 1. Xóa khỏi Database
+      // 1. Xóa khỏi Cơ sở dữ liệu
       await DatabaseHelper.instance.deleteDownloadsByManga(mangaId);
 
-      // 2. Xóa Folder
+      // 2. Xóa Thư mục
       final folderPath = await FolderService.getMangaPathByTitle(mangaTitle);
       final dir = Directory(folderPath);
       if (await dir.exists()) {
@@ -613,14 +596,14 @@ class DownloadService {
         debugPrint('✅ Đã xóa folder: $folderPath');
       }
 
-      // 3. Xóa cache
+      // 3. Xóa bộ nhớ đệm
       await DownloadCache.instance.removeManga(mangaId);
     } catch (e) {
       debugPrint('❌ Lỗi xóa manga downloads: $e');
     }
   }
 
-  /// Dispose
+  /// Hủy
   void dispose() {
     _downloadController.close();
   }

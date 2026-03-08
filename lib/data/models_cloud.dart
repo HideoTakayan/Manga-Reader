@@ -1,3 +1,5 @@
+/// Model đại diện cho một bộ truyện lấy từ Google Drive (qua catalog.json).
+/// Đây là model "online", khác với [Manga] là model cục bộ SQLite.
 class CloudManga {
   final String id; // ID thư mục
   final String title;
@@ -25,9 +27,10 @@ class CloudManga {
     this.chapterOrder = const [],
   });
 
+  /// Chuyển đối tượng sang Map để ghi vào Firestore hoặc truyền qua API.
   Map<String, dynamic> toMap() {
-    // Keys kept as is for Firestore compatibility if needed,
-    // but the object logic is now Manga.
+    // Giữ nguyên các key để tương thích với Firestore nếu cần,
+    // nhưng đối tượng logic hiện tại là Manga.
     return {
       'id': id,
       'title': title,
@@ -43,6 +46,7 @@ class CloudManga {
     };
   }
 
+  /// Tạo đối tượng CloudManga từ Map đọc ra từ catalog.json hoặc Firestore.
   factory CloudManga.fromMap(Map<String, dynamic> map) {
     return CloudManga(
       id: map['id'] ?? '',
@@ -60,6 +64,8 @@ class CloudManga {
   }
 }
 
+/// Model đại diện cho một chương truyện lấy từ Google Drive.
+/// Mỗi chương là một file nén (.zip/.cbz) hoặc PDF nằm trong thư mục trên Drive.
 class CloudChapter {
   final String id; // ID file
   final String title;
@@ -79,6 +85,7 @@ class CloudChapter {
     this.viewCount = 0,
   });
 
+  /// Chuyển đối tượng sang Map để lưu hoặc truyền đi.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -91,6 +98,7 @@ class CloudChapter {
     };
   }
 
+  /// Tạo đối tượng CloudChapter từ Map (đọc từ catalog.json hoặc Drive API).
   factory CloudChapter.fromMap(Map<String, dynamic> map) {
     return CloudChapter(
       id: map['id'] ?? '',
@@ -103,6 +111,7 @@ class CloudChapter {
     );
   }
 
+  /// Hai CloudChapter được coi là giống nhau nếu cùng ID file.
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -110,5 +119,5 @@ class CloudChapter {
   }
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => id.hashCode; // Dùng id file làm khóa hash
 }

@@ -1,13 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+// FollowService: quản lý trạng thái theo dõi (follow/unfollow) từng truyện.
+// Dữ liệu lưu ở subcollection users/{uid}/following/{mangaId}
+// và đồng thời cập nhật likeCount trong collection 'comics'.
 class FollowService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Stream<bool> isFollowing(String mangaId) {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) return const Stream.empty();
+    if (uid == null)
+      return const Stream.empty(); // C
     return _db
         .collection('users')
         .doc(uid)
@@ -31,16 +35,15 @@ class FollowService {
         .doc(mangaId);
     await ref.set({
       'mangaId': mangaId,
-      'comicId': mangaId, // Backward compatibility
+      'comicId':
+          mangaId,
       'title': title,
       'coverUrl': coverUrl,
       'followedAt': FieldValue.serverTimestamp(),
     });
-
-    // Tăng lượt yêu thích toàn cục (vẫn dùng collection 'comics')
     await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(1),
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true)); 
   }
 
   Future<void> unfollowManga(String mangaId) async {
@@ -52,8 +55,6 @@ class FollowService {
         .collection('following')
         .doc(mangaId);
     await ref.delete();
-
-    // Giảm lượt yêu thích toàn cục
     await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(-1),
     }, SetOptions(merge: true));
@@ -76,22 +77,20 @@ class FollowService {
 
     if (doc.exists) {
       await ref.delete();
-      // Giảm lượt yêu thích toàn cục
       await _db.collection('comics').doc(mangaId).set({
         'likeCount': FieldValue.increment(-1),
       }, SetOptions(merge: true));
     } else {
-      if (title == null || coverUrl == null) {
-        throw Exception('Missing info for follow');
-      }
+      // Chưa theo dõi → theo dõi (title + coverUrl bắt buộc vì cần lưu metadata)
+      if (title == null || coverUrl == null)
+        throw Exception('Thiếu thông tin để theo dõi');
       await ref.set({
         'mangaId': mangaId,
-        'comicId': mangaId, // Backward compatibility
+        'comicId': mangaId,
         'title': title,
         'coverUrl': coverUrl,
         'followedAt': FieldValue.serverTimestamp(),
       });
-      // Tăng lượt yêu thích toàn cục
       await _db.collection('comics').doc(mangaId).set({
         'likeCount': FieldValue.increment(1),
       }, SetOptions(merge: true));

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 
+// Trang chỉnh sửa hồ sơ: tên hiển thị, bio, avatar.
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
 
@@ -15,16 +16,17 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
-  File? _imageFile;
-  String? _avatarBase64; // ảnh dạng base64
+  File? _imageFile; // File ảnh mới chọn từ gallery (chưa encode)
+  String? _avatarBase64; // Base64 string — đã encode hoặc tải từ Firestore
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadUserData(); // Pre-fill form với dữ liệu hiện tại từ Firestore
   }
 
+  // Lấy data Firestore 1 lần (get, không phải snapshots) — chỉ cần khi mở trang
   Future<void> _loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -37,21 +39,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
     if (data != null) {
       _nameController.text = data['name'] ?? '';
       _bioController.text = data['bio'] ?? '';
-      _avatarBase64 = data['avatarBase64']; // ảnh dạng base64 nếu có
+      _avatarBase64 = data['avatarBase64']; // null nếu chưa upload ảnh bao giờ
     }
   }
 
+  // Chọn ảnh từ gallery → encode base64 ngay trong client
+  // Lưu ý: ảnh lớn sẽ tạo ra string base64 rất dài → có thể vượt giới hạn Firestore (1MB/doc)
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
       final file = File(picked.path);
       final bytes = await file.readAsBytes();
+      // base64Encode: chuyển Uint8List → String (tăng kích thước ~33%)
       final base64Image = base64Encode(bytes);
-
       setState(() {
-        _imageFile = file;
-        _avatarBase64 = base64Image;
+        _imageFile =
+            file; // Dùng để hiện preview ngay (FileImage nhanh hơn decode base64)
+        _avatarBase64 = base64Image; // Dùng để lưu lên Firestore
       });
     }
   }
@@ -64,6 +69,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
       'name': _nameController.text.trim(),
       'bio': _bioController.text.trim(),
+      // Cú pháp if trong Map literal: chỉ ghi 'avatarBase64' khi user đã chọn ảnh mới
       if (_avatarBase64 != null) 'avatarBase64': _avatarBase64,
     });
 
@@ -77,8 +83,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     ImageProvider? avatarImage;
-
-    // Ưu tiên ảnh mới chọn, sau đó là base64 đã lưu
     if (_imageFile != null) {
       avatarImage = FileImage(_imageFile!);
     } else if (_avatarBase64 != null && _avatarBase64!.isNotEmpty) {
@@ -90,6 +94,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         title: const Text('Chỉnh sửa thông tin'),
         backgroundColor: Colors.blueAccent,
       ),
+      // Spinner toàn màn hình khi đang lưu — tránh double tap
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -97,12 +102,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
               child: SingleChildScrollView(
                 child: Column(
                   children: [
+                    // GestureDetector bao CircleAvatar → tap để chọn ảnh
                     GestureDetector(
                       onTap: _pickImage,
                       child: CircleAvatar(
                         radius: 50,
                         backgroundImage: avatarImage,
                         backgroundColor: Colors.grey[300],
+                        // Camera icon khi chưa có ảnh
                         child: avatarImage == null
                             ? const Icon(Icons.camera_alt, size: 40)
                             : null,
@@ -111,14 +118,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 20),
                     TextField(
                       controller: _nameController,
-                      decoration:
-                          const InputDecoration(labelText: 'Tên hiển thị'),
+                      decoration: const InputDecoration(
+                        labelText: 'Tên hiển thị',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _bioController,
                       decoration: const InputDecoration(
-                          labelText: 'Giới thiệu bản thân'),
+                        labelText: 'Giới thiệu bản thân',
+                      ),
                       maxLines: 3,
                     ),
                     const SizedBox(height: 20),
@@ -129,7 +138,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blueAccent,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                       ),
                     ),
                   ],

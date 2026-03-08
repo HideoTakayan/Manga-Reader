@@ -1,18 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// ============================================
-/// TRỢ GIÚP PAGE
-/// ============================================
-///
-/// Trang trợ giúp với FAQs, Guides, và Contact info.
-/// Tất cả nội dung được define trong code để dễ sửa.
-///
-/// Để sửa nội dung:
-/// - FAQs: Sửa list _faqs bên dưới
-/// - Guides: Sửa list _guides bên dưới
-/// - Contact: Sửa _buildContactInfo() method
-/// ============================================
+// Trang trợ giúp với FAQs, Hướng dẫn, và thông tin Liên hệ.
+// Toàn bộ nội dung được hardcode — không cần API hay database.
 
 class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
@@ -24,14 +14,6 @@ class HelpPage extends StatefulWidget {
 class _HelpPageState extends State<HelpPage> {
   String _searchQuery = '';
 
-  /// ============================================
-  /// FAQS - CÂU HỎI THƯỜNG GẶP
-  /// ============================================
-  /// Để thêm/sửa FAQ:
-  /// 1. Thêm item mới vào list
-  /// 2. Format: {'question': '...', 'answer': '...'}
-  /// 3. Dùng \n để xuống dòng trong answer
-  /// ============================================
   final List<Map<String, String>> _faqs = [
     {
       'question': 'Làm sao để đọc truyện?',
@@ -85,14 +67,7 @@ class _HelpPageState extends State<HelpPage> {
     },
   ];
 
-  /// ============================================
-  /// GUIDES - HƯỚNG DẪN SỬ DỤNG
-  /// ============================================
-  /// Để thêm/sửa Guide:
-  /// 1. Thêm item mới vào list
-  /// 2. Format: {'title': '...', 'description': '...', 'content': '...'}
-  /// 3. 'content' là nội dung chi tiết hiển thị khi click
-  /// ============================================
+  // Guide data: mỗi item có 'content' dài — chỉ hiện khi tap (dialog)
   final List<Map<String, String>> _guides = [
     {
       'title': 'Đăng ký tài khoản',
@@ -175,25 +150,20 @@ class _HelpPageState extends State<HelpPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Search bar
           _buildSearchBar(),
           const SizedBox(height: 24),
 
-          // FAQs
           _buildSectionHeader('❓ Câu hỏi thường gặp'),
           const SizedBox(height: 8),
           ...filteredFAQs.map((faq) => _buildFAQItem(faq)),
 
           const SizedBox(height: 24),
 
-          // Guides
           _buildSectionHeader('📖 Hướng dẫn sử dụng'),
           const SizedBox(height: 8),
           ..._guides.map((guide) => _buildGuideItem(guide)),
 
           const SizedBox(height: 24),
-
-          // Contact
           _buildSectionHeader('📧 Liên hệ hỗ trợ'),
           const SizedBox(height: 8),
           _buildContactInfo(),
@@ -216,9 +186,7 @@ class _HelpPageState extends State<HelpPage> {
         ),
         prefixIcon: const Icon(Icons.search, color: Colors.grey),
       ),
-      onChanged: (value) {
-        setState(() => _searchQuery = value);
-      },
+      onChanged: (value) => setState(() => _searchQuery = value),
     );
   }
 
@@ -249,8 +217,8 @@ class _HelpPageState extends State<HelpPage> {
             fontWeight: FontWeight.w500,
           ),
         ),
-        iconColor: Colors.orange,
-        collapsedIconColor: Colors.grey,
+        iconColor: Colors.orange, // Icon khi expand
+        collapsedIconColor: Colors.grey, // Icon khi collapse
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -280,10 +248,7 @@ class _HelpPageState extends State<HelpPage> {
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-        onTap: () {
-          // Show detailed guide content
-          _showGuideDialog(guide);
-        },
+        onTap: () => _showGuideDialog(guide),
       ),
     );
   }
@@ -311,7 +276,8 @@ class _HelpPageState extends State<HelpPage> {
         ),
         content: SingleChildScrollView(
           child: Text(
-            guide['content'] ?? guide['description']!,
+            guide['content'] ??
+                guide['description']!, // fallback nếu không có 'content'
             style: const TextStyle(color: Colors.white70, height: 1.6),
           ),
         ),
@@ -325,14 +291,6 @@ class _HelpPageState extends State<HelpPage> {
     );
   }
 
-  /// ============================================
-  /// CONTACT INFO - THÔNG TIN LIÊN HỆ
-  /// ============================================
-  /// Để sửa thông tin liên hệ:
-  /// 1. Sửa email trong emailUri
-  /// 2. Sửa text hiển thị
-  /// 3. Thêm/bớt ListTile nếu cần
-  /// ============================================
   Widget _buildContactInfo() {
     return Card(
       color: const Color(0xFF1A1A1C),
@@ -348,6 +306,7 @@ class _HelpPageState extends State<HelpPage> {
             ),
             trailing: const Icon(Icons.send, color: Colors.grey),
             onTap: () async {
+              // Uri scheme 'mailto' → mở email app tự động điền địa chỉ + subject
               final Uri emailUri = Uri(
                 scheme: 'mailto',
                 path: 'minhhieued245@gmail.com',
@@ -356,14 +315,13 @@ class _HelpPageState extends State<HelpPage> {
               if (await canLaunchUrl(emailUri)) {
                 await launchUrl(emailUri);
               } else {
-                if (mounted) {
+                if (mounted)
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở email'),
                       backgroundColor: Colors.red,
                     ),
                   );
-                }
               }
             },
           ),
@@ -383,17 +341,17 @@ class _HelpPageState extends State<HelpPage> {
               final Uri fbUri = Uri.parse(
                 'https://www.facebook.com/minh.hieu.126210/?locale=vi_VN',
               );
+              // LaunchMode.externalApplication: mở trong browser/app bên ngoài, không in-app WebView
               if (await canLaunchUrl(fbUri)) {
                 await launchUrl(fbUri, mode: LaunchMode.externalApplication);
               } else {
-                if (mounted) {
+                if (mounted)
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở Facebook'),
                       backgroundColor: Colors.red,
                     ),
                   );
-                }
               }
             },
           ),

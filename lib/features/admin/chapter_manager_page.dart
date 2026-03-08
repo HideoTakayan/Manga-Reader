@@ -6,6 +6,8 @@ import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import 'package:path/path.dart' as path;
 
+// Trang quản lý chapter của một bộ truyện: xem, thêm, xóa, sắp xếp bằng kéo thả.
+// Nhận CloudManga từ AdminDashboardPage — dùng manga.id để query Drive.
 class ChapterManagerPage extends StatefulWidget {
   final CloudManga manga;
   const ChapterManagerPage({super.key, required this.manga});
@@ -18,8 +20,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
   bool _isSavingOrder = false;
-  bool _hasChanges = false;
-  bool _isAscending = true; // State sắp xếp tăng/giảm dần
+  bool _hasChanges = false; // true = thứ tự bị thay đổi → hiện nút "Lưu Thứ Tự"
+  bool _isAscending = true; // Toggle hướng sort — đảo chiều sau mỗi lần bấm
 
   @override
   void initState() {
@@ -27,6 +29,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     _loadChapters();
   }
 
+  // Tải danh sách chapter từ Drive. Gọi lại sau mỗi thao tác thêm/xóa.
   Future<void> _loadChapters() async {
     setState(() => _isLoading = true);
     final chapters = await DriveService.instance.getChapters(widget.manga.id);
@@ -39,17 +42,16 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     }
   }
 
-  // Làm mới danh sách sau khi thêm/xóa
   void _refresh() {
     _loadChapters();
   }
 
-  // Logic sắp xếp tự nhiên (Natural Sort)
+  // Natural Sort: trích số đầu tiên từ tên chapter bằng RegEx rồi so sánh số.
+  // Tránh lỗi sort chuỗi kiểu "Chap 10" < "Chap 9" vì '1' < '9' theo ASCII.
   void _sortChapters() {
     setState(() {
       _chapters.sort((a, b) {
-        // Hàm trích xuất số đầu tiên từ chuỗi (hỗ trợ số thập phân)
-        // Ví dụ: "Chap 9", "9.5", "9.12" -> 9, 9.5, 9.12
+        // Trích số đầu tiên, hỗ trợ số thập phân: "Chap 9.5" → 9.5
         double? getNumber(String s) {
           final match = RegExp(r'(\d+(\.\d+)?)').firstMatch(s);
           return match != null ? double.parse(match.group(1)!) : null;
@@ -58,10 +60,9 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         final numA = getNumber(a.title);
         final numB = getNumber(b.title);
 
-        // Nếu cả hai đều có số thì so sánh theo số
         if (numA != null && numB != null) {
           if (numA == numB) {
-            // Nếu số bằng nhau thì so sánh chuỗi để đảm bảo ổn định
+            // Số bằng nhau → fallback so sánh chuỗi để sort ổn định
             return _isAscending
                 ? a.title.compareTo(b.title)
                 : b.title.compareTo(a.title);
@@ -69,13 +70,13 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
           return _isAscending ? numA.compareTo(numB) : numB.compareTo(numA);
         }
 
-        // Nếu không thì so sánh chuỗi thông thường
+        // Không tìm thấy số → so sánh chuỗi thông thường
         return _isAscending
             ? a.title.compareTo(b.title)
             : b.title.compareTo(a.title);
       });
 
-      _isAscending = !_isAscending; // Đảo ngược hướng cho lần click sau
+      _isAscending = !_isAscending; // Đảo chiều cho lần bấm tiếp theo
       _hasChanges = true;
     });
 
@@ -91,6 +92,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     );
   }
 
+  // Trích danh sách ID theo thứ tự hiện tại → ghi vào info.json + catalog.json.
   Future<void> _saveOrder() async {
     setState(() => _isSavingOrder = true);
     try {
@@ -121,16 +123,17 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         actions: [
-          // Sort Button
+          // Nút sort — icon chuyển cam khi đã có thay đổi chưa lưu
           IconButton(
             onPressed: _chapters.isEmpty ? null : _sortChapters,
             tooltip: 'Tự động sắp xếp',
             icon: Icon(
-              Icons.sort_by_alpha, // Or Icons.swap_vert
+              Icons.sort_by_alpha,
               color: _hasChanges ? Colors.orange : null,
             ),
           ),
 
+          // Nút "Lưu Thứ Tự" chỉ hiện khi _hasChanges = true (có thay đổi chưa lưu)
           if (_hasChanges)
             TextButton.icon(
               onPressed: _isSavingOrder ? null : _saveOrder,
@@ -164,14 +167,14 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               ),
             )
+          // ReorderableListView: danh sách có tay cầm kéo thả — onReorder callback cập nhật _chapters
           : ReorderableListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _chapters.length,
               onReorder: (oldIndex, newIndex) {
                 setState(() {
-                  if (oldIndex < newIndex) {
-                    newIndex -= 1;
-                  }
+                  // Fix bug của ReorderableListView: khi kéo xuống, newIndex tăng thừa 1
+                  if (oldIndex < newIndex) newIndex -= 1;
                   final item = _chapters.removeAt(oldIndex);
                   _chapters.insert(newIndex, item);
                   _hasChanges = true;
@@ -180,6 +183,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
               itemBuilder: (context, index) {
                 final chapter = _chapters[index];
                 return Container(
+                  // ValueKey bắt buộc với ReorderableListView để identify từng item
                   key: ValueKey(chapter.id),
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
@@ -195,6 +199,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    // Hiện định dạng file (ZIP/CBZ) và dung lượng
                     subtitle: Text(
                       '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
                       style: Theme.of(
@@ -252,8 +257,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                               _refresh();
                             }
                           } catch (e) {
-                            // Xử lý lỗi 404 (File không tìm thấy) như thể đã xóa thành công
-                            // Trường hợp file đã bị xóa trên Drive nhưng app chưa cập nhật
+                            // Nếu Drive trả 404 → file đã mất trên Drive nhưng app chưa biết.
+                            // Xử lý như "đã xóa thành công": xóa khỏi list local, không báo lỗi.
                             final isNotFound =
                                 e.toString().contains('404') ||
                                 e.toString().contains('File not found');
@@ -267,14 +272,11 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                     ),
                                   ),
                                 );
-                                // Loại bỏ khỏi danh sách hiển thị
-                                // và không cần gọi _refresh() vì có thể Drive vẫn trả về cached list
-                                setState(() {
-                                  _chapters.removeWhere(
+                                setState(
+                                  () => _chapters.removeWhere(
                                     (c) => c.id == chapter.id,
-                                  );
-                                });
-                                // Có thể cần dọn dẹp thêm order trên Drive nếu cần thiết
+                                  ),
+                                );
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -291,6 +293,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                 );
               },
             ),
+
+      // FAB mở _AddChapterDialog, sau khi đóng thì _refresh() để cập nhật danh sách
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           await showDialog(
@@ -308,6 +312,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   }
 }
 
+// Dialog thêm chapter mới: nhập tên + chọn file ZIP/CBZ/EPUB → upload lên Drive.
+// Sau upload thành công: ghi thông báo realtime vào Firestore collection 'notifications'.
 class _AddChapterDialog extends StatefulWidget {
   final String mangaId;
   const _AddChapterDialog({required this.mangaId});
@@ -321,18 +327,18 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   File? _file;
   bool _isUploading = false;
 
+  // Mở file picker giới hạn chỉ file zip/cbz/epub — đây là các định dạng reader hỗ trợ.
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['zip', 'cbz', 'epub'],
     );
     if (result != null && result.files.single.path != null) {
-      setState(() {
-        _file = File(result.files.single.path!);
-      });
+      setState(() => _file = File(result.files.single.path!));
     }
   }
 
+  // Validate → upload qua DriveService → ghi thông báo vào Firestore → đóng dialog.
   Future<void> _submit() async {
     if (_titleController.text.isEmpty) {
       ScaffoldMessenger.of(
@@ -340,7 +346,6 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       ).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên chương')));
       return;
     }
-
     if (_file == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng chọn file zip/epub')),
@@ -350,23 +355,22 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
 
     setState(() => _isUploading = true);
     try {
+      // Upload file lên folder manga trên Drive, đồng thời gửi push notification qua FCM
       await DriveService.instance.addChapter(
         mangaId: widget.mangaId,
         title: _titleController.text,
         file: _file!,
       );
 
-      // --- LOGIC GỬI THÔNG BÁO ---
-      // Tạo thông báo "Chương mới" (Loại 1)
+      // Ghi thêm bản ghi vào Firestore để màn hình thông báo trong app đọc lại được lịch sử
       await FirebaseFirestore.instance.collection('notifications').add({
-        'type': 'new_chapter', // Loại 1: Chương mới
-        'mangaId': widget.mangaId, // Updated field
+        'type': 'new_chapter', // Loại thông báo để app phân biệt xử lý
+        'mangaId': widget.mangaId,
         'title': 'Truyện có chương mới!',
         'body': 'Đã cập nhật ${_titleController.text}',
         'timestamp': FieldValue.serverTimestamp(),
         'sender': 'admin',
       });
-      // ----------------------------
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -411,6 +415,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
             ),
             const SizedBox(height: 16),
 
+            // Vùng chọn file — icon chuyển xanh khi đã chọn, hiện tên file ngắn gọn
             InkWell(
               onTap: _pickFile,
               borderRadius: BorderRadius.circular(8),
@@ -443,6 +448,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 ),
               ),
             ),
+            // LinearProgressIndicator thay vì CircularProgressIndicator để tiết kiệm không gian
             if (_isUploading)
               const Padding(
                 padding: EdgeInsets.only(top: 16),
@@ -462,7 +468,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           ),
         ),
         ElevatedButton(
-          onPressed: _isUploading ? null : _submit,
+          onPressed: _isUploading ? null : _submit, // Disable khi đang upload
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.black,

@@ -6,6 +6,9 @@ import 'package:go_router/go_router.dart';
 
 enum GenreFilterState { none, included, excluded }
 
+// Trang tìm kiếm — lọc realtime client-side trên catalog đã load sẵn.
+// Hỗ trợ: tìm theo tên/tác giả + filter thể loại (include/exclude) + filter trạng thái.
+// initialGenre: mở trang với genre được pre-select (navigate từ genre chip ở HomePage)
 class SearchPage extends StatefulWidget {
   final String? initialGenre;
   const SearchPage({super.key, this.initialGenre});
@@ -16,13 +19,12 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   String query = '';
-  List<CloudManga> allMangas = []; // Renamed from allComics
+  List<CloudManga> allMangas = [];
   bool isLoading = true;
 
-  // Filters (Bộ lọc)
   Map<String, GenreFilterState> genreFilters = {};
-  String? selectedStatus;
-  List<String> allGenres = []; // Danh sách thể loại động (lấy từ dữ liệu)
+  String? selectedStatus; // 
+  List<String> allGenres = []; 
   final List<String> allStatuses = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
 
   @override
@@ -34,6 +36,8 @@ class _SearchPageState extends State<SearchPage> {
     _loadMangas();
   }
 
+  // Load toàn bộ catalog một lần duy nhất — filter chạy client-side sau đó
+  // Dùng Set<String> để dedup genre tự động, rồi sort
   Future<void> _loadMangas({bool forceRefresh = false}) async {
     final mangas = await DriveService.instance.getMangas(
       forceRefresh: forceRefresh,
@@ -41,14 +45,12 @@ class _SearchPageState extends State<SearchPage> {
     if (mounted) {
       setState(() {
         allMangas = mangas;
-
-        // Trích xuất danh sách thể loại duy nhất từ tất cả truyện
+        // Gom tất cả genre từ mọi truyện → Set dedup → sort alphabetical
         final genres = <String>{};
         for (var c in mangas) {
           genres.addAll(c.genres);
         }
         allGenres = genres.toList()..sort();
-
         isLoading = false;
       });
     }
@@ -102,7 +104,7 @@ class _SearchPageState extends State<SearchPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: allGenres.map((genre) {
-                          final state =
+                          final filterState =
                               genreFilters[genre] ?? GenreFilterState.none;
 
                           Color? backgroundColor;
@@ -111,7 +113,7 @@ class _SearchPageState extends State<SearchPage> {
                               Colors.black;
                           Widget? icon;
 
-                          if (state == GenreFilterState.included) {
+                          if (filterState == GenreFilterState.included) {
                             backgroundColor = Theme.of(context).primaryColor;
                             labelColor = Colors.white;
                             icon = const Icon(
@@ -119,7 +121,7 @@ class _SearchPageState extends State<SearchPage> {
                               size: 16,
                               color: Colors.white,
                             );
-                          } else if (state == GenreFilterState.excluded) {
+                          } else if (filterState == GenreFilterState.excluded) {
                             backgroundColor = Colors.red;
                             labelColor = Colors.white;
                             icon = const Icon(
@@ -129,7 +131,6 @@ class _SearchPageState extends State<SearchPage> {
                             );
                           } else {
                             backgroundColor = Theme.of(context).cardColor;
-                            // Thêm viền nhẹ cho trạng thái chưa chọn để dễ nhìn hơn
                           }
 
                           return ActionChip(
@@ -140,26 +141,30 @@ class _SearchPageState extends State<SearchPage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
-                                color: state == GenreFilterState.none
+                                color: filterState == GenreFilterState.none
                                     ? Colors.grey.withOpacity(0.3)
                                     : Colors.transparent,
                               ),
                             ),
                             onPressed: () {
+                              // Vòng toggle: none → included → excluded → xóa khỏi map (none)
                               setStateModal(() {
-                                if (state == GenreFilterState.none) {
+                                if (filterState == GenreFilterState.none) {
                                   genreFilters[genre] =
                                       GenreFilterState.included;
-                                } else if (state == GenreFilterState.included) {
+                                } else if (filterState ==
+                                    GenreFilterState.included) {
                                   genreFilters[genre] =
                                       GenreFilterState.excluded;
                                 } else {
-                                  genreFilters.remove(genre);
+                                  genreFilters.remove(
+                                    genre,
+                                  ); // Về none: xóa key hoàn toàn
                                 }
                               });
                               setState(
                                 () {},
-                              ); // Cập nhật danh sách truyện bên dưới
+                              ); // Rebuild danh sách kết quả bên dưới modal
                             },
                           );
                         }).toList(),
@@ -186,13 +191,12 @@ class _SearchPageState extends State<SearchPage> {
                                       context,
                                     ).textTheme.bodyLarge?.color,
                             ),
+                            // ChoiceChip: tap khi đang selected → deselect (null)
                             onSelected: (selected) {
-                              setStateModal(() {
-                                selectedStatus = selected ? status : null;
-                              });
-                              setState(
-                                () {},
-                              ); // Cập nhật danh sách truyện bên dưới
+                              setStateModal(
+                                () => selectedStatus = selected ? status : null,
+                              );
+                              setState(() {}); // Rebuild kết quả ngay
                             },
                           );
                         }).toList(),
@@ -210,6 +214,7 @@ class _SearchPageState extends State<SearchPage> {
                           child: const Text('Áp dụng'),
                         ),
                       ),
+                      // Padding để tránh bị keyboard che khuất
                       SizedBox(
                         height: MediaQuery.of(context).viewInsets.bottom,
                       ),
@@ -232,7 +237,8 @@ class _SearchPageState extends State<SearchPage> {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: TextField(
           autofocus: true,
-          onChanged: (val) => setState(() => query = val),
+          onChanged: (val) =>
+              setState(() => query = val), // Filter realtime mỗi ký tự
           style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: 'Tìm truyện...',
@@ -267,11 +273,10 @@ class _SearchPageState extends State<SearchPage> {
                   bool matchesGenre = true;
                   if (genreFilters.isNotEmpty) {
                     matchesGenre = genreFilters.entries.every((entry) {
-                      if (entry.value == GenreFilterState.included) {
+                      if (entry.value == GenreFilterState.included)
                         return c.genres.contains(entry.key);
-                      } else if (entry.value == GenreFilterState.excluded) {
+                      if (entry.value == GenreFilterState.excluded)
                         return !c.genres.contains(entry.key);
-                      }
                       return true;
                     });
                   }
@@ -329,6 +334,7 @@ class _SearchPageState extends State<SearchPage> {
                               manga.author,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
+                            // Chỉ hiện 3 genre đầu để không quá dài
                             if (manga.genres.isNotEmpty)
                               Text(
                                 manga.genres.take(3).join(', '),

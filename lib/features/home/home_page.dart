@@ -9,9 +9,10 @@ import '../shared/drive_image.dart';
 import '../../services/notification_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
-
 import '../../services/sync_service.dart';
 
+// Trang chủ — wrapper mỏng chỉ đặt Scaffold, toàn bộ logic nằm trong _HomeContent.
+// Tách ra để theo pattern: StatelessWidget ngoài, StatefulWidget bên trong.
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -32,6 +33,7 @@ class _HomeContent extends StatefulWidget {
 }
 
 class _HomeContentState extends State<_HomeContent> {
+  // Future lưu kết quả getMangas() — thay thế toàn bộ khi refresh thay vì await
   late Future<List<CloudManga>> _mangasFuture;
 
   @override
@@ -39,17 +41,21 @@ class _HomeContentState extends State<_HomeContent> {
     super.initState();
     _mangasFuture = DriveService.instance.getMangas();
 
-    // Tự động đồng bộ lịch sử đọc offline lên Cloud
+    // Dùng addPostFrameCallback vì không được gọi side-effect trong initState —
+    // widget chưa gắn vào tree, context chưa sẵn sàng.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Đồng bộ lịch sử đọc offline (khi không có mạng) lên Firestore
       SyncService.instance.syncPendingHistory();
     });
 
-    // Check permission immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Kiểm tra quyền storage để lưu file manga xuống thư mục /MangaReader/
       _checkStoragePermission();
     });
   }
 
+  // Nếu chưa có quyền storage → hiện dialog xin quyền.
+  // barrierDismissible: false → bắt buộc user phải chọn, không dismiss bằng tap ngoài.
   Future<void> _checkStoragePermission() async {
     final hasPermission = await PermissionService.hasStoragePermission();
     if (!hasPermission) {
@@ -60,13 +66,11 @@ class _HomeContentState extends State<_HomeContent> {
         builder: (ctx) => AlertDialog(
           title: const Text('Cấp quyền truy cập'),
           content: const Text(
-            'Để lưu truyện vào thư mục "/MangaReader" ở bộ nhớ máy (giống Mihon) và dễ dàng quản lý file, ứng dụng cần quyền truy cập bộ nhớ.',
+            'Để lưu truyện vào thư mục "/MangaReader" ở bộ nhớ máy và dễ dàng quản lý file, ứng dụng cần quyền truy cập bộ nhớ.',
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-              },
+              onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Để sau'),
             ),
             ElevatedButton(
@@ -75,7 +79,7 @@ class _HomeContentState extends State<_HomeContent> {
                 final granted =
                     await PermissionService.requestStoragePermission();
                 if (granted) {
-                  // Re-init folder service to use new path
+                  // Khởi tạo lại FolderService để dùng đường dẫn mới sau khi cấp quyền
                   await FolderService.init();
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -96,6 +100,7 @@ class _HomeContentState extends State<_HomeContent> {
     }
   }
 
+  // Pull-to-refresh: tạo Future mới với forceRefresh=true → FutureBuilder tự rebuild
   Future<void> _refresh() async {
     setState(() {
       _mangasFuture = DriveService.instance.getMangas(forceRefresh: true);
@@ -103,6 +108,7 @@ class _HomeContentState extends State<_HomeContent> {
     await _mangasFuture;
   }
 
+  // Helper: chuyển CloudManga → Manga (local model) để truyền vào các widget con
   Manga _fromCloud(CloudManga c) {
     return Manga(
       id: c.id,
@@ -114,12 +120,10 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  List<Manga> _getNewUpdates(List<Manga> all) {
-    // Sắp xếp mặc định theo thời gian cập nhật giảm dần (được xử lý ở DriveService)
-    // Lấy 10 truyện mới nhất
-    return all.take(10).toList();
-  }
+  // Mục "Mới Cập Nhật": lấy 10 truyện đầu (Drive đã sort theo updatedAt giảm dần)
+  List<Manga> _getNewUpdates(List<Manga> all) => all.take(10).toList();
 
+  // Mục ngẫu nhiên (Featured, Hot, Trending): shuffle + take — không cần thuật toán phức tạp
   List<Manga> _getRandom(List<Manga> all, int count) {
     final list = List<Manga>.from(all)..shuffle();
     return list.take(count).toList();
@@ -131,10 +135,13 @@ class _HomeContentState extends State<_HomeContent> {
       onRefresh: _refresh,
       color: Colors.redAccent,
       backgroundColor: Theme.of(context).cardColor,
+      // StreamBuilder ngoài cùng: lắng nghe trạng thái đăng nhập Drive OAuth.
+      // Dùng để kiểm tra authSnapshot.data == null → hiện gợi ý "cần đăng nhập Admin"
       child: StreamBuilder<GoogleSignInAccount?>(
         stream: DriveService.instance.onAuthStateChanged,
         initialData: DriveService.instance.currentUser,
         builder: (context, authSnapshot) {
+          // FutureBuilder bên trong: chờ getMangas() hoàn thành mới render nội dung
           return FutureBuilder<List<CloudManga>>(
             future: _mangasFuture,
             builder: (context, snapshot) {
@@ -146,6 +153,7 @@ class _HomeContentState extends State<_HomeContent> {
               final allMangas = cloudMangas.map(_fromCloud).toList();
 
               if (allMangas.isEmpty) {
+                // AlwaysScrollableScrollPhysics: cho phép kéo refresh ngay cả khi empty
                 return CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
@@ -155,20 +163,21 @@ class _HomeContentState extends State<_HomeContent> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              "Chưa có truyện nào.",
+                              'Chưa có truyện nào.',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
+                            // Gợi ý thêm khi chưa đăng nhập Drive OAuth
                             if (authSnapshot.data == null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 10),
                                 child: Text(
-                                  "(Bạn cần đăng nhập trong trang Quản trị để xem truyện)",
+                                  '(Bạn cần đăng nhập trong trang Quản trị để xem truyện)',
                                   style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ),
                             TextButton(
                               onPressed: _refresh,
-                              child: const Text("Tải lại"),
+                              child: const Text('Tải lại'),
                             ),
                           ],
                         ),
@@ -178,18 +187,27 @@ class _HomeContentState extends State<_HomeContent> {
                 );
               }
 
-              // 1. Mới cập nhật (10 truyện mới nhất)
-              final newUpdates = _getNewUpdates(allMangas);
-
-              // 2. Random cho các mục khác
-              final featured = _getRandom(allMangas, 10);
-              final hotToday = _getRandom(allMangas, 10);
-              final trending = _getRandom(allMangas, 10);
+              // Phân loại danh sách cho từng section
+              final newUpdates = _getNewUpdates(
+                allMangas,
+              ); // Top 10 mới nhất (theo Drive sort)
+              final featured = _getRandom(
+                allMangas,
+                10,
+              ); // Banner nổi bật (ngẫu nhiên)
+              final hotToday = _getRandom(
+                allMangas,
+                10,
+              ); // Hot hôm nay (ngẫu nhiên)
+              final trending = _getRandom(
+                allMangas,
+                10,
+              ); // Top trending (ngẫu nhiên)
 
               return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
-                  // Thanh công cụ phía trên (AppBar), ẩn đi khi cuộn xuống
+                  // AppBar nổi (floating: true) — ẩn khi cuộn xuống, hiện lại khi cuộn lên
                   SliverAppBar(
                     floating: true,
                     backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -202,6 +220,7 @@ class _HomeContentState extends State<_HomeContent> {
                           size: 30,
                         ),
                         const SizedBox(width: 8),
+                        // ShaderMask: tô màu gradient cho text "MangaReader"
                         ShaderMask(
                           shaderCallback: (bounds) => const LinearGradient(
                             colors: [Colors.redAccent, Colors.orangeAccent],
@@ -220,7 +239,7 @@ class _HomeContentState extends State<_HomeContent> {
                       ],
                     ),
                     actions: [
-                      // Nút Chuông Thông Báo
+                      // Chuông thông báo: chấm đỏ hiện khi có thông báo chưa đọc
                       StreamBuilder<List<Map<String, dynamic>>>(
                         stream: NotificationService.instance
                             .streamUserNotifications(),
@@ -229,7 +248,6 @@ class _HomeContentState extends State<_HomeContent> {
                           final hasUnread = notifications.any(
                             (n) => n['isRead'] != true,
                           );
-
                           return Stack(
                             alignment: Alignment.center,
                             children: [
@@ -240,6 +258,7 @@ class _HomeContentState extends State<_HomeContent> {
                                 ),
                                 onPressed: () => context.push('/notifications'),
                               ),
+                              // Chấm đỏ nhỏ — Positioned chồng lên icon khi có unread
                               if (hasUnread)
                                 Positioned(
                                   right: 12,
@@ -267,7 +286,6 @@ class _HomeContentState extends State<_HomeContent> {
                     ],
                   ),
 
-                  // Banner tự động trượt (Hiển thị các truyện nổi bật)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -275,25 +293,13 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
 
-                  // 🔥 Mục Truyện Hot Hôm Nay
-                  _SectionTitle(
-                    label: '🔥 Truyện Hot Hôm Nay',
-                    onViewAll: () => context.push('/mangas'),
-                  ),
+                  _SectionTitle(label: '🔥 Truyện Hot Hôm Nay'),
                   _MangaReaderCarousel(mangas: hotToday),
 
-                  // 🆕 Mới cập nhật (Top 10 mới nhất)
-                  _SectionTitle(
-                    label: '🆕 Mới Cập Nhật',
-                    onViewAll: () => context.push('/mangas'),
-                  ),
+                  _SectionTitle(label: '🆕 Mới Cập Nhật'),
                   _MangaReaderCarousel(mangas: newUpdates),
 
-                  // 🏆 Top Trending (Random 10)
-                  _SectionTitle(
-                    label: '🏆 Top Trending',
-                    onViewAll: () => context.push('/mangas'),
-                  ),
+                  _SectionTitle(label: '🏆 Top Trending'),
                   SliverToBoxAdapter(child: _RankList(mangas: trending)),
                 ],
               );
@@ -305,10 +311,10 @@ class _HomeContentState extends State<_HomeContent> {
   }
 }
 
+// Tiêu đề section (VD: "🔥 Truyện Hot Hôm Nay") — widget tái sử dụng cho nhiều section
 class _SectionTitle extends StatelessWidget {
   final String label;
-  final VoidCallback? onViewAll;
-  const _SectionTitle({required this.label, this.onViewAll});
+  const _SectionTitle({required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +338,8 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+// Carousel cuộn ngang — dùng cho Hot Today và Mới Cập Nhật
+// Bấm mỗi card → navigate '/detail/{id}'
 class _MangaReaderCarousel extends StatelessWidget {
   final List<Manga> mangas;
   const _MangaReaderCarousel({required this.mangas});
@@ -371,7 +379,7 @@ class _MangaReaderCarousel extends StatelessWidget {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: DriveImage(
-                                fileId: c.coverUrl, // Actually coverFileId
+                                fileId: c.coverUrl,
                                 fit: BoxFit.cover,
                                 width: 140,
                                 height: double.infinity,
@@ -415,6 +423,7 @@ class _MangaReaderCarousel extends StatelessWidget {
   }
 }
 
+// Danh sách xếp hạng dọc — Top 3 có badge màu vàng/cam/đỏ, còn lại màu trắng
 class _RankList extends StatelessWidget {
   final List<Manga> mangas;
   const _RankList({required this.mangas});
@@ -442,6 +451,7 @@ class _RankList extends StatelessWidget {
                   fit: BoxFit.cover,
                 ),
               ),
+              // Badge số thứ hạng — chỉ hiện cho Top 3
               if (i < 3)
                 Positioned(
                   top: 0,
@@ -481,6 +491,8 @@ class _RankList extends StatelessWidget {
   }
 }
 
+// Banner tự động trượt ngang mỗi 4 giây dùng PageController + Timer.periodic.
+// Có chấm indicator ở dưới (AnimatedContainer để animate kích thước khi active).
 class _AutoSlideBanner extends StatefulWidget {
   final List<Manga> mangas;
   const _AutoSlideBanner({required this.mangas});
@@ -492,36 +504,35 @@ class _AutoSlideBanner extends StatefulWidget {
 class _AutoSlideBannerState extends State<_AutoSlideBanner> {
   late final PageController _controller;
   int _currentPage = 0;
-  Timer? _timer;
+  Timer? _timer; // Nullable để tránh crash khi cancel trước khi init xong
 
   @override
   void initState() {
     super.initState();
+    // viewportFraction < 1 → hiện một phần trang kế — hiệu ứng "peek" sang 2 bên
     _controller = PageController(viewportFraction: 0.9);
-
-    // Start auto-slide timer
     _startTimer();
   }
 
+  // Timer chạy vòng lặp: mỗi 4 giây chuyển sang trang kế, quay vòng khi đến cuối
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (!mounted) return;
       if (widget.mangas.isEmpty) return;
-
       final nextPage = (_currentPage + 1) % widget.mangas.length;
       _controller.animateToPage(
         nextPage,
         duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
       );
-      // _currentPage will be updated in onPageChanged
+      // _currentPage cập nhật trong onPageChanged, không cập nhật ở đây tránh race condition
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _timer?.cancel(); // Hủy timer khi widget bị dispose để tránh memory leak
     _controller.dispose();
     super.dispose();
   }
@@ -549,14 +560,12 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        // Ảnh nền
                         DriveImage(
                           fileId: c.coverUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
                         ),
-
-                        // Hiệu ứng gradient mờ ở dưới ảnh để nổi chữ
+                        // Gradient mờ từ trong suốt → đen ở dưới để nổi text trên ảnh
                         Align(
                           alignment: Alignment.bottomCenter,
                           child: Container(
@@ -574,8 +583,6 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
                             ),
                           ),
                         ),
-
-                        // Tên truyện hiển thị ở góc dưới
                         Positioned(
                           left: 12,
                           bottom: 12,
@@ -607,7 +614,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
           ),
         ),
         const SizedBox(height: 8),
-        // Chấm nhỏ báo trang hiện tại
+        // Indicator chấm: active → rộng 12px, inactive → 6px (AnimatedContainer animate smooth)
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(widget.mangas.length, (i) {

@@ -3,7 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// ignore_for_file: depend_on_referenced_packages, file_names
+// NotificationService: 2 hệ thống notification độc lập:
+// 1. LOCAL NOTIFICATIONS: thanh tiến trình tải xuống (system notification bar)
+// 2. FIRESTORE NOTIFICATIONS: thông báo chapter mới, lọc theo following list
 
 class NotificationService {
   static final NotificationService instance = NotificationService._internal();
@@ -14,26 +16,18 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  // --- LOCAL NOTIFICATIONS (BACKGROUND DOWNLOAD) ---
+  // ─── LOCAL NOTIFICATIONS (Download Progress Bar) ───────────────────────────
 
   Future<void> initLocalNotifications() async {
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
-    // ignore: prefer_const_constructors
     final initSettings = InitializationSettings(android: androidSettings);
-
-    // Fix: Sử dụng named parameters (Syntax mới v18+)
-    // ignore: undefined_named_parameter
     await _localNotifications.initialize(
-      // ignore: missing_required_argument
       settings: initSettings,
       onDidReceiveNotificationResponse: (details) {
-        // Handle notification tap
       },
     );
-
-    // Request permission for Android 13+
     final androidImpl = _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -41,7 +35,6 @@ class NotificationService {
     await androidImpl?.requestNotificationsPermission();
   }
 
-  /// Hiển thị thanh tiến độ tải xuống
   Future<void> showDownloadProgress(
     int id,
     int progress,
@@ -52,28 +45,23 @@ class NotificationService {
       'download_channel',
       'Download Manager',
       channelDescription: 'Notifications for background downloads',
-      importance: Importance.low,
+      importance: Importance.low, 
       priority: Priority.low,
       onlyAlertOnce: true,
       showProgress: true,
       maxProgress: 100,
-      progress: progress,
-      ongoing: true,
+      progress: progress, 
+      ongoing: true, 
       autoCancel: false,
     );
-
-    final details = NotificationDetails(android: androidDetails);
-
-    // ignore: undefined_named_parameter
     await _localNotifications.show(
       id: id,
       title: title,
       body: body,
-      notificationDetails: details,
+      notificationDetails: NotificationDetails(android: androidDetails),
     );
   }
 
-  /// Hiển thị thông báo tải xong
   Future<void> showDownloadComplete(
     int id,
     String title,
@@ -83,33 +71,27 @@ class NotificationService {
     final androidDetails = AndroidNotificationDetails(
       'download_channel',
       'Download Manager',
-      importance: Importance.high,
+      importance: Importance.high, 
       priority: Priority.high,
       ongoing: false,
-      autoCancel: true,
+      autoCancel: true, 
     );
-
-    final details = NotificationDetails(android: androidDetails);
     final displayTitle = isError ? '❌ $title' : '✅ $title';
-
-    // ignore: undefined_named_parameter
     await _localNotifications.show(
       id: id,
       title: displayTitle,
       body: body,
-      notificationDetails: details,
+      notificationDetails: NotificationDetails(android: androidDetails),
     );
   }
 
-  /// Hủy thông báo
   Future<void> cancelNtification(int id) async {
-    // Fix: Cancel cũng dùng named parameter 'id'
-    // ignore: undefined_named_parameter
     await _localNotifications.cancel(id: id);
   }
 
-  // --- FIRESTORE NOTIFICATIONS ---
+  // ─── FIRESTORE NOTIFICATIONS (New Chapter Alerts) ──────────────────────────
 
+  // Lọc: chỉ hiện thông báo của manga user đang following
   Stream<List<Map<String, dynamic>>> streamUserNotifications() async* {
     final userId = _auth.currentUser?.uid;
     if (userId == null) {
@@ -125,27 +107,45 @@ class NotificationService {
 
     await for (final snapshot in notifStream) {
       try {
-        final followingSnap = await _db
-            .collection('users')
-            .doc(userId)
-            .collection('following')
-            .get();
+        // Lấy song song: following list + user doc (readNotificationIds)
+        final results = await Future.wait([
+          _db.collection('users').doc(userId).collection('following').get(),
+          _db.collection('users').doc(userId).get(),
+        ]);
+
+        final followingSnap = results[0] as QuerySnapshot;
+        final userDoc = results[1] as DocumentSnapshot;
 
         final followingIds = followingSnap.docs.map((d) => d.id).toSet();
+        final userdata = userDoc.data() as Map<String, dynamic>?;
+        final readIds = Set<String>.from(
+          userdata?['readNotificationIds'] ?? [],
+        );
 
         final filteredNotifications = snapshot.docs
             .where((doc) {
               final data = doc.data();
-              final mangaId = data['mangaId'] ?? data['comicId'];
-              if (mangaId == null || mangaId == '') return true;
-              return followingIds.contains(mangaId);
+              final mangaId =
+                  data['mangaId'] ?? data['comicId']; 
+              if (mangaId == null || mangaId == '')
+                return true; 
+              return followingIds.contains(
+                mangaId,
+              );
             })
-            .map((doc) => {...doc.data(), 'id': doc.id})
+            .map(
+              (doc) => {
+                ...doc.data(),
+                'id': doc.id,
+                'isRead': readIds.contains(
+                  doc.id,
+                ),
+              },
+            )
             .toList();
 
         yield filteredNotifications;
       } catch (e) {
-        // ignore: avoid_print
         print('Error filtering notifications: $e');
         yield [];
       }
@@ -153,10 +153,16 @@ class NotificationService {
   }
 
   Future<void> markAsRead(String notificationId) async {
-    // Stub
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    await _db.collection('users').doc(userId).set(
+      {
+        'readNotificationIds': FieldValue.arrayUnion([notificationId]),
+      }, 
+      SetOptions(merge: true),
+    );
   }
 
-  // --- SYSTEM NOTIFICATIONS LOGIC ---
 
   final Set<String> _processedIds = {};
   DateTime _startTime = DateTime.now();
@@ -164,26 +170,22 @@ class NotificationService {
 
   Future<void> initialize() async {
     await initLocalNotifications();
-
-    // Listen to Auth changes to start/stop notification listener
     _auth.authStateChanges().listen((user) {
-      if (user != null) {
+      if (user != null)
         _startListening();
-      } else {
+      else
         _stopListening();
-      }
     });
   }
 
   void _startListening() {
-    _stopListening();
+    _stopListening(); 
     _subscription = streamUserNotifications().listen((notifs) {
       for (var n in notifs) {
         final id = n['notificationId'] ?? n['id'];
         if (id == null || _processedIds.contains(id)) continue;
 
         final timestamp = (n['timestamp'] as Timestamp?)?.toDate();
-        // Only notify for items created/received AFTER app start to avoid spam
         if (timestamp != null && timestamp.isAfter(_startTime)) {
           _processedIds.add(id);
           showGeneralNotification(
@@ -191,7 +193,6 @@ class NotificationService {
             body: n['body'] ?? '',
           );
         } else {
-          // Mark old items as processed
           _processedIds.add(id);
         }
       }
@@ -202,10 +203,9 @@ class NotificationService {
     _subscription?.cancel();
     _subscription = null;
     _processedIds.clear();
-    _startTime = DateTime.now(); // Reset start time on re-login
+    _startTime = DateTime.now();
   }
 
-  /// Show standard system notification
   Future<void> showGeneralNotification({
     required String title,
     required String body,
@@ -217,38 +217,26 @@ class NotificationService {
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
     );
-
-    final details = NotificationDetails(android: androidDetails);
-
-    // Use a unique ID or hash
-    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
+    final id =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000; 
     await _localNotifications.show(
       id: id,
       title: title,
       body: body,
-      notificationDetails: details,
+      notificationDetails: NotificationDetails(android: androidDetails),
     );
   }
 
-  // --- STUB METHODS ---
-
+  // ─── STUB METHODS (chưa implement phía client) ─────────────────────────────
   Future<void> notifySubscribers({
     required String mangaId,
     required String title,
     required String body,
   }) async {
-    // Also trigger local notification directly if called client-side
     await showGeneralNotification(title: title, body: body);
   }
 
-  Stream<bool> streamSubscriptionStatus(String mangaId) {
-    return Stream.value(false);
-  }
-
+  Stream<bool> streamSubscriptionStatus(String mangaId) => Stream.value(false);
   Future<void> toggleSubscription(String mangaId) async {}
-
-  Stream<int> streamMangaNotificationCount(String mangaId) {
-    return Stream.value(0);
-  }
+  Stream<int> streamMangaNotificationCount(String mangaId) => Stream.value(0);
 }

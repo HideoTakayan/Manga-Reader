@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../services/library_service.dart';
 
+// Trang quản lý danh mục thư viện: thêm, sửa tên, xóa, kéo thả sắp xếp lại thứ tự.
+// Mọi thay đổi ghi thẳng lên Firestore qua LibraryService — UI tự cập nhật qua Stream.
 class EditCategoriesPage extends StatefulWidget {
   const EditCategoriesPage({super.key});
 
@@ -19,6 +21,8 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
+      // StreamBuilder: danh sách categories realtime từ Firestore
+      // Mỗi khi thêm/xóa/sửa/reorder → stream phát → list tự cập nhật
       body: StreamBuilder<List<String>>(
         stream: LibraryService.instance.streamCategories(),
         builder: (context, snapshot) {
@@ -27,6 +31,8 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
 
           final categories = snapshot.data!;
 
+          // ReorderableListView: kéo thả sắp xếp thứ tự danh mục
+          // Cần ValueKey duy nhất cho mỗi item để Flutter track vị trí khi kéo
           return ReorderableListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             itemCount: categories.length,
@@ -35,14 +41,17 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
               final items = List<String>.from(categories);
               final item = items.removeAt(oldIndex);
               items.insert(newIndex, item);
-              LibraryService.instance.reorderCategories(items);
+              LibraryService.instance.reorderCategories(
+                items,
+              ); // Ghi thứ tự mới lên Firestore
             },
             itemBuilder: (context, index) {
               final cat = categories[index];
               return _CategoryItem(
-                key: ValueKey(cat),
+                key: ValueKey(cat), 
                 name: cat,
-                isDefault: cat == 'Mặc định',
+                isDefault:
+                    cat == 'Mặc định', // Danh mục Mặc định không được xóa
               );
             },
           );
@@ -58,6 +67,7 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
     );
   }
 
+  // Dialog thêm danh mục mới — chỉ gọi addCategory nếu tên không rỗng
   void _showAddDialog(BuildContext context) {
     final controller = TextEditingController();
     showDialog(
@@ -89,6 +99,8 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
   }
 }
 
+// Card 1 danh mục: icon kéo thả bên trái, tên, nút sửa + xóa bên phải.
+// isDefault = true → không cho xóa (danh mục "Mặc định" luôn tồn tại)
 class _CategoryItem extends StatelessWidget {
   final String name;
   final bool isDefault;
@@ -103,7 +115,10 @@ class _CategoryItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
-        leading: const Icon(Icons.menu, color: Colors.white54),
+        leading: const Icon(
+          Icons.menu,
+          color: Colors.white54,
+        ), // Handle kéo thả
         title: Text(name, style: const TextStyle(color: Colors.white)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -122,6 +137,7 @@ class _CategoryItem extends StatelessWidget {
     );
   }
 
+  // Pre-fill tên cũ vào TextField — chỉ gọi updateCategory nếu tên mới không rỗng
   void _showEditDialog(BuildContext context) {
     final controller = TextEditingController(text: name);
     showDialog(
@@ -152,6 +168,7 @@ class _CategoryItem extends StatelessWidget {
     );
   }
 
+  // Xóa danh mục: tất cả truyện trong mục này bị gỡ bỏ khỏi mục (không xóa truyện)
   void _showDeleteDialog(BuildContext context) {
     showDialog(
       context: context,

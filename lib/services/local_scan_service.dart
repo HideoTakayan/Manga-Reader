@@ -7,82 +7,82 @@ import '../data/models.dart';
 import 'folder_service.dart';
 import 'library_service.dart';
 
+// LocalScanService: quét thư mục MangaReader và import truyện vào SQLite.
+// Dùng khi user cài app mới hoặc chuyển thiết bị — khôi phục lại truyện đã tải.
+// Logic: Mỗi subfolder trong downloads/ = 1 manga → đọc details.json → import.
 class LocalScanService {
   static final LocalScanService instance = LocalScanService._();
   LocalScanService._();
 
-  /// Quét toàn bộ thư mục MangaReader và nhập dữ liệu vào Database
+  /// Quét và import tất cả mangas từ filesystem — trả về số manga đã import
   Future<int> scanAndImport() async {
     int importedCount = 0;
     try {
       final downloadPath = FolderService.downloadPath;
       final rootDir = Directory(downloadPath);
-
       if (!await rootDir.exists()) return 0;
 
       debugPrint('🔍 Scanning Local Library: $downloadPath');
-
-      final entities = rootDir.listSync();
+      final entities = rootDir
+          .listSync(); 
       for (var entity in entities) {
         if (entity is Directory) {
           await _importMangaFromFolder(entity);
           importedCount++;
         }
       }
-      debugPrint('✅ Scan Complete. Imported $importedCount mangas.');
+      debugPrint('✅ Scan Hoàn Tất. Đã nhập $importedCount truyện.');
     } catch (e) {
-      debugPrint('❌ Scan Error: $e');
+      debugPrint('❌ Scan Lỗi: $e');
     }
     return importedCount;
   }
 
   Future<void> _importMangaFromFolder(Directory folder) async {
     final folderName = p.basename(folder.path);
-    // Ignore cache folder and hidden folders
     if (folderName == 'temp_cache' || folderName.startsWith('.')) return;
 
-    // 1. Parse details.json
+    // 1. Đọc details.json nếu có — FolderService.saveMangaDetails() đã ghi khi tải
     final detailFile = File('${folder.path}/details.json');
     Manga? manga;
-
     if (await detailFile.exists()) {
       try {
         final content = await detailFile.readAsString();
-        final map = jsonDecode(content);
-        manga = Manga.fromJson(map);
+        manga = Manga.fromJson(jsonDecode(content));
       } catch (e) {
         debugPrint('⚠️ Error parsing details.json for $folderName: $e');
       }
     }
 
-    // 2. Fallback if no details (or parsing failed)
+    // 2. Fallback: tạo Manga giả từ tên folder nếu không có/parse lỗi details.json
     if (manga == null) {
       manga = Manga(
-        id: 'local_${folderName.hashCode}',
+        id: 'local_${folderName.hashCode}', // Hash ổn định để ID không đổi giữa các lần scan
         title: folderName,
-        coverUrl: '', // Will update below
+        coverUrl: '',
         author: 'Local Source',
         description: 'Được nhập từ bộ nhớ máy',
         genres: [],
       );
     }
 
-    // 3. Check Local Cover
+    // 3. Dùng cover.jpg local thay vì URL nếu tồn tại
     final coverFile = File('${folder.path}/cover.jpg');
     if (await coverFile.exists()) {
-      // Update coverUrl to local path
-      manga = manga.copyWith(coverUrl: coverFile.path);
+      manga = manga.copyWith(
+        coverUrl: coverFile.path,
+      );
     }
 
-    // 4. Save Manga to DB
+    // 4. Lưu vào SQLite
     await DatabaseHelper.instance.saveLocalManga(manga);
 
-    // 4b. Add to Default Category (So it shows up in Library)
+    // 4b. Thêm vào category "Mặc định" để xuất hiện trong Library tab
     try {
       await LibraryService.instance.addToCategory(manga.id, 'Mặc định');
     } catch (_) {}
 
-    // 5. Scan Chapters
+    // 5. Quét chapters: các file .cbz/.zip/.epub/.pdf trong folder
     final files = folder.listSync();
     for (var f in files) {
       if (f is File) {
@@ -90,18 +90,10 @@ class LocalScanService {
         if (['.cbz', '.zip', '.epub', '.pdf'].contains(ext)) {
           final chapterTitle = p.basenameWithoutExtension(f.path);
           final fileName = p.basename(f.path);
-
-          // Generate stable ID specific to local file
-          // Note: If DB already has Cloud ID, this might create duplicate chapter entries in logic,
-          // but 'downloaded_chapters' table uses chapterId as PK.
-          // This is acceptable for Local Import mode.
+          // ID ổn định: kết hợp mangaId + fileName.hashCode
+          // Nếu DB đã có chapter với cloud ID → saveDownload() sẽ replace (upsert)
           final chapterId = 'local_${manga.id}_${fileName.hashCode}';
           final size = await f.length();
-
-          // Only insert if not exists (to preserve original Cloud IDs if present?)
-          // Or upsert?
-          // DatabaseHelper.saveDownload does upsert (replace).
-
           await DatabaseHelper.instance.saveDownload(
             chapterId: chapterId,
             mangaId: manga.id,

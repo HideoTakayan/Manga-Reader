@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service.dart';
-
 import '../library/edit_categories_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -18,8 +17,9 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
-  final user = FirebaseAuth.instance.currentUser;
+ final user = FirebaseAuth.instance.currentUser;
   bool _loading = false;
+
   @override
   void initState() {
     super.initState();
@@ -30,7 +30,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final bioController = TextEditingController();
     File? newAvatar;
 
-    // Lấy dữ liệu mô tả & avatarBase64 từ Firestore
     final doc = await FirebaseFirestore.instance
         .collection('users')
         .doc(user!.uid)
@@ -119,7 +118,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
                   onPressed: () async {
-                    Navigator.pop(ctx);
+                    Navigator.pop(
+                      ctx,
+                    ); // Đóng sheet trước khi lưu để tránh bị block
                     await _saveProfile(
                       nameController.text,
                       bioController.text,
@@ -168,22 +169,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     try {
       String? avatarBase64;
-
-      // Nếu có ảnh mới thì encode base64
       if (avatar != null) {
         final bytes = await avatar.readAsBytes();
         avatarBase64 = base64Encode(bytes);
       }
 
-      // Cập nhật tên hiển thị
       await user!.updateDisplayName(name);
 
-      // Cập nhật vào Firestore
       final dataToUpdate = {
         'displayName': name,
         'bio': bio,
         'email': user!.email,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt':
+            FieldValue.serverTimestamp(), 
       };
       if (avatarBase64 != null) {
         dataToUpdate['avatarBase64'] = avatarBase64;
@@ -198,7 +196,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã lưu thay đổi thành công!')),
         );
-        setState(() {});
+        setState(
+          () {},
+        ); 
       }
     } catch (e) {
       ScaffoldMessenger.of(
@@ -236,6 +236,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     children: [
                       _buildUserCard(context, snapshot.data!),
                       const SizedBox(height: 24),
+
                       _buildTile(
                         context,
                         icon: Icons.person_outline,
@@ -245,7 +246,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         onTap: () => context.go('/settings/account'),
                       ),
 
-                      // Show "Thêm mật khẩu" only for Google users without password
                       FutureBuilder<DocumentSnapshot>(
                         future: FirebaseFirestore.instance
                             .collection('users')
@@ -253,7 +253,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             .get(),
                         builder: (context, userSnapshot) {
                           if (!userSnapshot.hasData) return const SizedBox();
-
                           final userData =
                               userSnapshot.data!.data()
                                   as Map<String, dynamic>? ??
@@ -261,7 +260,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           final authProvider = userData['authProvider'] ?? '';
                           final hasPassword = userData['hasPassword'] ?? false;
 
-                          // Only show if logged in with Google and no password yet
                           if (authProvider == 'google' && !hasPassword) {
                             return _buildTile(
                               context,
@@ -272,11 +270,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               onTap: () => _showAddPasswordDialog(context),
                             );
                           }
-
-                          return const SizedBox();
+                          return const SizedBox(); // Không render gì nếu không thỏa điều kiện
                         },
                       ),
 
+                      // Admin check hardcode — giống main_scaffold.dart
                       if (user!.email == 'admin@gmail.com' ||
                           user!.email == 'anhlasinhvien2k51@gmail.com')
                         _buildTile(
@@ -285,7 +283,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           color: Colors.orange,
                           title: 'Admin Dashboard',
                           subtitle: 'Thống kê & Quản lý',
-                          onTap: () => context.push('/admin'),
+                          onTap: () => context.go('/admin/control'),
                         ),
 
                       _buildTile(
@@ -294,6 +292,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         color: Colors.purpleAccent,
                         title: 'Hạng mục',
                         subtitle: 'Quản lý danh mục thư viện',
+                        // MaterialPageRoute thay vì go_router: EditCategoriesPage không có route named
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -311,7 +310,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         onTap: () => context.push('/downloads'),
                       ),
 
-                      const SizedBox(height: 8), // Khoảng cách giữa các mục
+                      const SizedBox(height: 8),
                       _buildTile(
                         context,
                         icon: Icons.notifications_outlined,
@@ -329,6 +328,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         subtitle: 'Hỏi đáp và hỗ trợ',
                         onTap: () => context.push('/settings/help'),
                       ),
+
                       const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
@@ -375,16 +375,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           color: Theme.of(context).iconTheme.color,
           size: 20,
         ),
+        // canPop() check: tránh pop khi Settings là root route của branch
         onPressed: () =>
             Navigator.of(context).canPop() ? context.pop() : context.go('/'),
       ),
     );
   }
 
+  // User card: avatar + tên + email + edit icon
   Widget _buildUserCard(BuildContext context, DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     ImageProvider? avatarImage;
-
     if (data['avatarBase64'] != null) {
       try {
         avatarImage = MemoryImage(base64Decode(data['avatarBase64']));
@@ -423,6 +424,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Tên: ưu tiên Firestore displayName hơn Firebase Auth
                   Text(
                     data['displayName'] ?? user?.displayName ?? 'Người dùng',
                     style: const TextStyle(
@@ -449,6 +451,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  // Reusable settings tile: icon có background màu nhạt + title + subtitle + chevron
   Widget _buildTile(
     BuildContext context, {
     required IconData icon,
@@ -456,16 +459,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
-    Widget? trailing,
+    Widget? trailing, // Cho phép override trailing icon nếu cần
   }) {
     return Card(
-      color: Theme.of(context).cardColor, // Sử dụng màu thẻ theo Theme
+      color: Theme.of(context).cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
+          // withOpacity(0.15): icon background mờ, màu tương phản nhẹ với icon đậm
           decoration: BoxDecoration(
             color: color.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
@@ -475,7 +479,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         title: Text(
           title,
           style: TextStyle(
-            // Sử dụng kiểu chữ của Theme hoặc fallback
             color: Theme.of(context).textTheme.bodyLarge?.color,
             fontWeight: FontWeight.w600,
             fontSize: 16,
@@ -501,6 +504,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  // Thêm mật khẩu cho Google user — dùng Firebase Auth credential linking
   Future<void> _showAddPasswordDialog(BuildContext context) async {
     final passwordController = TextEditingController();
     final confirmController = TextEditingController();
@@ -510,6 +514,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
+        // StatefulBuilder: toggle show/hide password trong dialog mà không remake dialog
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFF2C2C2E),
           shape: RoundedRectangleBorder(
@@ -544,9 +549,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       obscurePassword ? Icons.visibility_off : Icons.visibility,
                       color: Colors.white70,
                     ),
-                    onPressed: () {
-                      setDialogState(() => obscurePassword = !obscurePassword);
-                    },
+                    onPressed: () => setDialogState(
+                      () => obscurePassword = !obscurePassword,
+                    ),
                   ),
                 ),
               ),
@@ -568,9 +573,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       obscureConfirm ? Icons.visibility_off : Icons.visibility,
                       color: Colors.white70,
                     ),
-                    onPressed: () {
-                      setDialogState(() => obscureConfirm = !obscureConfirm);
-                    },
+                    onPressed: () =>
+                        setDialogState(() => obscureConfirm = !obscureConfirm),
                   ),
                 ),
               ),
@@ -586,20 +590,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 final password = passwordController.text.trim();
                 final confirm = confirmController.text.trim();
 
+                // Validate trước khi gọi API
                 if (password.isEmpty || confirm.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Vui lòng nhập đầy đủ')),
                   );
                   return;
                 }
-
                 if (password != confirm) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Mật khẩu không khớp')),
                   );
                   return;
                 }
-
                 if (password.length < 6) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -612,8 +615,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 Navigator.pop(ctx);
 
                 try {
+                  // AuthService.linkEmailPassword: link credential email/password vào account Google hiện tại
+                  // Sau đó user có thể đăng nhập bằng cả Google lẫn email/password
                   await AuthService().linkEmailPassword(password);
-
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -621,7 +625,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         backgroundColor: Colors.green,
                       ),
                     );
-                    setState(() {}); // Refresh UI
+                    setState(
+                      () {},
+                    ); // Refresh FutureBuilder → tile "Thêm mật khẩu" biến mất
                   }
                 } catch (e) {
                   if (context.mounted) {
@@ -645,6 +651,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  // Confirm dialog trước khi đăng xuất — showDialog<bool> trả về bool từ Navigator.pop(ctx, value)
   void _showLogoutDialog(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -672,6 +679,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       ),
     );
 
+    // confirm == true (không phải chỉ truthy) để phân biệt với null (bấm ra ngoài dialog)
     if (confirm == true && context.mounted) {
       await AuthService().logout();
       context.go('/login');

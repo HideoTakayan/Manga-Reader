@@ -3,48 +3,38 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../data/database_helper.dart';
 
-/// Cache để track downloads từ file system (Mihon style)
+/// Bộ nhớ đệm để theo dõi tải xuống từ hệ thống tệp
 ///
-/// Thay vì query database liên tục, ta scan file system và cache kết quả.
+/// Thay vì truy vấn cơ sở dữ liệu liên tục, ta quét hệ thống tệp và lưu kết quả vào bộ nhớ đệm.
 /// Cache được refresh mỗi 1 giờ hoặc khi có thay đổi.
 class DownloadCache {
   static final DownloadCache instance = DownloadCache._init();
   DownloadCache._init();
 
-  // Cache structure: mangaId -> Set<chapterId>
   final Map<String, Set<String>> _cache = {};
 
-  // Timestamp của lần refresh cuối
   DateTime? _lastRefresh;
 
-  // Refresh interval (1 giờ như Mihon)
   static const _refreshInterval = Duration(hours: 1);
 
-  // Lock để tránh concurrent refresh
   bool _isRefreshing = false;
 
-  // Stream để notify changes
   final _changesController = StreamController<void>.broadcast();
   Stream<void> get changes => _changesController.stream;
-
-  /// Kiểm tra chapter đã download chưa
-  ///
-  /// [skipCache] = true: Scan file system trực tiếp (chậm nhưng chính xác)
-  /// [skipCache] = false: Check cache (nhanh nhưng có thể outdated)
   Future<bool> isChapterDownloaded(
     String chapterId,
     String mangaId, {
     bool skipCache = false,
   }) async {
     if (skipCache) {
-      // Scan file system trực tiếp
+      // Quét hệ thống tệp trực tiếp
       return await _checkFileSystemDirect(chapterId, mangaId);
     }
 
-    // Refresh cache nếu cần
+    // Làm mới bộ nhớ đệm nếu cần
     await _refreshCacheIfNeeded();
 
-    // Check cache
+    // Kiểm tra bộ nhớ đệm
     return _cache[mangaId]?.contains(chapterId) ?? false;
   }
 
@@ -64,20 +54,20 @@ class DownloadCache {
     return total;
   }
 
-  /// Lấy danh sách chapterIds đã download của một manga
+  /// Lấy danh sách chapterIds đã tải xuống của một truyện
   Future<Set<String>> getDownloadedChapterIds(String mangaId) async {
     await _refreshCacheIfNeeded();
     return _cache[mangaId] ?? {};
   }
 
-  /// Thêm chapter vào cache (khi download xong)
+  /// Thêm chương vào bộ nhớ đệm (khi tải xong)
   Future<void> addChapter(String chapterId, String mangaId) async {
     _cache.putIfAbsent(mangaId, () => {});
     _cache[mangaId]!.add(chapterId);
     _notifyChanges();
   }
 
-  /// Xóa chapter khỏi cache (khi delete)
+  /// Xóa chương khỏi bộ nhớ đệm (khi xóa)
   Future<void> removeChapter(String chapterId, String mangaId) async {
     _cache[mangaId]?.remove(chapterId);
     if (_cache[mangaId]?.isEmpty ?? false) {
@@ -86,19 +76,19 @@ class DownloadCache {
     _notifyChanges();
   }
 
-  /// Xóa tất cả chapters của một manga khỏi cache
+  /// Xóa tất cả các chương của một truyện khỏi bộ nhớ đệm
   Future<void> removeManga(String mangaId) async {
     _cache.remove(mangaId);
     _notifyChanges();
   }
 
-  /// Force refresh cache (scan lại file system)
+  /// Bắt buộc làm mới bộ nhớ đệm (quét lại hệ thống tệp)
   Future<void> invalidateCache() async {
     _lastRefresh = null;
     await refreshCache();
   }
 
-  /// Refresh cache nếu đã quá thời gian
+  /// Làm mới bộ nhớ đệm nếu đã quá thời gian
   Future<void> _refreshCacheIfNeeded() async {
     if (_lastRefresh == null ||
         DateTime.now().difference(_lastRefresh!) > _refreshInterval) {
@@ -106,7 +96,7 @@ class DownloadCache {
     }
   }
 
-  /// Refresh cache (scan file system)
+  /// Làm mới bộ nhớ đệm (quét hệ thống tệp)
   Future<void> refreshCache() async {
     if (_isRefreshing) return;
     _isRefreshing = true;
@@ -114,13 +104,13 @@ class DownloadCache {
     try {
       debugPrint('🔄 DownloadCache: Refreshing cache...');
 
-      // Clear cache cũ
+      // Xóa bộ nhớ đệm cũ
       _cache.clear();
 
-      // Lấy tất cả downloads từ database
+      // Lấy tất cả tải xuống từ cơ sở dữ liệu
       final downloads = await DatabaseHelper.instance.getAllDownloads();
 
-      // Validate từng download (check file exists)
+      // Xác thực từng tải xuống (kiểm tra xem tệp có tồn tại không)
       final validDownloads = <Map<String, dynamic>>[];
       final invalidChapterIds = <String>[];
 
@@ -138,16 +128,16 @@ class DownloadCache {
         if (await file.exists()) {
           validDownloads.add(download);
 
-          // Add to cache
+          // Thêm vào bộ nhớ đệm
           _cache.putIfAbsent(mangaId, () => {});
           _cache[mangaId]!.add(chapterId);
         } else {
-          // File không tồn tại -> invalid
+          // Tệp không tồn tại -> không hợp lệ
           invalidChapterIds.add(chapterId);
         }
       }
 
-      // Clean up invalid entries từ database
+      // Dọn dẹp các mục không hợp lệ từ cơ sở dữ liệu
       if (invalidChapterIds.isNotEmpty) {
         debugPrint(
           '🧹 DownloadCache: Cleaning ${invalidChapterIds.length} invalid entries',
@@ -170,7 +160,6 @@ class DownloadCache {
     }
   }
 
-  /// Check file system trực tiếp (không dùng cache)
   Future<bool> _checkFileSystemDirect(String chapterId, String mangaId) async {
     try {
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
@@ -182,7 +171,7 @@ class DownloadCache {
       final file = File(localPath);
       final exists = await file.exists();
 
-      // Nếu file không tồn tại, clean up database
+      // Nếu tệp không tồn tại, dọn dẹp cơ sở dữ liệu
       if (!exists) {
         await DatabaseHelper.instance.deleteDownload(chapterId);
         _cache[mangaId]?.remove(chapterId);
@@ -196,13 +185,7 @@ class DownloadCache {
     }
   }
 
-  /// Reindex downloads (scan file system và sync với database)
-  ///
-  /// Tính năng này giống Mihon's "Reindex Downloads"
-  /// Sử dụng khi:
-  /// - User xóa/move files thủ công
-  /// - Database bị out-of-sync
-  /// - Sau khi restore backup
+  /// Lập chỉ mục lại tải xuống (quét hệ thống tệp và đồng bộ với cơ sở dữ liệu)
   Future<ReindexResult> reindexDownloads() async {
     debugPrint('🔄 DownloadCache: Starting reindex...');
 
@@ -212,11 +195,11 @@ class DownloadCache {
     int added = 0;
 
     try {
-      // 1. Get all downloads from database
+      // 1. Lấy tất cả thông tin tải xuống từ cơ sở dữ liệu
       final dbDownloads = await DatabaseHelper.instance.getAllDownloads();
       foundInDb = dbDownloads.length;
 
-      // 2. Validate each entry
+      // 2. Xác thực từng mục
       final invalidChapterIds = <String>[];
       for (final download in dbDownloads) {
         final chapterId = download['chapterId'] as String;
@@ -233,17 +216,12 @@ class DownloadCache {
         }
       }
 
-      // 3. Remove invalid entries
+      // 3. Xóa các mục không hợp lệ
       for (final chapterId in invalidChapterIds) {
         await DatabaseHelper.instance.deleteDownload(chapterId);
         removed++;
       }
-
-      // 4. Scan file system để tìm files mà database không có
-      // (Tính năng này phức tạp hơn, có thể implement sau)
-      // Hiện tại chỉ validate database entries
-
-      // 5. Refresh cache
+      // 4. Làm mới bộ nhớ đệm
       await invalidateCache();
 
       debugPrint('✅ DownloadCache: Reindex complete');
@@ -271,7 +249,7 @@ class DownloadCache {
   }
 }
 
-/// Kết quả của reindex operation
+/// Kết quả của thao tác lập chỉ mục lại
 class ReindexResult {
   final int foundInDb;
   final int foundInFs;

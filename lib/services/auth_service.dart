@@ -2,22 +2,23 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+// AuthService: không phải Singleton — mỗi caller tạo instance mới.
+// Thiết kế này OK vì FirebaseAuth/GoogleSignIn đều là Singleton bên dưới.
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db =
+      FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  /// ----------------------------
-  /// 🔹 ĐĂNG KÝ TÀI KHOẢN MỚI
-  /// ----------------------------
+  /// Đăng ký tài khoản email/password + tạo Firestore profile + gửi email xác thực
   Future<void> register(String email, String password, String name) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-
+      // Tạo document users/{uid} ngay sau khi tạo account
       await _db.collection('users').doc(cred.user!.uid).set({
         'uid': cred.user!.uid,
         'name': name,
@@ -30,16 +31,14 @@ class AuthService {
         'isOnline': false,
         'lastSeen': null,
       });
-
+      // Gửi email xác thực — user phải click link trước khi đăng nhập được
       await cred.user!.sendEmailVerification();
     } on FirebaseAuthException catch (e) {
       throw Exception(e.message ?? 'Lỗi đăng ký tài khoản');
     }
   }
 
-  /// ----------------------------
-  /// 🔹 ĐĂNG NHẬP
-  /// ----------------------------
+  /// Đăng nhập email/password 
   Future<void> login(String email, String password) async {
     try {
       await _auth.signInWithEmailAndPassword(
@@ -51,9 +50,7 @@ class AuthService {
     }
   }
 
-  /// ----------------------------
-  /// 🔹 ĐỔI MẬT KHÂU
-  /// ----------------------------
+  /// Đổi mật khẩu — PHẢI re-authenticate trước vì Firebase yêu cầu credential gần đây
   Future<void> changePassword(
     String currentPassword,
     String newPassword,
@@ -61,22 +58,21 @@ class AuthService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Người dùng chưa đăng nhập');
 
+    // Tạo credential với mật khẩu hiện tại để re-authenticate
     final cred = EmailAuthProvider.credential(
       email: user.email!,
       password: currentPassword,
     );
 
     try {
-      await user.reauthenticateWithCredential(cred);
+      await user.reauthenticateWithCredential(cred); 
       await user.updatePassword(newPassword);
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
     }
   }
 
-  /// ----------------------------
-  /// 🔹 QUÊN MẬT KHÂU (GỬI EMAIL)
-  /// ----------------------------
+  /// Gửi email reset password — Firebase gửi link về hộp thư, không cần biết mật khẩu cũ
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email.trim());
@@ -85,52 +81,41 @@ class AuthService {
     }
   }
 
-  /// ----------------------------
-  /// 🔹 ĐĂNG NHẬP BẰNG GOOGLE
-  /// ----------------------------
+  /// Đăng nhập bằng Google — 4 bước chuẩn: signOut trước → signIn → credential → Firebase
   Future<void> signInWithGoogle() async {
     try {
-      // 0. Sign out first to force account picker
+      // 0. signOut trước để luôn hiện account picker (tránh tự đăng nhập lại account cũ)
       await _googleSignIn.signOut();
 
-      // 1. Trigger Google Sign-In flow (will show account picker)
+      // 1. Mở Google account picker
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) throw Exception('Đăng nhập bị hủy');
 
-      if (googleUser == null) {
-        // User cancelled the sign-in
-        throw Exception('Đăng nhập bị hủy');
-      }
-
-      // 2. Obtain auth details
+      // 2. Lấy token
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
-      // 3. Create Firebase credential
+      // 3. Tạo Firebase credential từ Google token
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // 4. Sign in to Firebase
+      // 4. Đăng nhập Firebase
       final userCredential = await _auth.signInWithCredential(credential);
 
-      // 5. Check if profile exists (sync Auth <-> Firestore)
+      // 5. Đảm bảo Firestore profile tồn tại (edge case: auth tồn tại nhưng doc bị xóa)
       final userDoc = await _db
           .collection('users')
           .doc(userCredential.user!.uid)
           .get();
-
       if (!userDoc.exists) {
-        // Create user profile if missing (fix for existing Auth users without Firestore doc)
         await _createUserProfile(
           uid: userCredential.user!.uid,
           email: userCredential.user!.email!,
           name: userCredential.user!.displayName ?? 'User',
           photoUrl: userCredential.user!.photoURL,
         );
-      } else if (userCredential.additionalUserInfo?.isNewUser == true) {
-        // If profile exists but it's a new sign-in (rare), nice to update timestamp maybe
-        // But main fix is above.
       }
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
@@ -139,9 +124,7 @@ class AuthService {
     }
   }
 
-  /// ----------------------------
-  /// 🔹 TẠO PROFILE USER MỚI
-  /// ----------------------------
+  /// Tạo Firestore profile cho user mới — authProvider field dùng để phân biệt Google vs Email
   Future<void> _createUserProfile({
     required String uid,
     required String email,
@@ -159,71 +142,46 @@ class AuthService {
       'followers': [],
       'isOnline': false,
       'lastSeen': null,
-      'authProvider': photoUrl != null ? 'google' : 'email',
+      'authProvider': photoUrl != null
+          ? 'google'
+          : 'email',
     });
   }
 
-  /// ----------------------------
-  /// 🔹 LINK EMAIL/PASSWORD VỚI TÀI KHOẢN GOOGLE
-  /// ----------------------------
-  /// Cho phép user đã đăng nhập bằng Google thêm password
-  /// để có thể đăng nhập bằng email/password sau này
+  /// Liên kết email/password vào tài khoản Google hiện tại (credential linking)
+  /// Sau đó user có thể đăng nhập bằng cả Google lẫn email/password
   Future<void> linkEmailPassword(String password) async {
     final user = _auth.currentUser;
-
-    if (user == null) {
-      throw Exception('Chưa đăng nhập');
-    }
-
-    if (user.email == null) {
-      throw Exception('Tài khoản không có email');
-    }
+    if (user == null) throw Exception('Chưa đăng nhập');
+    if (user.email == null) throw Exception('Tài khoản không có email');
 
     try {
-      // Create email/password credential
       final credential = EmailAuthProvider.credential(
         email: user.email!,
         password: password,
       );
-
-      // Link with current account
       await user.linkWithCredential(credential);
-
-      // Update Firestore to track both auth methods
       await _db.collection('users').doc(user.uid).update({
         'authProvider': 'google+email',
         'hasPassword': true,
       });
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'provider-already-linked') {
+      if (e.code == 'provider-already-linked')
         throw Exception('Tài khoản đã có mật khẩu');
-      } else if (e.code == 'credential-already-in-use') {
+      if (e.code == 'credential-already-in-use')
         throw Exception('Email này đã được sử dụng bởi tài khoản khác');
-      }
       throw Exception(_handleAuthError(e));
     }
   }
 
-  /// ----------------------------
-  /// 🔹 ĐĂNG XUẤT
-  /// ----------------------------
+  /// Đăng xuất cả Firebase Auth lẫn Google Sign-In cùng lúc
   Future<void> logout() async {
     await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
   }
 
-  /// ----------------------------
-  /// 🔹 LẤY USER HIỆN TẠI
-  /// ----------------------------
   User? get currentUser => _auth.currentUser;
-
-  /// ----------------------------
-  /// 🔹 KIỂM TRA ĐĂNG NHẬP
-  /// ----------------------------
   bool get isLoggedIn => _auth.currentUser != null;
 
-  /// ----------------------------
-  /// 🔹 HÀM XỬ LÝ LỖI (GỌN - RÕ)
-  /// ----------------------------
   String _handleAuthError(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':

@@ -8,6 +8,7 @@ import '../features/library/custom_library_page.dart';
 import '../features/library/edit_categories_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/settings/account/account_page.dart';
+import '../features/settings/account/edit_profile_page.dart';
 import '../features/settings/help_page.dart';
 import '../features/auth/login.dart';
 import '../features/detail/manga_detail_page.dart';
@@ -20,10 +21,14 @@ import '../features/admin/chapter_manager_page.dart';
 import '../features/downloads/download_queue_page.dart';
 import '../data/models_cloud.dart';
 
+// Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/auth-check',
+  initialLocation:
+      '/auth-check', // Trang mặc định ban đầu để kiểm tra trạng thái đăng nhập
   routes: [
+    // Route kiểm tra trạng thái đăng nhập ban đầu (màn hình trấn an), tự động chuyển hướng sau khi check Firebase Auth
     GoRoute(path: '/auth-check', builder: (_, __) => const _AuthCheckPage()),
+    // Route trang đăng nhập / đăng ký (hiển thị khi chưa có tài khoản hoặc chưa đăng nhập)
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
     StatefulShellRoute.indexedStack(
@@ -72,6 +77,12 @@ final GoRouter appRouter = GoRouter(
                 GoRoute(
                   path: 'account',
                   builder: (_, __) => const AccountPage(),
+                  routes: [
+                    GoRoute(
+                      path: 'edit',
+                      builder: (_, __) => const EditProfilePage(),
+                    ),
+                  ],
                 ),
                 GoRoute(path: 'help', builder: (_, __) => const HelpPage()),
                 GoRoute(
@@ -85,29 +96,36 @@ final GoRouter appRouter = GoRouter(
       ],
     ),
 
+    // Route trang chi tiết truyện - nhận mangaId qua URL (/detail/abc123)
     GoRoute(
       path: '/detail/:id',
       builder: (context, state) =>
           MangaDetailPage(mangaId: state.pathParameters['id']!),
     ),
+    // Route màn hình đọc truyện - nhận chapterId qua URL (/reader/xyz789)
     GoRoute(
       path: '/reader/:chapterId',
       builder: (context, state) =>
           ReaderPage(chapterId: state.pathParameters['chapterId']!),
     ),
+    // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?genre=Action
     GoRoute(
       path: '/search-global',
       builder: (context, state) =>
           SearchPage(initialGenre: state.uri.queryParameters['genre']),
     ),
+    // Route trang danh sách thông báo của người dùng
     GoRoute(
       path: '/notifications',
       builder: (context, state) => const NotificationListPage(),
     ),
+    // Route trang quản lý hàng đợi tải xuống (xem tiến độ, tạm dừng, xóa)
+    // Được gọi từ: nút Đười tải xuống trong settings_page
     GoRoute(
       path: '/downloads',
       builder: (context, state) => const DownloadQueuePage(),
     ),
+    // Route trang quản lý chương dành cho Admin - nhận object CloudManga qua state.extra
     GoRoute(
       path: '/admin/chapters',
       builder: (context, state) {
@@ -118,6 +136,8 @@ final GoRouter appRouter = GoRouter(
   ],
 );
 
+// Widget dùng để kiểm tra trạng thái xác thực người dùng ban đầu
+// Tự động chuyển hướng tới màn hình trang chủ nếu đã đăng nhập, ngược lại ra màn hình đăng nhập.
 class _AuthCheckPage extends StatelessWidget {
   const _AuthCheckPage();
   @override

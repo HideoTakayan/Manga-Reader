@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/download_service.dart';
 
-/// Màn hình quản lý hàng đợi tải xuống (giống Mihon)
+// Trang quản lý hàng đợi tải xuống — hiển thị tất cả task đang tải, chờ, lỗi, tạm dừng.
+// Là StatelessWidget vì toàn bộ state đến từ DownloadService.downloadStream (Stream).
 class DownloadQueuePage extends StatelessWidget {
   const DownloadQueuePage({super.key});
 
@@ -14,17 +15,16 @@ class DownloadQueuePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Hàng đợi tải xuống'),
         actions: [
-          // Nút Resume All
+          // Nút "Tiếp tục tất cả" — chỉ hiện khi có ít nhất 1 task đang paused
           StreamBuilder<Map<String, DownloadTask>>(
             stream: DownloadService.instance.downloadStream,
             builder: (context, snapshot) {
               final queue = snapshot.data ?? {};
               final hasPaused = queue.values.any(
-                (task) => task.status == DownloadStatus.paused,
+                (t) => t.status == DownloadStatus.paused,
               );
-
-              if (!hasPaused) return const SizedBox.shrink();
-
+              if (!hasPaused)
+                return const SizedBox.shrink(); 
               return IconButton(
                 icon: const Icon(Icons.play_arrow),
                 tooltip: 'Tiếp tục tất cả',
@@ -37,19 +37,16 @@ class DownloadQueuePage extends StatelessWidget {
               );
             },
           ),
-          // Nút Pause All
           StreamBuilder<Map<String, DownloadTask>>(
             stream: DownloadService.instance.downloadStream,
             builder: (context, snapshot) {
               final queue = snapshot.data ?? {};
               final hasActive = queue.values.any(
-                (task) =>
-                    task.status == DownloadStatus.downloading ||
-                    task.status == DownloadStatus.queued,
+                (t) =>
+                    t.status == DownloadStatus.downloading ||
+                    t.status == DownloadStatus.queued,
               );
-
               if (!hasActive) return const SizedBox.shrink();
-
               return IconButton(
                 icon: const Icon(Icons.pause),
                 tooltip: 'Tạm dừng tất cả',
@@ -62,7 +59,7 @@ class DownloadQueuePage extends StatelessWidget {
               );
             },
           ),
-          // Nút Clear All
+          // Nút "Xóa tất cả" — xóa toàn bộ hàng đợi sau khi xác nhận
           IconButton(
             icon: const Icon(Icons.clear_all),
             tooltip: 'Xóa tất cả',
@@ -94,7 +91,6 @@ class DownloadQueuePage extends StatelessWidget {
                   ],
                 ),
               );
-
               if (confirm == true && context.mounted) {
                 DownloadService.instance.clearQueue();
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -105,11 +101,11 @@ class DownloadQueuePage extends StatelessWidget {
           ),
         ],
       ),
+      // Toàn bộ body là 1 StreamBuilder lắng nghe DownloadService — tự rebuild khi có thay đổi
       body: StreamBuilder<Map<String, DownloadTask>>(
         stream: DownloadService.instance.downloadStream,
         builder: (context, snapshot) {
           final queue = snapshot.data ?? {};
-
           if (queue.isEmpty) {
             return Center(
               child: Column(
@@ -132,12 +128,10 @@ class DownloadQueuePage extends StatelessWidget {
             );
           }
 
-          // Group theo manga (chỉ hiển thị tasks chưa completed)
+          // Nhóm các task theo mangaId, bỏ qua task đã completed (không cần hiện nữa)
           final groupedByManga = <String, List<DownloadTask>>{};
           for (final task in queue.values) {
-            // Ẩn tasks đã completed
             if (task.status == DownloadStatus.completed) continue;
-
             groupedByManga.putIfAbsent(task.mangaId, () => []).add(task);
           }
 
@@ -146,11 +140,9 @@ class DownloadQueuePage extends StatelessWidget {
             itemBuilder: (context, index) {
               final mangaId = groupedByManga.keys.elementAt(index);
               final tasks = groupedByManga[mangaId]!;
-              final mangaTitle = tasks.first.mangaTitle;
-
               return _MangaDownloadGroup(
                 mangaId: mangaId,
-                mangaTitle: mangaTitle,
+                mangaTitle: tasks.first.mangaTitle,
                 tasks: tasks,
               );
             },
@@ -161,7 +153,8 @@ class DownloadQueuePage extends StatelessWidget {
   }
 }
 
-/// Widget hiển thị nhóm download của một manga
+// Card gom nhóm tất cả chapter đang tải của cùng 1 bộ truyện.
+// Hiển thị tên truyện + tiến độ "X/Y chương" + nút xóa cả nhóm.
 class _MangaDownloadGroup extends StatelessWidget {
   final String mangaId;
   final String mangaTitle;
@@ -186,7 +179,7 @@ class _MangaDownloadGroup extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header: bấm → navigate đến trang chi tiết truyện
           InkWell(
             onTap: () => context.push('/manga/$mangaId'),
             child: Padding(
@@ -213,7 +206,7 @@ class _MangaDownloadGroup extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Actions
+                  // Xóa toàn bộ chapter của truyện này khỏi queue bằng cancelDownload()
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Xóa tất cả chương của truyện này',
@@ -245,7 +238,6 @@ class _MangaDownloadGroup extends StatelessWidget {
                           ],
                         ),
                       );
-
                       if (confirm == true) {
                         for (final task in tasks) {
                           await DownloadService.instance.cancelDownload(
@@ -260,7 +252,7 @@ class _MangaDownloadGroup extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          // Danh sách chapters
+          // Danh sách từng chapter, spread ra thành children
           ...tasks.map((task) => _ChapterDownloadItem(task: task)),
         ],
       ),
@@ -268,19 +260,19 @@ class _MangaDownloadGroup extends StatelessWidget {
   }
 }
 
-/// Widget hiển thị một chapter đang tải
+// Một dòng hiển thị trạng thái của 1 chapter trong queue.
+// Bao gồm: status icon, tên chapter, text mô tả trạng thái, nút hành động.
+// Bấm vào dòng (khi completed) → navigate đến reader.
 class _ChapterDownloadItem extends StatelessWidget {
   final DownloadTask task;
-
   const _ChapterDownloadItem({required this.task});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return InkWell(
       onTap: () {
-        // Có thể mở reader nếu đã tải xong
+        // Chỉ cho mở reader khi đã tải xong
         if (task.status == DownloadStatus.completed) {
           context.push('/reader/${task.chapterId}');
         }
@@ -289,10 +281,8 @@ class _ChapterDownloadItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            // Status Icon
             _buildStatusIcon(context, theme, task),
             const SizedBox(width: 16),
-            // Chapter Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,7 +298,6 @@ class _ChapterDownloadItem extends StatelessWidget {
                 ],
               ),
             ),
-            // Action Button
             _buildActionButton(context, theme),
           ],
         ),
@@ -316,6 +305,7 @@ class _ChapterDownloadItem extends StatelessWidget {
     );
   }
 
+  // Icon phân biệt trạng thái — downloading hiện circular progress + % ở giữa
   Widget _buildStatusIcon(
     BuildContext context,
     ThemeData theme,
@@ -325,6 +315,7 @@ class _ChapterDownloadItem extends StatelessWidget {
       case DownloadStatus.completed:
         return const Icon(Icons.check_circle, color: Colors.green, size: 32);
       case DownloadStatus.downloading:
+        // Stack: circular progress + text % chồng nhau
         return SizedBox(
           width: 40,
           height: 40,
@@ -332,7 +323,7 @@ class _ChapterDownloadItem extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               CircularProgressIndicator(
-                value: task.progress,
+                value: task.progress, // 0.0 → 1.0
                 strokeWidth: 4,
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
                 backgroundColor: Colors.grey.withOpacity(0.2),
@@ -348,6 +339,7 @@ class _ChapterDownloadItem extends StatelessWidget {
           ),
         );
       case DownloadStatus.queued:
+        // Spinner không xác định (value = null) — đang chờ đến lượt
         return SizedBox(
           width: 32,
           height: 32,
@@ -370,6 +362,7 @@ class _ChapterDownloadItem extends StatelessWidget {
     }
   }
 
+  // Text mô tả theo trạng thái — downloading hiện "X% • downloaded / total"
   Widget _buildStatusText(ThemeData theme) {
     switch (task.status) {
       case DownloadStatus.completed:
@@ -404,6 +397,7 @@ class _ChapterDownloadItem extends StatelessWidget {
     }
   }
 
+  // Nút hành động: pause khi đang tải/chờ, play khi paused, retry khi lỗi, cancel mặc định
   Widget _buildActionButton(BuildContext context, ThemeData theme) {
     switch (task.status) {
       case DownloadStatus.downloading:
@@ -411,33 +405,29 @@ class _ChapterDownloadItem extends StatelessWidget {
         return IconButton(
           icon: const Icon(Icons.pause),
           tooltip: 'Tạm dừng',
-          onPressed: () {
-            DownloadService.instance.pauseDownload(task.chapterId);
-          },
+          onPressed: () =>
+              DownloadService.instance.pauseDownload(task.chapterId),
         );
       case DownloadStatus.paused:
         return IconButton(
           icon: const Icon(Icons.play_arrow),
           tooltip: 'Tiếp tục',
-          onPressed: () {
-            DownloadService.instance.resumeDownload(task.chapterId);
-          },
+          onPressed: () =>
+              DownloadService.instance.resumeDownload(task.chapterId),
         );
       case DownloadStatus.failed:
         return IconButton(
           icon: const Icon(Icons.refresh),
           tooltip: 'Thử lại',
-          onPressed: () {
-            DownloadService.instance.retryDownload(task.chapterId);
-          },
+          onPressed: () =>
+              DownloadService.instance.retryDownload(task.chapterId),
         );
       default:
         return IconButton(
           icon: const Icon(Icons.close),
           tooltip: 'Xóa',
-          onPressed: () {
-            DownloadService.instance.cancelDownload(task.chapterId);
-          },
+          onPressed: () =>
+              DownloadService.instance.cancelDownload(task.chapterId),
         );
     }
   }
@@ -445,9 +435,8 @@ class _ChapterDownloadItem extends StatelessWidget {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
+    if (bytes < 1024 * 1024 * 1024)
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 }

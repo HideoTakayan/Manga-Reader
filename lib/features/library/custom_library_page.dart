@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/library_service.dart';
 import '../../services/local_scan_service.dart';
-import '../../data/database_helper.dart'; // Import Database Helper
+import '../../data/database_helper.dart';
 import '../../services/ui_service.dart';
 import '../../services/download_service.dart';
 import '../../data/drive_service.dart';
@@ -10,6 +10,8 @@ import '../../data/models_cloud.dart';
 import '../shared/drive_image.dart';
 import '../shared/library_dialogs.dart';
 
+// Trang thư viện — quản lý truyện theo danh mục (tab), hỗ trợ chọn nhiều truyện,
+// tìm kiếm, lọc theo trạng thái, tải xuống batch, và xóa khỏi thư viện.
 class CustomLibraryPage extends StatefulWidget {
   const CustomLibraryPage({super.key});
 
@@ -19,20 +21,23 @@ class CustomLibraryPage extends StatefulWidget {
 
 class _CustomLibraryPageState extends State<CustomLibraryPage> {
   String _searchQuery = '';
-  List<String> _selectedStatuses = [];
+  List<String> _selectedStatuses =
+      []; // Filter theo trạng thái: Đang tiến hành / Hoàn thành / Drop
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
 
-  // Mới: Quản lý chọn truyện
+  // Set<String> thay vì List để O(1) lookup khi check isSelected
   final Set<String> _selectedMangaIds = {};
 
   @override
   void dispose() {
+    // Khi thoát khỏi trang, khôi phục bottom bar (ẩn khi selection mode)
     UiService.instance.setMainBottomBarVisible(true);
     _searchController.dispose();
     super.dispose();
   }
 
+  // Bottom sheet lọc truyện — dùng StatefulBuilder 
   void _showFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -62,7 +67,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                     height: 300,
                     child: TabBarView(
                       children: [
-                        // Cửa sổ Bộ lọc
+                        // Tab Bộ lọc: checkbox trạng thái
                         ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
@@ -71,14 +76,12 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             _buildFilterItem('Drop', setModalState),
                           ],
                         ),
-                        // Sắp xếp (Chưa làm)
                         const Center(
                           child: Text(
                             'Chưa khả dụng',
                             style: TextStyle(color: Colors.grey),
                           ),
                         ),
-                        // Hiển thị (Chưa làm)
                         const Center(
                           child: Text(
                             'Chưa khả dụng',
@@ -97,6 +100,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     );
   }
 
+  // Cần gọi cả setState (page) và setModalState (modal) để đồng bộ checkbox
   Widget _buildFilterItem(String title, StateSetter setModalState) {
     final isSelected = _selectedStatuses.contains(title);
     return CheckboxListTile(
@@ -106,34 +110,32 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
       checkColor: Colors.white,
       onChanged: (val) {
         setState(() {
-          if (val == true) {
+          if (val == true)
             _selectedStatuses.add(title);
-          } else {
+          else
             _selectedStatuses.remove(title);
-          }
         });
-        setModalState(() {}); // Cập nhật UI trong BottomSheet
+        setModalState(() {}); // Refresh checkbox trong modal
       },
     );
   }
 
+  // Thoát selection mode: xóa selectedIds, ẩn search nếu đang mở, hiện bottom bar
   void _clearSelection() {
     setState(() {
       _selectedMangaIds.clear();
-      // Reset cả trạng thái tìm kiếm nếu đang mở để tránh gây hiểu lầm
       if (_isSearching) {
         _isSearching = false;
         _searchQuery = '';
         _searchController.clear();
       }
-      // Hiện lại thanh điều hướng chính
       UiService.instance.setMainBottomBarVisible(true);
     });
   }
 
+  // Dialog xác nhận xóa: 2 checkbox độc lập — "Xóa khỏi thư viện" và "Xóa chương đã tải"
   void _confirmDeleteSelected(String currentCategory) {
-    // State cho 2 checkbox
-    bool removeFromLibrary = true; // Mặc định chọn
+    bool removeFromLibrary = true;
     bool deleteDownloads = false;
 
     showDialog(
@@ -149,12 +151,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Checkbox 1: Xóa khỏi thư viện
               CheckboxListTile(
                 value: removeFromLibrary,
-                onChanged: (val) {
-                  setDialogState(() => removeFromLibrary = val ?? false);
-                },
+                onChanged: (val) =>
+                    setDialogState(() => removeFromLibrary = val ?? false),
                 title: const Text(
                   'Từ thư viện',
                   style: TextStyle(color: Colors.white),
@@ -163,12 +163,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                 activeColor: Colors.redAccent,
                 contentPadding: EdgeInsets.zero,
               ),
-              // Checkbox 2: Xóa các chương đã tải
               CheckboxListTile(
                 value: deleteDownloads,
-                onChanged: (val) {
-                  setDialogState(() => deleteDownloads = val ?? false);
-                },
+                onChanged: (val) =>
+                    setDialogState(() => deleteDownloads = val ?? false),
                 title: const Text(
                   'Các chương đã tải',
                   style: TextStyle(color: Colors.white),
@@ -186,7 +184,6 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
             ),
             TextButton(
               onPressed: () async {
-                // Phải chọn ít nhất 1 option
                 if (!removeFromLibrary && !deleteDownloads) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -198,7 +195,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
 
                 Navigator.pop(ctx);
 
-                // 1. Xóa khỏi thư viện
+                // Xóa khỏi thư viện: lấy categories hiện tại → loại bỏ currentCategory → set lại
                 if (removeFromLibrary) {
                   for (var id in _selectedMangaIds) {
                     final cats = await LibraryService.instance
@@ -214,36 +211,31 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                   }
                 }
 
-                // 2. Xóa các chương đã tải (Sử dụng logic mới: Xóa Folder)
+                // Xóa file tải: lấy tên truyện từ SQLite → gọi deleteMangaDownloads
+                // (lấy tên vì DownloadService dùng tên để tìm đường dẫn folder)
                 if (deleteDownloads) {
-                  final downloadService = DownloadService.instance;
                   int successCount = 0;
-
                   for (final mangaId in _selectedMangaIds) {
                     String? title;
-                    // Lấy title từ DB (quan trọng khi offline)
                     final localManga = await DatabaseHelper.instance
                         .getLocalManga(mangaId);
                     if (localManga != null) {
                       title = localManga.title;
                     } else {
-                      // Fallback: Lấy từ bảng downloads
+                      // Fallback: tìm tên từ bảng downloads nếu không có trong local manga
                       final downloads = await DatabaseHelper.instance
                           .getDownloadsByManga(mangaId);
-                      if (downloads.isNotEmpty) {
+                      if (downloads.isNotEmpty)
                         title = downloads.first['mangaTitle'] as String?;
-                      }
                     }
-
                     if (title != null) {
-                      await downloadService.deleteMangaDownloads(
+                      await DownloadService.instance.deleteMangaDownloads(
                         mangaId,
                         title,
                       );
                       successCount++;
                     }
                   }
-
                   if (mounted && successCount > 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -271,8 +263,11 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    // isSelectionMode = true khi có ít nhất 1 truyện được chọn → đổi AppBar + hiện action bar dưới
     final bool isSelectionMode = _selectedMangaIds.isNotEmpty;
 
+    // StreamBuilder ngoài cùng: lắng nghe danh sách categories từ Firestore
+    // Mỗi category → 1 Tab → 1 CategoryMangaList bên trong
     return StreamBuilder<List<String>>(
       stream: LibraryService.instance.streamCategories(),
       builder: (context, snapshot) {
@@ -290,13 +285,14 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
             bottom: false,
             child: Scaffold(
               appBar: AppBar(
+                // AppBar thay đổi hoàn toàn khi vào selection mode
                 backgroundColor: isSelectionMode
                     ? const Color(0xFF1C1C1E)
                     : null,
                 leading: isSelectionMode
                     ? IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => _clearSelection(),
+                        onPressed: _clearSelection,
                         tooltip: 'Bỏ chọn',
                       )
                     : null,
@@ -378,12 +374,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         selectedMangaIds: _selectedMangaIds,
                         onToggleSelect: (id) {
                           setState(() {
-                            if (_selectedMangaIds.contains(id)) {
+                            if (_selectedMangaIds.contains(id))
                               _selectedMangaIds.remove(id);
-                            } else {
+                            else
                               _selectedMangaIds.add(id);
-                            }
-                            // Ẩn thanh điều hướng chính khi có truyện được chọn
                             UiService.instance.setMainBottomBarVisible(
                               _selectedMangaIds.isEmpty,
                             );
@@ -393,6 +387,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                     )
                     .toList(),
               ),
+              // Action bar dưới — chỉ hiện khi selection mode
               bottomNavigationBar: isSelectionMode
                   ? Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -406,6 +401,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
+                            // Nút di chuyển sang danh mục khác
                             IconButton(
                               icon: const Icon(
                                 Icons.folder_outlined,
@@ -414,10 +410,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                               onPressed: () async {
                                 if (_selectedMangaIds.isNotEmpty) {
                                   final ids = _selectedMangaIds.toList();
-                                  final firstId = ids.first;
-                                  // Lấy danh mục hiện tại của truyện đầu tiên để hiển thị ban đầu
+                                  // Lấy categories của truyện đầu tiên làm trạng thái hiển thị ban đầu
                                   final cats = await LibraryService.instance
-                                      .streamMangaCategories(firstId)
+                                      .streamMangaCategories(ids.first)
                                       .first;
                                   if (context.mounted) {
                                     final success =
@@ -426,20 +421,18 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                           ids,
                                           cats,
                                         );
-                                    if (success == true) {
-                                      _clearSelection();
-                                    }
+                                    if (success == true) _clearSelection();
                                   }
                                 }
                               },
                             ),
+                            // Nút tải tất cả chapter của các truyện đã chọn
                             IconButton(
                               icon: const Icon(
                                 Icons.download_outlined,
                                 color: Colors.white,
                               ),
                               onPressed: () async {
-                                // Confirm download
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
@@ -474,33 +467,21 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                     ],
                                   ),
                                 );
-
                                 if (confirm != true) return;
 
-                                // Sử dụng DownloadService
-                                final downloadService =
-                                    DownloadService.instance;
-                                final driveService = DriveService.instance;
-
                                 int totalChapters = 0;
-
-                                // Tải tất cả chapters của các manga đã chọn
                                 for (final mangaId in _selectedMangaIds) {
-                                  // Lấy thông tin manga
-                                  final mangas = await driveService.getMangas();
+                                  final mangas = await DriveService.instance
+                                      .getMangas();
                                   final manga = mangas.firstWhere(
                                     (m) => m.id == mangaId,
                                     orElse: () =>
                                         throw Exception('Manga not found'),
                                   );
-
-                                  // Lấy danh sách chapters
-                                  final chapters = await driveService
+                                  final chapters = await DriveService.instance
                                       .getChapters(mangaId);
-
-                                  // Thêm vào queue
                                   for (final chapter in chapters) {
-                                    await downloadService.addToQueue(
+                                    await DownloadService.instance.addToQueue(
                                       chapterId: chapter.id,
                                       mangaId: mangaId,
                                       mangaTitle: manga.title,
@@ -510,7 +491,6 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                     totalChapters++;
                                   }
                                 }
-
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -530,6 +510,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 }
                               },
                             ),
+                            // Nút xóa — dùng Builder để lấy tabController.index (category hiện tại)
                             Builder(
                               builder: (ctx) {
                                 final tabController = DefaultTabController.of(
@@ -561,6 +542,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
   }
 }
 
+// Widget hiển thị danh sách truyện trong 1 category — chứa logic fetch + filter + search.
+// Là StatelessWidget vì không cần state riêng, nhận toàn bộ state từ CustomLibraryPage.
 class CategoryMangaList extends StatelessWidget {
   final String category;
   final String searchQuery;
@@ -579,6 +562,7 @@ class CategoryMangaList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // StreamBuilder lấy danh sách mangaId trong category này (Firestore realtime)
     return StreamBuilder<List<String>>(
       stream: LibraryService.instance.streamMangasInCategory(category),
       builder: (context, snapshot) {
@@ -588,15 +572,15 @@ class CategoryMangaList extends StatelessWidget {
         final mangaIds = snapshot.data ?? [];
         if (mangaIds.isEmpty) return _buildEmptyState(context);
 
-        if (mangaIds.isEmpty) return _buildEmptyState(context);
-
+        // fetchMangasWithFallback: thử Drive trước, nếu lỗi → fallback SQLite local
         Future<List<CloudManga>> fetchMangasWithFallback() async {
           try {
             final cloudMangas = await DriveService.instance.getMangas();
-            // [Offline Fix] Nếu API trả về rỗng (do lỗi mạng/token), fallback về DB
+            // Nếu Drive trả về rỗng (offline/token lỗi) → ném exception để vào catch
             if (cloudMangas.isEmpty) throw Exception('Offline fallback');
             return cloudMangas;
           } catch (e) {
+            // Offline mode: đọc từ SQLite, wrap thành CloudManga với status='Offline'
             final localMangas = await DatabaseHelper.instance
                 .getAllLocalMangas();
             return localMangas
@@ -622,19 +606,19 @@ class CategoryMangaList extends StatelessWidget {
           builder: (context, mangaSnapshot) {
             if (!mangaSnapshot.hasData) return const SizedBox.shrink();
 
+            // Lọc chỉ lấy truyện có id trong danh sách category này
             final allMangasInCat = mangaSnapshot.data!
                 .where((m) => mangaIds.contains(m.id))
                 .toList();
 
-            // Áp dụng Tìm kiếm & Bộ lọc
+            // Áp dụng search + status filter
             final filteredMangas = allMangasInCat.where((m) {
               final matchesSearch = m.title.toLowerCase().contains(
                 searchQuery.toLowerCase(),
               );
-
               bool matchesStatus = true;
               if (selectedStatuses.isNotEmpty) {
-                // Map status label UI tới data
+                // Map label UI → keyword trong status string từ Drive
                 final statusLower = m.status.toLowerCase();
                 matchesStatus = selectedStatuses.any((s) {
                   if (s == 'Đang tiến hành')
@@ -647,7 +631,6 @@ class CategoryMangaList extends StatelessWidget {
                   return false;
                 });
               }
-
               return matchesSearch && matchesStatus;
             }).toList();
 
@@ -660,13 +643,12 @@ class CategoryMangaList extends StatelessWidget {
                 ),
               );
             }
-
             if (filteredMangas.isEmpty) return _buildEmptyState(context);
 
             return GridView.builder(
               padding: const EdgeInsets.all(8),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2, // Đổi thành 2 cột như yêu cầu
+                crossAxisCount: 2,
                 childAspectRatio: 0.72,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
@@ -674,10 +656,9 @@ class CategoryMangaList extends StatelessWidget {
               itemCount: filteredMangas.length,
               itemBuilder: (context, index) {
                 final manga = filteredMangas[index];
-                final isSelected = selectedMangaIds.contains(manga.id);
                 return _MangaGridItem(
                   manga: manga,
-                  isSelected: isSelected,
+                  isSelected: selectedMangaIds.contains(manga.id),
                   isSelectionMode: selectedMangaIds.isNotEmpty,
                   onToggle: () => onToggleSelect(manga.id),
                 );
@@ -709,7 +690,7 @@ class CategoryMangaList extends StatelessWidget {
             onPressed: () => context.go('/'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white, // Đảm bảo chữ màu trắng
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(25),
@@ -726,6 +707,9 @@ class CategoryMangaList extends StatelessWidget {
   }
 }
 
+// Card 1 truyện trong grid — animation viền trắng khi selected, overlay mờ + checkmark icon.
+// onTap: nếu đang selection mode → toggle chọn, không thì navigate đến detail.
+// onLongPress: luôn toggle chọn (để bắt đầu selection mode).
 class _MangaGridItem extends StatelessWidget {
   final CloudManga manga;
   final bool isSelected;
@@ -745,11 +729,12 @@ class _MangaGridItem extends StatelessWidget {
       onTap: isSelectionMode
           ? onToggle
           : () => context.push('/detail/${manga.id}'),
-      onLongPress: onToggle,
+      onLongPress: onToggle, // Long press để bắt đầu selection mode
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
+          // Viền trắng 3px khi selected — AnimatedContainer animate smooth
           border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
         ),
         child: ClipRRect(
@@ -757,13 +742,10 @@ class _MangaGridItem extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Ảnh bìa dùng widget DriveImage hiện có
               DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
-
-              // Overlay khi được chọn
+              // Overlay mờ trắng khi selected
               if (isSelected) Container(color: Colors.white.withOpacity(0.2)),
-
-              // Gradient Overlay
+              // Gradient từ trong suốt → đen ở dưới để nổi tên truyện
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -777,7 +759,6 @@ class _MangaGridItem extends StatelessWidget {
                   ),
                 ),
               ),
-              // Tên truyện ở dưới
               Positioned(
                 bottom: 8,
                 left: 8,
@@ -794,7 +775,7 @@ class _MangaGridItem extends StatelessWidget {
                   ),
                 ),
               ),
-              // Số lượng chapter (giống ảnh mẫu)
+              // Badge số chapter ở góc trên trái — FutureBuilder gọi getChapters mỗi lần build
               Positioned(
                 top: 6,
                 left: 6,
@@ -823,7 +804,7 @@ class _MangaGridItem extends StatelessWidget {
                   ),
                 ),
               ),
-              // Checkmark icon khi được chọn
+              // Checkmark icon ở góc trên phải khi selected
               if (isSelected)
                 const Positioned(
                   top: 6,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/notification_service.dart';
 
+// Trang danh sách thông báo — StatelessWidget vì toàn bộ state đến từ Stream Firestore.
+// Thông báo do Admin ghi vào Firestore khi có chapter mới, hiển thị cho tất cả user.
 class NotificationListPage extends StatelessWidget {
   const NotificationListPage({super.key});
 
@@ -24,7 +26,6 @@ class NotificationListPage extends StatelessWidget {
           }
 
           final notifications = snapshot.data ?? [];
-
           if (notifications.isEmpty) {
             return Center(
               child: Column(
@@ -58,22 +59,17 @@ class NotificationListPage extends StatelessWidget {
 
               return InkWell(
                 onTap: () async {
-                  // Đánh dấu đã đọc
                   if (!isRead) {
                     await NotificationService.instance.markAsRead(note['id']);
                   }
-                  // Điều hướng đến truyện/chapter
                   if (context.mounted) {
                     final mangaId = note['mangaId'] ?? note['comicId'];
-                    if (mangaId != null) {
-                      context.push('/detail/$mangaId');
-                    }
+                    if (mangaId != null) context.push('/detail/$mangaId');
                   }
                 },
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Icon chỉ báo trạng thái đọc
                     Container(
                       margin: const EdgeInsets.only(top: 4, right: 12),
                       width: 8,
@@ -105,6 +101,7 @@ class NotificationListPage extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
+
                           Text(
                             timestamp != null
                                 ? _formatTimestamp(timestamp)
@@ -127,7 +124,6 @@ class NotificationListPage extends StatelessWidget {
   String _formatTimestamp(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
-
     if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
     if (diff.inHours < 24) return '${diff.inHours} giờ trước';
     return '${dt.day}/${dt.month}/${dt.year}';

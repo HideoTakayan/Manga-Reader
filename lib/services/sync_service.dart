@@ -3,48 +3,46 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../data/database_helper.dart';
 import 'history_service.dart';
 
+// SyncService: đẩy lịch sử đọc từ SQLite local lên Firestore.
+// Thiết kế offline-first: ReaderProvider ghi vào SQLite ngay (nhanh)
+// SyncService đẩy lên cloud sau (chạy nền, không block UI)
 class SyncService {
   static final SyncService instance = SyncService._();
   SyncService._();
 
   bool _isSyncing = false;
 
-  /// Trigger sync process for pending history items
+  /// Đẩy tất cả history chưa sync lên Firestore
   Future<void> syncPendingHistory() async {
-    // Basic debounce/lock to prevent multiple concurrent syncs
     if (_isSyncing) return;
-
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     _isSyncing = true;
     try {
-      // 1. Get unsynced items from Local DB
+      // 1. Lấy items chưa sync từ SQLite (isSynced = 0)
       final unsynced = await DatabaseHelper.instance.getUnsyncedHistory(
         user.uid,
       );
-      if (unsynced.isEmpty) {
-        // print('✅ SyncService: No pending items.');
-        return;
-      }
-
+      if (unsynced.isEmpty) return;
       print(
         '🔄 SyncService: Found ${unsynced.length} pending items. Syncing...',
       );
 
-      // 2. Push to Cloud (Firestore)
-      // Run in parallel for faster sync
+      // 2. Chạy song song tất cả items — Future.wait đợi tất cả hoàn thành
       final List<Future> syncTasks = unsynced.map((history) async {
         try {
-          await HistoryService.instance.saveHistory(history);
-          // 3. Mark as synced locally upon success
+          await HistoryService.instance.saveHistory(
+            history,
+          ); // Đẩy lên Firestore
+          // 3. Đánh dấu synced trong SQLite sau khi thành công
           await DatabaseHelper.instance.markHistoryAsSynced(
             user.uid,
             history.mangaId,
           );
         } catch (e) {
           print('❌ Sync failed for ${history.mangaId}: $e');
-          // Keep isSynced = 0 to retry later
+          // Không markAsSynced nếu lỗi → sẽ retry lần sau
         }
       }).toList();
 
@@ -53,7 +51,7 @@ class SyncService {
     } catch (e) {
       print('❌ SyncService Error: $e');
     } finally {
-      _isSyncing = false;
+      _isSyncing = false; // Luôn unlock, kể cả khi có exception
     }
   }
 }

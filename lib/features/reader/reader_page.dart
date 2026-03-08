@@ -17,38 +17,35 @@ class ReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
 }
 
+// SingleTickerProviderStateMixin: cung cấp vsync cho AnimationController
+// → tiết kiệm tài nguyên, chỉ dùng khi có đúng 1 AnimationController
 class _ReaderPageState extends ConsumerState<ReaderPage>
     with SingleTickerProviderStateMixin {
   late PageController _pageController;
   late ScrollController _scrollController;
 
-  // ========================================
-  // HỆ THỐNG CHUYỂN CHƯƠNG KHI GIỮ (HOLD-TO-LOAD)
-  // Ngăn chặn việc nhảy chương vô tình khi cuộn quá đà
-  // ========================================
+  // ==== HỆ THỐNG HOLD-TO-LOAD (chuyển chương bằng cách giữ ở vùng biên) ====
+  // Tránh chuyển chương vô tình khi cuộn quá đà — phải giữ 1.5 giây mới chuyển
 
-  // Trạng thái phát hiện hành động giữ
-  bool _isInNextChapterZone = false;
-  bool _isInPrevChapterZone = false;
-  bool _isHoldingForNextChapter = false;
-  bool _isHoldingForPrevChapter = false;
+  bool _isInNextChapterZone = false; // Đang trong vùng dưới (gần hết chương)
+  bool _isInPrevChapterZone = false; // Đang trong vùng trên (overscroll ngược)
+  bool _isHoldingForNextChapter = false; // Đang đếm ngược để sang chương sau
+  bool _isHoldingForPrevChapter = false; // Đang đếm ngược để về chương trước
 
-  // Bộ đếm thời gian cho hành động giữ
   Timer? _holdTimer;
   static const Duration _holdDuration = Duration(milliseconds: 1500);
 
-  // Controller cho animation progress ring
   late AnimationController _holdProgressController;
 
-  // Thời gian chờ để tránh chuyển chương liên tục (Cooldown)
   DateTime? _lastChapterChange;
   static const Duration _chapterChangeCooldown = Duration(seconds: 2);
-  bool _isChapterTransitionLocked = false;
+  bool _isChapterTransitionLocked =
+      false; 
 
-  // Ngưỡng phát hiện vùng chuyển chương (pixel)
-  static const double _nextChapterThreshold = 100.0; // Khoảng cách từ đáy
+  static const double _nextChapterThreshold =
+      100.0; 
   static const double _prevChapterThreshold =
-      -60.0; // Khoảng cách overscroll ở đỉnh
+      -60.0; 
 
   @override
   void initState() {
@@ -56,16 +53,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _pageController = PageController();
     _scrollController = ScrollController();
 
-    // Animation controller cho vòng tròn tiến trình
     _holdProgressController = AnimationController(
       vsync: this,
       duration: _holdDuration,
     );
 
-    // Lắng nghe sự kiện cuộn để phát hiện vùng chuyển chương
     _scrollController.addListener(_onVerticalScroll);
 
-    // Load data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(readerProvider.notifier).init(widget.chapterId);
     });
@@ -74,27 +68,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _onVerticalScroll() {
     final state = ref.read(readerProvider);
 
-    // Only handle in vertical mode
     if (state.readingMode != ReadingMode.vertical) return;
     if (!_scrollController.hasClients) return;
 
     final pixels = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
 
-    // Kiểm tra vùng chuyển chương tiếp theo (gần đáy)
     final isNearEnd = pixels >= maxExtent - _nextChapterThreshold;
 
-    // Kiểm tra vùng chuyển chương trước (overscroll ở đỉnh)
     final isOverscrollTop = pixels < _prevChapterThreshold;
 
-    // Xử lý logic vùng chương tiếp theo
     if (isNearEnd && !_isInNextChapterZone) {
       _enterNextChapterZone();
     } else if (!isNearEnd && _isInNextChapterZone) {
       _exitNextChapterZone();
     }
-
-    // Xử lý logic vùng chương trước
     if (isOverscrollTop && !_isInPrevChapterZone) {
       _enterPrevChapterZone();
     } else if (!isOverscrollTop && _isInPrevChapterZone) {
@@ -112,7 +100,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _isHoldingForNextChapter = true;
     });
 
-    // Start hold timer
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
       _triggerNextChapter();
@@ -137,7 +124,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _isHoldingForPrevChapter = true;
     });
 
-    // Start hold timer
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
       _triggerPrevChapter();
@@ -161,25 +147,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _triggerNextChapter() {
     if (_isChapterTransitionLocked) return;
-
-    // Check cooldown
     if (_lastChapterChange != null &&
-        DateTime.now().difference(_lastChapterChange!) <
-            _chapterChangeCooldown) {
+        DateTime.now().difference(_lastChapterChange!) < _chapterChangeCooldown)
       return;
-    }
 
     setState(() {
       _isChapterTransitionLocked = true;
       _isHoldingForNextChapter = false;
     });
-
     _lastChapterChange = DateTime.now();
+    HapticFeedback.mediumImpact(); 
 
-    // Haptic feedback
-    HapticFeedback.mediumImpact();
-
-    // Load chapter
     ref.read(readerProvider.notifier).loadNextChapter().then((_) {
       if (mounted) {
         setState(() {
@@ -187,8 +165,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           _isInNextChapterZone = false;
         });
         _cancelHoldTimer();
-
-        // Scroll to top of new chapter
         _scrollController.jumpTo(0);
       }
     });
@@ -197,7 +173,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _triggerPrevChapter() {
     if (_isChapterTransitionLocked) return;
 
-    // Check cooldown
     if (_lastChapterChange != null &&
         DateTime.now().difference(_lastChapterChange!) <
             _chapterChangeCooldown) {
@@ -211,10 +186,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     _lastChapterChange = DateTime.now();
 
-    // Haptic feedback
     HapticFeedback.mediumImpact();
 
-    // Load chapter
     ref.read(readerProvider.notifier).loadPrevChapter().then((_) {
       if (mounted) {
         setState(() {
@@ -222,8 +195,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           _isInPrevChapterZone = false;
         });
         _cancelHoldTimer();
-
-        // Tối ưu: Khi về chương trước, nhảy xuống cuối trang để đọc ngược lên mượt hơn
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
             _scrollController.jumpTo(
@@ -250,7 +221,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final state = ref.watch(readerProvider);
     final notifier = ref.read(readerProvider.notifier);
 
-    // Logic đồng bộ vị trí trang khi thay đổi state (Giản lược)
     ref.listen<ReaderState>(readerProvider, (prev, next) {
       if (prev?.currentPageIndex != next.currentPageIndex &&
           next.readingMode == ReadingMode.horizontal) {
@@ -268,7 +238,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           ? const Center(child: CircularProgressIndicator())
           : Stack(
               children: [
-                // Content
+                // Nội dung
                 GestureDetector(
                   onTap: notifier.toggleControls,
                   child: state.readingMode == ReadingMode.horizontal
@@ -276,7 +246,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       : _buildVerticalView(state, notifier),
                 ),
 
-                // TOP OVERLAY
                 if (state.showControls)
                   Positioned(
                     top: 0,
@@ -302,7 +271,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Back Button
+                          // Nút quay lại
                           IconButton(
                             icon: const Icon(
                               Icons.arrow_back,
@@ -315,7 +284,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           ),
                           const SizedBox(width: 10),
 
-                          // Cover Image
+                          // Ảnh bìa
                           if (state.comic != null)
                             ClipRRect(
                               borderRadius: BorderRadius.circular(4),
@@ -328,7 +297,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
                           const SizedBox(width: 10),
 
-                          // Info & Chapter Selector
+                          // Thông tin & Chọn chương
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,7 +324,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   ),
                                 const SizedBox(height: 4),
 
-                                // Chapter Selector Button
+                                // Nút chọn chương
                                 InkWell(
                                   onTap: () => _showChapterListModal(
                                     context,
@@ -402,7 +371,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
                           ),
 
-                          // Menu Button (Drawer)
+                          // Nút Menu (Ngăn kéo)
                           Builder(
                             builder: (context) => IconButton(
                               icon: const Icon(
@@ -421,7 +390,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     ),
                   ),
 
-                // BOTTOM OVERLAY
+                // LỚP PHỦ DƯỚI CÙNG
                 if (state.showControls)
                   Positioned(
                     bottom: 0,
@@ -467,7 +436,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
                             onPressed: () async {
                               if (state.isFollowed) {
-                                // Ask to unfollow
+                                // Hỏi để hủy theo dõi
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (context) => AlertDialog(
@@ -516,7 +485,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   }
                                 }
                               } else {
-                                // Just follow
+                                // Chỉ theo dõi
                                 await notifier.toggleFollow();
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -550,7 +519,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Horizontal View
+  // Chế độ đọc NGANG: PhotoViewGallery — swipe trái/phải giữa các trang
+  // MemoryImage(Uint8List): ảnh đã decode (unzip .cbz) sẵn trong provider
+  // PhotoViewComputedScale.contained: hiện đủ cả trang trong màn hình
+  // maxScale: covered * 2 → zoom tối đa 2x
   Widget _buildHorizontalView(ReaderState state, ReaderNotifier notifier) {
     return PhotoViewGallery.builder(
       scrollPhysics: const BouncingScrollPhysics(),
@@ -564,40 +536,34 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       },
       itemCount: state.pages.length,
       pageController: _pageController,
-      onPageChanged: notifier.onPageChanged,
+      onPageChanged:
+          notifier.onPageChanged, // Cập nhật currentPageIndex trong provider
       loadingBuilder: (context, event) =>
           const Center(child: CircularProgressIndicator()),
       backgroundDecoration: const BoxDecoration(color: Colors.black),
     );
   }
 
-  // Giao diện dọc với tính năng cuộn liên tục (Continuous Scrolling)
+  // Chế độ đọc DỌC: ListView cuộn liên tục
+  // Cấu trúc item: [header] [trang 0] [trang 1] ... [trang N] [footer]
+  // BouncingScrollPhysics: cho phép overscroll ở đầu → kích hoạt prev chapter zone
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {
-    // Tổng item = 1 header + danh sách trang ảnh + 1 footer
-    final itemCount = state.pages.length + 2;
+    final itemCount = state.pages.length + 2; // +2 = header + footer
 
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.zero,
-      physics:
-          const BouncingScrollPhysics(), // Cho phép overscroll để kích hoạt chuyển chương trước
+      physics: const BouncingScrollPhysics(),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        // Item đầu tiên: Header chuyển chương trước
-        if (index == 0) {
-          return _buildChapterTransitionHeader(state, notifier);
-        }
-
-        // Item cuối cùng: Footer chuyển chương sau
-        if (index == itemCount - 1) {
+        if (index == 0) return _buildChapterTransitionHeader(state, notifier);
+        if (index == itemCount - 1)
           return _buildChapterTransitionFooter(state, notifier);
-        }
-
-        // Trang ảnh bình thường (index trừ 1 do có header)
+        // pageIndex = index - 1 vì index 0 là header
         final pageIndex = index - 1;
         return Image.memory(
           state.pages[pageIndex],
-          fit: BoxFit.fitWidth,
+          fit: BoxFit.fitWidth, // Vừa khít chiều rộng, chiều cao tự scale
           width: double.infinity,
           errorBuilder: (_, __, ___) => const SizedBox(
             height: 200,
@@ -608,7 +574,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Header chuyển chương (cho chương trước) với vòng tròn giữ để tải
+  // Tiêu đề chuyển chương (cho chương trước) với vòng tròn giữ để tải
   Widget _buildChapterTransitionHeader(
     ReaderState state,
     ReaderNotifier notifier,
@@ -622,7 +588,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         children: [
           const SizedBox(height: 40),
 
-          // Loading, holding, or previous chapter indicator
+          // Đang tải, đang giữ, hoặc chỉ báo chương trước
           if (state.isLoadingPrevChapter)
             const Column(
               children: [
@@ -664,7 +630,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Colors.blueAccent,
                             ),
                           ),
-                          // Icon mũi tên lên
+                          // Biểu tượng mũi tên lên
                           Icon(
                             Icons.arrow_upward,
                             color: Colors.blueAccent.withOpacity(
@@ -702,7 +668,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
-                // Nút thủ công
+                // Nút nhấn thủ công
                 OutlinedButton.icon(
                   onPressed: () => notifier.loadPrevChapter(),
                   icon: const Icon(Icons.arrow_back, size: 16),
@@ -736,7 +702,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
           const SizedBox(height: 20),
 
-          // Divider mờ dần
+          // Đường chia mờ dần
           Container(
             height: 2,
             width: 100,
@@ -756,7 +722,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Footer chuyển chương (cho chương sau) với vòng tròn giữ để tải
+  // Chân trang chuyển chương (cho chương sau) với vòng tròn giữ để tải
   Widget _buildChapterTransitionFooter(
     ReaderState state,
     ReaderNotifier notifier,
@@ -784,14 +750,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           ),
           const SizedBox(height: 20),
 
-          // Chapter end text
+          // Văn bản kết thúc chương
           Text(
             'Hết ${state.currentChapter?.title ?? 'chương'}',
             style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 16),
 
-          // Loading, holding, or next chapter indicator
+          // Đang tải, đang giữ, hoặc chỉ báo chương tiếp theo
           if (state.isLoadingNextChapter)
             const Column(
               children: [
@@ -804,7 +770,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               ],
             )
           else if (_isHoldingForNextChapter && hasNextChapter)
-            // Show hold progress indicator
+            // Hiển thị chỉ báo tiến trình giữ
             Column(
               children: [
                 SizedBox(
@@ -816,7 +782,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       return Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Background circle
+                          // Vòng tròn nền
                           CircularProgressIndicator(
                             value: 1.0,
                             strokeWidth: 4,
@@ -824,7 +790,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Colors.white.withOpacity(0.2),
                             ),
                           ),
-                          // Progress circle
+                          // Vòng tròn tiến trình
                           CircularProgressIndicator(
                             value: _holdProgressController.value,
                             strokeWidth: 4,
@@ -832,7 +798,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Colors.blueAccent,
                             ),
                           ),
-                          // Icon in center
+                          // Biểu tượng ở giữa
                           Icon(
                             Icons.arrow_downward,
                             color: Colors.blueAccent.withOpacity(
@@ -870,7 +836,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
-                // Manual button as fallback
+                // Nút thủ công để dự phòng
                 OutlinedButton.icon(
                   onPressed: _isChapterTransitionLocked
                       ? null
@@ -920,7 +886,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Chapter List Modal
+  // Cửa sổ danh sách chương
   void _showChapterListModal(
     BuildContext context,
     List<CloudChapter> chapters,
@@ -929,7 +895,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     showModalBottomSheet(
       context: context,
       backgroundColor:
-          Colors.transparent, // Transparent to let DraggableSheet handle bg
+          Colors.transparent, // Trong suốt để DraggableSheet xử lý nền
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) {
@@ -941,7 +907,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  // Drawer (Menu)
+  // Ngăn kéo (Menu)
   Widget _buildDrawer(ReaderState state, ReaderNotifier notifier) {
     return Drawer(
       backgroundColor: const Color(0xFF1E1E1E),
@@ -995,7 +961,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               style: TextStyle(color: Colors.white),
             ),
             onTap: () {
-              // TODO: Clear history
+              // TODO: Xóa lịch sử
               Navigator.pop(context);
             },
           ),
@@ -1062,7 +1028,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
           ),
           child: Column(
             children: [
-              // Header
+              // Tiêu đề
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -1095,7 +1061,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             textAlign: TextAlign.center,
                           ),
                         ),
-                        // Follow Icon (Heart)
+                        // Biểu tượng theo dõi (Trái tim)
                         IconButton(
                           icon: Icon(
                             state.isFollowed
@@ -1108,7 +1074,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                           },
                         ),
 
-                        // Resize Icon
+                        // Biểu tượng đổi kích thước
                         IconButton(
                           icon: const Icon(
                             Icons.swap_vert,
@@ -1122,17 +1088,19 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                 ),
               ),
 
-              // List
+              // Danh sách
               Expanded(
                 child: ListView.builder(
                   controller: scrollController,
-                  // Tự động deduplicate trong UI (Biện pháp cuối cùng)
+                  // Dedup bằng Set.add() — trả về false nếu id đã tồn tại
+                  // Đây là biện pháp phòng ngừa nếu server trả về chapter trùng id
                   itemCount: () {
                     final seen = <String>{};
                     return widget.chapters.where((c) => seen.add(c.id)).length;
                   }(),
                   itemBuilder: (context, index) {
-                    // Re-calculate unique list for safety (though inefficient, it guarantees 100%)
+                    // Recompute uniqueChapters mỗi lần — kém hiệu quả nhưng đảm bảo đúng 100%
+                    // Tối ưu hơn: tính 1 lần ở initState/build, truyền vào widget
                     final seen = <String>{};
                     final uniqueChapters = widget.chapters
                         .where((c) => seen.add(c.id))
@@ -1143,15 +1111,15 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                     final chapter = uniqueChapters[index];
                     final isSelected = chapter.id == widget.currentChapter?.id;
 
-                    // Format date: dd/MM/yyyy
+                    // Định dạng ngày: dd/MM/yyyy
                     final date =
                         "${chapter.uploadedAt.day}/${chapter.uploadedAt.month}/${chapter.uploadedAt.year}";
 
                     return InkWell(
                       onTap: () {
-                        Navigator.pop(context); // Close modal
+                        Navigator.pop(context); // Đóng cửa sổ
                         if (!isSelected) {
-                          // Navigate to selected chapter
+                          // Điều hướng đến chương đã chọn
                           context.pushReplacement('/reader/${chapter.id}');
                         }
                       },

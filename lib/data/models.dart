@@ -3,6 +3,8 @@ import 'dart:convert';
 /// --------------------
 /// 📚 Manga Model
 /// --------------------
+/// Model đại diện cho một bộ truyện lưu trong SQLite cục bộ.
+/// Dùng để cache thông tin truyện dưới dạng bảng `comics` trong file comics.db.
 class Manga {
   final String id;
   final String title;
@@ -21,6 +23,7 @@ class Manga {
   });
 
   // === JSON ===
+  /// Tạo đối tượng Manga từ JSON (VD: đọc từ catalog.json trên Google Drive).
   factory Manga.fromJson(Map<String, dynamic> json) {
     return Manga(
       id: json['id']?.toString() ?? '',
@@ -42,6 +45,7 @@ class Manga {
   };
 
   // === SQLite ===
+  /// Chuyển đối tượng Manga sang Map để lưu vào SQLite.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -53,6 +57,7 @@ class Manga {
     };
   }
 
+  /// Tạo đối tượng Manga từ Map đọc ra từ SQLite.
   factory Manga.fromMap(Map<String, dynamic> map) {
     final rawGenres = map['genres'];
     return Manga(
@@ -65,6 +70,10 @@ class Manga {
     );
   }
 
+  /// Phân tích trường genres từ nhiều dạng dữ liệu khác nhau:
+  /// - List (JSON array) → dùng thẳng
+  /// - String JSON → decode rồi dùng
+  /// - String phân cách bởi dấu phẩy/|/; → split rồi dùng
   static List<String> _parseGenres(dynamic raw) {
     if (raw == null) return [];
     if (raw is List) {
@@ -89,6 +98,7 @@ class Manga {
     return [];
   }
 
+  /// Tạo bản sao có cập nhật một số trường (Immutable pattern).
   Manga copyWith({
     String? id,
     String? title,
@@ -107,18 +117,21 @@ class Manga {
     );
   }
 
+  /// Hai Manga được coi là giống nhau nếu cùng ID.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is Manga && runtimeType == other.runtimeType && id == other.id;
 
   @override
-  int get hashCode => id.hashCode;
+  int get hashCode => id.hashCode; // Dùng id làm khóa hash
 }
 
 /// --------------------
 /// 📖 Chapter Model
 /// --------------------
+/// Model đại diện cho một chương truyện lưu trong SQLite cục bộ.
+/// Bảng `chapters` trong comics.db, liên kết với bảng `comics` qua `mangaId`.
 class Chapter {
   final String id;
   final String mangaId;
@@ -132,6 +145,7 @@ class Chapter {
     required this.number,
   });
 
+  /// Tạo Chapter từ JSON. Hỗ trợ cả key `mangaId` và `comicId` để tương thích ngược.
   factory Chapter.fromJson(Map<String, dynamic> json) => Chapter(
     id: json['id']?.toString() ?? '',
     mangaId: (json['mangaId'] ?? json['comicId'])?.toString() ?? '',
@@ -144,7 +158,7 @@ class Chapter {
   Map<String, dynamic> toJson() => {
     'id': id,
     'mangaId': mangaId,
-    'comicId': mangaId, // Backward compatibility
+    'comicId': mangaId, // Khả năng tương thích ngược
     'name': name,
     'number': number,
   };
@@ -153,6 +167,7 @@ class Chapter {
 
   factory Chapter.fromMap(Map<String, dynamic> map) => Chapter.fromJson(map);
 
+  /// Hai Chapter được coi là giống nhau nếu cùng ID.
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -165,6 +180,8 @@ class Chapter {
 /// --------------------
 /// 💬 Comment Model
 /// --------------------
+/// Model đại diện cho bình luận của người dùng.
+/// Hỗ trợ cả reply (bình luận lồng nhau) và like/unlike.
 class Comment {
   final String id;
   final String mangaId;
@@ -218,7 +235,7 @@ class Comment {
     final map = {
       'id': id,
       'mangaId': mangaId,
-      'comicId': mangaId, // Backward compatibility
+      'comicId': mangaId, // Khả năng tương thích ngược
       'userId': userId,
       'userName': userName,
       'userAvatar': userAvatar,
@@ -233,9 +250,11 @@ class Comment {
     return map;
   }
 
+  /// Bật/tắt trạng thái like: tăng/giảm `likes` và đảo `isLiked`.
   Comment toggleLike() =>
       copyWith(likes: isLiked ? likes - 1 : likes + 1, isLiked: !isLiked);
 
+  /// Thêm một reply vào danh sách replies của comment này.
   Comment addReply(Comment reply) {
     final newReplies = [...?replies, reply];
     return copyWith(replies: newReplies);
@@ -279,6 +298,8 @@ class Comment {
 /// --------------------
 /// 🕰️ Reading History Model
 /// --------------------
+/// Model lưu lịch sử đọc truyện của người dùng trong SQLite (bảng `history`).
+/// Dùng để nhớ người dùng đang đọc dở chương nào, trang mấy.
 class ReadingHistory {
   final String userId;
   final String mangaId;
@@ -311,7 +332,7 @@ class ReadingHistory {
     return {
       'userId': userId,
       'mangaId': mangaId,
-      'comicId': mangaId, // Backward compatibility for DB/Cloud
+      'comicId': mangaId, // Khả năng tương thích ngược cho CSDL/Đám mây
       'chapterId': chapterId,
       'chapterTitle': chapterTitle,
       'lastPageIndex': lastPageIndex,

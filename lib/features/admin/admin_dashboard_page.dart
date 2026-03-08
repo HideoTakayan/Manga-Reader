@@ -10,9 +10,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
-import 'edit_manga_dialog.dart'; // Renamed import
+import 'edit_manga_dialog.dart';
 import 'chapter_manager_page.dart';
 
+// Trang quản trị dành cho Admin: xem thống kê, thêm/sửa/xóa truyện.
+// Chỉ những email trong _adminEmails mới vào được — ngoài ra bị redirect về Home ngay.
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
 
@@ -23,35 +25,35 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Map<String, int> _stats = {'mangas': 0, 'users': 0, 'chapters': 0};
   final user = FirebaseAuth.instance.currentUser;
-  GoogleSignInAccount? _driveAccount;
+  GoogleSignInAccount?
+  _driveAccount; // null = chưa đăng nhập Drive (chưa có quyền ghi)
   late StreamSubscription<GoogleSignInAccount?> _authSubscription;
 
-  // Danh sách Admin
+  // Whitelist email được vào trang Admin
   final _adminEmails = ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
 
   @override
   void initState() {
     super.initState();
-    _checkAdmin();
-    _loadStats();
+    _checkAdmin(); // Kiểm tra quyền ngay khi mở trang
+    _loadStats(); // Tải thống kê lên dashboard
     _driveAccount = DriveService.instance.currentUser;
     _authSubscription = DriveService.instance.onAuthStateChanged.listen((
       account,
     ) {
-      if (mounted) {
-        setState(() {
-          _driveAccount = account;
-        });
-      }
+      if (mounted) setState(() => _driveAccount = account);
     });
   }
 
   @override
   void dispose() {
-    _authSubscription.cancel();
+    _authSubscription
+        .cancel(); // Hủy subscription khi rời trang để tránh memory leak
     super.dispose();
   }
 
+  // Nếu email hiện tại không có trong whitelist, redirect về Home và hiện thông báo.
+  // Dùng addPostFrameCallback vì không được điều hướng trong initState (widget chưa được gắn vào tree).
   void _checkAdmin() {
     if (!_adminEmails.contains(user?.email)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -65,14 +67,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
   }
 
+  // Tải số liệu thống kê: số truyện từ Drive cache, số user từ Firestore.
+  // Dùng Aggregation Count trước (nhanh, ít đọc), fallback sang get() nếu Firestore rules không cho.
+  // userCount = -1 báo hiệu không có quyền đọc → UI hiển thị "N/A".
   Future<void> _loadStats() async {
     final mangas = await DriveService.instance.getMangas();
     final mangaCount = mangas.length;
 
-    // Lấy số lượng user từ Firestore
     int userCount = 0;
     try {
-      // Cách 1: Thử dùng Aggregation Count (nhanh & rẻ)
+      // Cách 1: Aggregation Count — trả về số lượng mà không cần tải cả collection về
       final userSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .count()
@@ -80,14 +84,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       userCount = userSnapshot.count ?? 0;
     } catch (e) {
       debugPrint('Error loading user stats (count): $e');
-      // Cách 2: Fallback dùng query snapshot nếu count() lỗi (ví dụ do rules cũ)
       try {
+        // Cách 2: Fallback — tải toàn bộ documents rồi đếm (tốn đọc hơn)
         final docs = await FirebaseFirestore.instance.collection('users').get();
         userCount = docs.size;
       } catch (e2) {
         debugPrint('Error loading user stats (fallback): $e2');
-        // Permission denied -> Set userCount = -1 để UI biết
-        userCount = -1;
+        userCount = -1; // -1 = không có quyền đọc collection users
       }
     }
 
@@ -100,6 +103,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Nếu chưa xác nhận quyền (kiểm tra email), hiện loading tạm để tránh flash nội dung Admin
     if (!_adminEmails.contains(user?.email)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -154,7 +158,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDriveStatus(),
+                  _buildDriveStatus(), // Banner trạng thái kết nối Drive
                   const SizedBox(height: 24),
                   Row(
                     children: [
@@ -165,6 +169,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         color: Colors.blueAccent,
                       ),
                       const SizedBox(width: 16),
+                      // userCount = -1 → hiện "N/A" thay vì số âm
                       _StatCard(
                         title: 'Người dùng',
                         value: _stats['users'] == -1
@@ -189,9 +194,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             context: context,
                             builder: (_) => const _AddMangaDialog(),
                           );
-                          if (result == true) {
-                            _loadStats(); // Refresh stats if manga added
-                          }
+                          if (result == true)
+                            _loadStats(); // Cập nhật số liệu sau khi thêm truyện
                         },
                         icon: const Icon(Icons.add),
                         label: const Text('Thêm Truyện'),
@@ -217,6 +221,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  // Banner hiển thị trạng thái kết nối Google Drive (đã đăng nhập OAuth chưa).
+  // Xanh = đã kết nối (có quyền ghi), Đỏ = chưa kết nối (chỉ đọc được).
   Widget _buildDriveStatus() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -269,6 +275,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               ],
             ),
           ),
+          // Nút Kết nối/Ngắt kết nối Drive OAuth
           TextButton(
             onPressed: () async {
               if (_driveAccount == null) {
@@ -282,7 +289,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   }
                 }
               } else {
-                // Logic đăng xuất sẽ được xử lý tại đây
                 await DriveService.instance.signOut();
               }
             },
@@ -301,6 +307,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  // Lưới 2 cột hiển thị toàn bộ truyện. Mỗi ô là _AdminMangaCard.
+  // Dùng FutureBuilder vì dữ liệu Drive là bất đồng bộ.
   Widget _buildMangaGrid() {
     return FutureBuilder<List<CloudManga>>(
       future: DriveService.instance.getMangas(),
@@ -337,9 +345,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 }
 
+// Card hiển thị một bộ truyện trong lưới Admin.
+// Bấm vào thì mở bottom sheet với 3 lựa chọn: Quản lý Chương / Sửa Thông Tin / Xóa Truyện.
 class _AdminMangaCard extends StatelessWidget {
   final CloudManga manga;
-  final VoidCallback onRefresh;
+  final VoidCallback onRefresh; // Gọi lại để refresh dashboard sau khi sửa/xóa
 
   const _AdminMangaCard({required this.manga, required this.onRefresh});
 
@@ -395,6 +405,7 @@ class _AdminMangaCard extends StatelessWidget {
               ),
             ],
           ),
+          // Lớp InkWell phủ toàn bộ card để bắt sự kiện tap, hiện bottom sheet menu
           Positioned.fill(
             child: Material(
               color: Colors.transparent,
@@ -407,6 +418,7 @@ class _AdminMangaCard extends StatelessWidget {
                     builder: (ctx) => Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Điều hướng đến ChapterManagerPage để quản lý danh sách chapter
                         ListTile(
                           leading: Icon(
                             Icons.list,
@@ -418,7 +430,6 @@ class _AdminMangaCard extends StatelessWidget {
                           ),
                           onTap: () {
                             Navigator.pop(ctx);
-                            // Điều hướng đến đúng trang ChapterManagerPage chuẩn (Giao diện ảnh 2)
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -428,7 +439,7 @@ class _AdminMangaCard extends StatelessWidget {
                             );
                           },
                         ),
-
+                        // Mở EditMangaDialog để sửa tên/tác giả/bìa/thể loại
                         ListTile(
                           leading: Icon(
                             Icons.edit,
@@ -447,6 +458,7 @@ class _AdminMangaCard extends StatelessWidget {
                             onRefresh();
                           },
                         ),
+                        // Xóa truyện: xác nhận → loading overlay → gọi Drive API → refresh
                         ListTile(
                           leading: const Icon(
                             Icons.delete,
@@ -483,10 +495,11 @@ class _AdminMangaCard extends StatelessWidget {
                                   ),
                                   TextButton(
                                     onPressed: () async {
-                                      // 1. Đóng hộp thoại xác nhận ngay lập tức
-                                      Navigator.pop(dialogContext);
+                                      Navigator.pop(
+                                        dialogContext,
+                                      ); // Đóng dialog xác nhận
 
-                                      // 2. Hiển thị loading overlay - dùng rootNavigator để tránh pop lộn trang
+                                      // Hiện loading overlay — dùng rootNavigator để pop đúng dialog này sau
                                       showDialog(
                                         context: context,
                                         barrierDismissible: false,
@@ -497,21 +510,17 @@ class _AdminMangaCard extends StatelessWidget {
                                       );
 
                                       try {
-                                        // 3. Thực hiện xóa (Hàm này giờ đã xóa khỏi cache trước nên rất nhanh)
                                         await DriveService.instance.deleteManga(
                                           manga.id,
                                         );
 
                                         if (context.mounted) {
-                                          // 4. Đóng loading bằng rootNavigator
+                                          // Phải dùng rootNavigator để pop đúng loading dialog
                                           Navigator.of(
                                             context,
                                             rootNavigator: true,
                                           ).pop();
-
-                                          // 5. Cập nhật giao diện
                                           onRefresh();
-
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
@@ -522,12 +531,10 @@ class _AdminMangaCard extends StatelessWidget {
                                         }
                                       } catch (e) {
                                         if (context.mounted) {
-                                          // Đóng loading nếu lỗi
                                           Navigator.of(
                                             context,
                                             rootNavigator: true,
                                           ).pop();
-
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(
@@ -559,6 +566,8 @@ class _AdminMangaCard extends StatelessWidget {
   }
 }
 
+// Dialog thêm bộ truyện mới: điền tên/tác giả/mô tả/thể loại + chọn ảnh bìa → upload lên Drive.
+// _isUploading dùng để disable nút Lưu và ẩn/hiện loading indicator trong khi upload.
 class _AddMangaDialog extends StatefulWidget {
   const _AddMangaDialog();
 
@@ -570,21 +579,20 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
   final _titleController = TextEditingController();
   final _authorController = TextEditingController();
   final _descController = TextEditingController();
-  final _genresController = TextEditingController();
+  final _genresController =
+      TextEditingController(); // Nhập dạng "Action, Romance, Fantasy"
   File? _coverFile;
   bool _isUploading = false;
 
+  // Mở file picker giới hạn chỉ ảnh, lưu file đã chọn vào _coverFile.
   Future<void> _pickCover() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
     if (result != null && result.files.single.path != null) {
-      if (mounted) {
-        setState(() {
-          _coverFile = File(result.files.single.path!);
-        });
-      }
+      if (mounted) setState(() => _coverFile = File(result.files.single.path!));
     }
   }
 
+  // Validate → upload lên Drive → đóng dialog trả về true (để dashboard biết cần refresh).
   Future<void> _submit() async {
     if (_titleController.text.isEmpty || _coverFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -600,6 +608,7 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
         author: _authorController.text,
         description: _descController.text,
         coverFile: _coverFile!,
+        // Split chuỗi thể loại theo dấu phẩy, trim khoảng trắng, bỏ chuỗi rỗng
         genres: _genresController.text
             .split(',')
             .map((e) => e.trim())
@@ -607,7 +616,8 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             .toList(),
         status: 'Đang Cập Nhật',
       );
-      if (mounted) Navigator.pop(context, true);
+      if (mounted)
+        Navigator.pop(context, true); // true = báo hiệu thêm thành công
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -654,6 +664,7 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
               ),
             ),
             const SizedBox(height: 16),
+            // Vùng chọn ảnh bìa — icon chuyển xanh khi đã chọn file
             InkWell(
               onTap: _isUploading ? null : _pickCover,
               child: Container(
@@ -701,7 +712,7 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
           child: const Text('Hủy'),
         ),
         ElevatedButton(
-          onPressed: _isUploading ? null : _submit,
+          onPressed: _isUploading ? null : _submit, // Disable khi đang upload
           child: const Text('Lưu'),
         ),
       ],
@@ -709,6 +720,8 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
   }
 }
 
+// Widget card thống kê nhỏ (số truyện, số user).
+// Nhận vào title, value, icon, color để tái sử dụng cho nhiều loại số liệu.
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;

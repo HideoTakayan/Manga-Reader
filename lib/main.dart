@@ -23,7 +23,7 @@ Future<void> main() async {
   // Khởi tạo hệ thống thư mục
   await FolderService.init();
 
-  // Init Notification System (Local + Firestore Listener)
+  // Khởi tạo Hệ thống Thông báo (Cục bộ + Trình lắng nghe Firestore)
   await NotificationService.instance.initialize();
   await BackgroundService.initialize();
 

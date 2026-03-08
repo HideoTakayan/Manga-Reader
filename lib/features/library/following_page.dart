@@ -6,6 +6,8 @@ import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 
+// Trang danh sách truyện đang theo dõi.
+// Dữ liệu follow lưu trong Firestore: users/{uid}/following/{mangaId}
 class FollowingPage extends StatefulWidget {
   const FollowingPage({super.key});
 
@@ -14,9 +16,10 @@ class FollowingPage extends StatefulWidget {
 }
 
 class _FollowingPageState extends State<FollowingPage> {
-  // Key để force rebuild FutureBuilder khi refresh
+  // _refreshKey: tăng lên khi pull-to-refresh → FutureBuilder tạo Future mới
   int _refreshKey = 0;
 
+  // Lọc từ toàn bộ catalog Drive chỉ lấy các manga user đang theo dõi
   Future<List<CloudManga>> _getFollowedMangas(List<String> followedIds) async {
     final allMangas = await DriveService.instance.getMangas(
       forceRefresh: false,
@@ -26,34 +29,34 @@ class _FollowingPageState extends State<FollowingPage> {
 
   Future<void> _handleRefresh() async {
     await DriveService.instance.getMangas(forceRefresh: true);
-    if (mounted) {
-      setState(() {
-        _refreshKey++;
-      });
-    }
+    if (mounted) setState(() => _refreshKey++);
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
+    // Guard: chưa đăng nhập → hiện thông báo, không query Firestore
     if (user == null) {
       return Scaffold(
-        body: Center(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(
           child: Text(
             'Vui lòng đăng nhập để xem danh sách theo dõi',
             style: TextStyle(fontSize: 16, color: Colors.white),
           ),
         ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       );
     }
 
+    // Đường dẫn Firestore: users/{uid}/following — mỗi doc là 1 mangaId đang theo dõi
     final followingRef = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('following');
 
+    // StreamBuilder ngoài: lắng nghe danh sách mangaId realtime từ Firestore
+    // Khi user follow/unfollow ở màn hình khác → stream phát → list tự cập nhật
     return StreamBuilder<QuerySnapshot>(
       stream: followingRef.snapshots(),
       builder: (context, snapshot) {
@@ -71,13 +74,15 @@ class _FollowingPageState extends State<FollowingPage> {
           );
         }
 
+        // doc.id chính là mangaId — không cần đọc thêm field nào
         final followedIds = docs.map((d) => d.id).toList();
 
+        // FutureBuilder trong: tải chi tiết từng truyện từ Drive bằng danh sách id vừa lấy
+        // ValueKey(_refreshKey) → đổi key = ép Flutter tạo lại FutureBuilder hoàn toàn mới
         return FutureBuilder<List<CloudManga>>(
-          key: ValueKey(_refreshKey), // Đánh dấu rebuild khi key thay đổi
+          key: ValueKey(_refreshKey),
           future: _getFollowedMangas(followedIds),
           builder: (context, mangaSnapshot) {
-            // Hiển thị dữ liệu cũ nếu có để tránh giật lag, hoặc hiện loading
             if (mangaSnapshot.connectionState == ConnectionState.waiting &&
                 !mangaSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
@@ -85,9 +90,10 @@ class _FollowingPageState extends State<FollowingPage> {
 
             final mangas = mangaSnapshot.data ?? [];
 
+            // Edge case: followedIds có nhưng Drive không tìm thấy truyện nào
+            // (truyện đã bị xóa khỏi catalog, nhưng id vẫn còn trong Firestore)
             if (mangas.isEmpty &&
                 mangaSnapshot.connectionState == ConnectionState.done) {
-              // ...
               return RefreshIndicator(
                 onRefresh: _handleRefresh,
                 child: ListView(
@@ -116,7 +122,6 @@ class _FollowingPageState extends State<FollowingPage> {
                 itemCount: mangas.length,
                 itemBuilder: (context, index) {
                   final manga = mangas[index];
-
                   return Card(
                     color: Theme.of(context).cardColor,
                     shape: RoundedRectangleBorder(

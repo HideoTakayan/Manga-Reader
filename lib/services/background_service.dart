@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+// BackgroundService: giữ process Android sống trong khi DownloadService tải file.
 class BackgroundService {
   static Future<void> initialize() async {
     final service = FlutterBackgroundService();
 
-    // Channel cho Service "giữ sống" app
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'background_keep_alive',
       'Background Service',
@@ -30,13 +30,12 @@ class BackgroundService {
 
     await service.configure(
       androidConfiguration: AndroidConfiguration(
-        // Hàm này chạy ở Isolate riêng
-        onStart: onStart,
-
-        // Không tự chạy khi mở app, chỉ chạy khi DownloadService gọi
-        autoStart: false,
-        isForegroundMode: true,
-
+        onStart:
+            onStart, // Hàm này chạy trong Isolate riêng biệt với main Isolate
+        autoStart:
+            false, // Không tự chạy khi app mở — chỉ khi DownloadService gọi start()
+        isForegroundMode:
+            true, // Foreground Service: Android không kill khi app ở nền
         notificationChannelId: 'background_keep_alive',
         initialNotificationTitle: 'Manga Reader',
         initialNotificationContent: 'Đang duy trì kết nối...',
@@ -50,18 +49,20 @@ class BackgroundService {
     );
   }
 
+  // @pragma('vm:entry-point'): ngăn tree-shaker xóa hàm này khi build release
+  // Bắt buộc cho hàm được gọi từ native code hoặc Isolate khác
   @pragma('vm:entry-point')
   static void onStart(ServiceInstance service) async {
-    // Isolate này chỉ có nhiệm vụ giữ Process ở trạng thái Foreground Service
-    // để Android không kill Main Isolate (nơi đang tải file).
-
+    // Isolate này chỉ giữ Foreground Service sống — không tải file ở đây.
+    // DownloadService chạy trong main Isolate, BackgroundService ngăn Android kill nó.
     DartPluginRegistrant.ensureInitialized();
 
+    // Lắng nghe signal 'stopService' từ BackgroundService.stop()
     service.on('stopService').listen((event) {
       service.stopSelf();
     });
 
-    // Timer giữ alive (nếu cần)
+    // Cập nhật notification mỗi 30s để hệ thống biết service còn sống
     Timer.periodic(const Duration(seconds: 30), (timer) async {
       if (service is AndroidServiceInstance) {
         if (await service.isForegroundService()) {
@@ -76,9 +77,10 @@ class BackgroundService {
 
   @pragma('vm:entry-point')
   static bool onIosBackground(ServiceInstance service) {
-    return true;
+    return true; // Trả về true = iOS cho phép tiếp tục chạy ngắn ngủi
   }
 
+  /// Khởi động service — chỉ start nếu chưa chạy (tránh double start)
   static Future<void> start() async {
     final service = FlutterBackgroundService();
     if (!await service.isRunning()) {
@@ -87,11 +89,14 @@ class BackgroundService {
     }
   }
 
+  /// Dừng service — gửi event 'stopService' để Isolate tự dọn dẹp
   static Future<void> stop() async {
     final service = FlutterBackgroundService();
     if (await service.isRunning()) {
       debugPrint('KV Stopping Background Service');
-      service.invoke('stopService');
+      service.invoke(
+        'stopService',
+      ); // invoke thay vì trực tiếp stop để Isolate xử lý cleanup
     }
   }
 }

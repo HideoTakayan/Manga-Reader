@@ -59,23 +59,23 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     super.dispose();
   }
 
-  /// Tải dữ liệu tổng hợp cho trang chi tiết (Offline First Strategy)
+  /// Tải dữ liệu tổng hợp cho trang chi tiết (Chiến lược ưu tiên ngoại tuyến)
   Future<void> _fetchData() async {
     if (_manga == null) {
       if (mounted) setState(() => _isLoading = true);
     }
 
     try {
-      // --- 1. OFFLINE FIRST: Try Load Local Data ---
+      // --- 1. ƯU TIÊN NGOẠI TUYẾN: Thử Tải Dữ Liệu Cục Bộ ---
       CloudManga? localData;
       List<CloudChapter> localChaptersList = [];
 
-      // A. Try DB Info
+      // A. Thử thông tin trong CSDL
       Manga? dbManga = await DatabaseHelper.instance.getLocalManga(
         widget.mangaId,
       );
 
-      // B. If no DB Info, recover metadata from Downloaded Chapters (Backward Compatibility)
+      // B. Nếu không có thông tin CSDL, khôi phục metadata từ các Chương đã Tải (Tương thích ngược)
       if (dbManga == null) {
         final downloads = await DatabaseHelper.instance.getDownloadsByManga(
           widget.mangaId,
@@ -104,7 +104,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       }
 
       if (dbManga != null) {
-        // Construct CloudManga wrapper for UI
+        // Tạo wrapper CloudManga cho Giao diện
         localData = CloudManga(
           id: dbManga.id,
           title: dbManga.title,
@@ -120,7 +120,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         final downloadedMaps = await DatabaseHelper.instance
             .getDownloadsByManga(widget.mangaId);
 
-        // 🔧 FIX: Deduplicate downloaded chapters (phòng trường hợp DB có duplicate)
+        // 🔧 SỬA LỖI: Loại bỏ các chương tải xuống bị trùng lặp (phòng trường hợp DB có duplicate)
         final Map<String, Map<String, dynamic>> uniqueDownloads = {};
         for (final d in downloadedMaps) {
           final chapterId = d['chapterId'] as String;
@@ -145,11 +145,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           );
         }).toList();
 
-        // Sort numeric ascending (Match Online Mode)
+        // Sắp xếp số tăng dần (Khớp với Chế độ Trực tuyến)
         localChaptersList = ChapterSortHelper.sort(localChaptersList);
       }
 
-      // Show local data immediately if available
+      // Hiển thị dữ liệu cục bộ ngay lập tức nếu có
       if (localData != null && mounted) {
         // FIX: Xử lý deduplicate và sort ngay cho data offline để tránh hiển thị trùng/lộn xộn
         final processedLocal = await ChapterUtils.mergeChapters(
@@ -162,12 +162,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           setState(() {
             _manga = localData;
             _chapters = processedLocal;
-            // Keep loading true to verify network
+            // Giữ trạng thái đang tải là true để xác minh mạng
           });
         }
       }
 
-      // --- 2. NETWORK SYNC (Try to get fresh data) ---
+      // --- 2. ĐỒNG BỘ MẠNG (Thử lấy dữ liệu mới) ---
       final mangas = await DriveService.instance.getMangas(forceRefresh: true);
       final manga = mangas.firstWhere(
         (c) => c.id == widget.mangaId,
@@ -176,11 +176,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
       final chapters = await DriveService.instance.getChapters(widget.mangaId);
 
-      // Save fresh info to local DB
+      // Lưu thông tin mới vào CSDL cục bộ
       await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(manga));
       await _fetchHistory();
 
-      // 🔧 FIX: Advanced Deduplication & Sort (Centralized)
+      // 🔧 SỬA LỖI: Loại bỏ trùng lặp Nâng cao & Sắp xếp (Tập trung)
       // Gọi helper để xử lý logic gộp và sắp xếp nhất quán
       final deduplicatedChapters = await ChapterUtils.mergeChapters(
         chapters,
@@ -198,7 +198,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     } catch (e) {
       debugPrint('⚠️ Network fetch failed (Offline Mode): $e');
 
-      // If we have local data, consider it a success state (Offline Mode)
+      // Nếu chúng ta có dữ liệu cục bộ, coi đó là trạng thái thành công (Chế độ Ngoại tuyến)
       if (_manga != null) {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -213,7 +213,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           }
         }
       } else {
-        // Real error (No local data, no network)
+        // Lỗi thực sự (Không có dữ liệu cục bộ, không có mạng)
         if (mounted) setState(() => _isLoading = false);
       }
     }
@@ -278,14 +278,14 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 SliverToBoxAdapter(
                   child: Stack(
                     children: [
-                      // Background mờ
+                      // Nền mờ
                       Positioned.fill(
                         child: DriveImage(
                           fileId: manga.coverFileId,
                           fit: BoxFit.cover,
                         ),
                       ),
-                      // Darken overlay
+                      // Lớp phủ làm tối
                       Positioned.fill(
                         child: Container(color: Colors.black.withOpacity(0.7)),
                       ),
@@ -334,7 +334,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                     manga.title,
                                     style: theme.textTheme.titleLarge?.copyWith(
                                       color: Colors
-                                          .white, // Always white on dark header
+                                          .white,
                                       fontWeight: FontWeight.bold,
                                     ),
                                     maxLines: 2,
@@ -468,7 +468,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       itemBuilder: (context, index) {
                         final genre = manga.genres.isNotEmpty
                             ? manga.genres[index]
-                            : "Manhwa"; // Default if empty
+                            : "Manhwa"; // Mặc định nếu trống
                         return InkWell(
                           onTap: () {
                             context.push(
@@ -519,7 +519,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             fontSize: 16,
                           ),
                         ),
-                        // Action Menu
+                        // Menu Hành động
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert),
                           onSelected: (value) async {
@@ -805,7 +805,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                   future: DownloadService.instance.isDownloaded(
                                     ch.id,
                                     mangaId: widget
-                                        .mangaId, // Use cache for faster check
+                                        .mangaId, // Sử dụng bộ đệm (cache) để kiểm tra nhanh hơn
                                   ),
                                   builder: (context, snapshot) {
                                     final isDownloaded = snapshot.data ?? false;
@@ -823,7 +823,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                       ),
                                       onPressed: () async {
                                         if (isDownloaded) {
-                                          // Xóa download
+                                          // Xóa tải xuống
                                           final confirm = await showDialog<bool>(
                                             context: context,
                                             builder: (context) => AlertDialog(
@@ -880,7 +880,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                             }
                                           }
                                         } else {
-                                          // Tải chapter
+                                          // Tải chương
                                           await DownloadService.instance
                                               .addToQueue(
                                                 chapterId: ch.id,
@@ -938,12 +938,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               right: 10,
               child: Row(
                 children: [
-                  // Nút Download All Chapters
+                  // Nút Tải tất cả các Chương
                   IconButton(
                     icon: const Icon(Icons.download, color: Colors.white),
                     onPressed: () async {
-                      // Hỏi có muốn thêm vào thư viện không
-                      final addToLibrary = await showDialog<bool>(
+                      // Bước 1: Xác nhận có tải không
+                      final confirmDownload = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
                           backgroundColor: theme.cardColor,
@@ -952,35 +952,64 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             style: theme.textTheme.titleLarge,
                           ),
                           content: Text(
-                            'Bạn có muốn thêm truyện vào thư viện để dễ quản lý không?',
+                            'Tải ${chapters.length} chương của "${manga.title}" về máy?',
                             style: theme.textTheme.bodyMedium,
                           ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Không'),
+                              child: const Text('Hủy'),
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Có'),
+                              child: const Text(
+                                'Tải xuống',
+                                style: TextStyle(color: Colors.orange),
+                              ),
                             ),
                           ],
                         ),
                       );
 
-                      if (addToLibrary == null) return;
+                      if (confirmDownload != true) return;
 
-                      // Nếu chọn thêm vào thư viện
-                      if (addToLibrary) {
-                        final selectedCats = await LibraryService.instance
-                            .streamMangaCategories(widget.mangaId)
-                            .first;
-                        if (context.mounted) {
-                          _showSetCategoryDialog(context, selectedCats);
+                      if (context.mounted) {
+                        final addToLibrary = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            backgroundColor: theme.cardColor,
+                            title: Text(
+                              'Thêm vào Thư viện?',
+                              style: theme.textTheme.titleLarge,
+                            ),
+                            content: Text(
+                              'Bạn có muốn thêm truyện vào thư viện để dễ quản lý không?',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Không'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Có'),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (addToLibrary == true && context.mounted) {
+                          final selectedCats = await LibraryService.instance
+                              .streamMangaCategories(widget.mangaId)
+                              .first;
+                          if (context.mounted) {
+                            _showSetCategoryDialog(context, selectedCats);
+                          }
                         }
                       }
 
-                      // Bắt đầu tải tất cả chapters
+                      // Bắt đầu tải tất cả các chương
                       for (final chapter in chapters) {
                         await DownloadService.instance.addToQueue(
                           chapterId: chapter.id,
@@ -1006,7 +1035,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       }
                     },
                   ),
-                  // Nút Đặt vào Thư viện (Folder) - Mới
+                  // Nút Đặt vào Thư viện (Folder) 
                   StreamBuilder<List<String>>(
                     stream: LibraryService.instance.streamMangaCategories(
                       widget.mangaId,
@@ -1040,7 +1069,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         ),
                         onPressed: () async {
                           if (isFollowed) {
-                            // Ask to unfollow
+                            // Hỏi xác nhận hủy theo dõi
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
@@ -1082,7 +1111,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               }
                             }
                           } else {
-                            // Follow
+                            // Theo dõi
                             await followService.followManga(
                               mangaId: manga.id,
                               title: manga.title,
@@ -1119,7 +1148,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      theme.scaffoldBackgroundColor, // Fade to bg
+                      theme.scaffoldBackgroundColor, // Mờ dần theo nền
                       theme.scaffoldBackgroundColor.withOpacity(0.0),
                     ],
                     stops: const [0.6, 1.0],
@@ -1176,7 +1205,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
                           if (chapterIdToOpen != null) {
                             await context.push('/reader/$chapterIdToOpen');
-                            _fetchHistory(); // Refresh on return
+                            _fetchHistory(); // Làm mới khi quay lại
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -1241,7 +1270,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     int addedCount = 0;
 
     for (final chapter in chapters) {
-      // Check if downloaded or queued
+      // Kiểm tra xem đã tải hay đang chờ tải chưa
       final isDownloaded = await DownloadService.instance.isDownloaded(
         chapter.id,
         mangaId: widget.mangaId,
@@ -1253,7 +1282,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         continue;
       }
 
-      // Add to queue
+      // Thêm vào hàng đợi tải
       await DownloadService.instance.addToQueue(
         chapterId: chapter.id,
         mangaId: widget.mangaId,

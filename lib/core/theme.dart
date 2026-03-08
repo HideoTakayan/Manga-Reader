@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+// Cấu hình giao diện (Theme) chung cho ứng dụng
 class AppTheme {
+  // Giao diện nền tối (Dark mode) mặc định
   static final dark = ThemeData(
     brightness: Brightness.dark,
     useMaterial3: true,

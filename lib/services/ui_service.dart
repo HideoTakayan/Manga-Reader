@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+// UiService: Singleton đơn giản quản lý global UI state.
 class UiService {
   UiService._();
   static final instance = UiService._();

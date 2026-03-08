@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'following_page.dart';
 import 'history_page.dart';
+
+// LibraryPage là wrapper thuần túy — chỉ ghép 2 tab:
 
 class LibraryPage extends StatelessWidget {
   const LibraryPage({super.key});
@@ -13,12 +14,8 @@ class LibraryPage extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: const Text('Thư viện'),
+          title: const Text('Theo dõi'),
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-            onPressed: () => context.go('/'),
-          ),
           bottom: TabBar(
             indicatorColor: Theme.of(context).primaryColor,
             labelColor: Theme.of(context).primaryColor,
@@ -31,8 +28,8 @@ class LibraryPage extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
-            FollowingPage(), // Trang danh sách truyện đang theo dõi
-            HistoryPage(), // Trang lịch sử đọc
+            FollowingPage(), 
+            HistoryPage(),
           ],
         ),
       ),

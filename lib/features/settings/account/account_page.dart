@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import '../../../services/auth_service.dart';
 
+// Trang thông tin tài khoản — StatelessWidget vì toàn bộ data đến từ StreamBuilder Firestore.
+// Bao gồm: hiển thị avatar/tên/email, chỉnh sửa hồ sơ, đổi mật khẩu.
 class AccountPage extends StatelessWidget {
   const AccountPage({super.key});
 
@@ -34,7 +36,6 @@ class AccountPage extends StatelessWidget {
 
           final data = doc.data()! as Map<String, dynamic>;
 
-          // Logic hiển thị avatar giống SettingsPage
           ImageProvider? avatarImage;
           if (data['avatarBase64'] != null) {
             try {
@@ -44,7 +45,6 @@ class AccountPage extends StatelessWidget {
             avatarImage = NetworkImage(user.photoURL!);
           } else if (data['avatar'] != null &&
               data['avatar'].toString().isNotEmpty) {
-            // Fallback to old 'avatar' field if exists
             try {
               avatarImage = NetworkImage(data['avatar']);
             } catch (_) {}
@@ -88,7 +88,6 @@ class AccountPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // Nút chỉnh sửa hồ sơ
                 ElevatedButton.icon(
                   icon: const Icon(Icons.edit),
                   label: const Text('Chỉnh sửa hồ sơ'),
@@ -98,19 +97,11 @@ class AccountPage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: () {
-                    // Nếu SettingsPage dùng dialog thì ở đây ta có thể mở dialog tương tự
-                    // hoặc giữ nguyên navigation nếu route đó tồn tại.
-                    // Tuy nhiên để an toàn và đồng bộ, ta có thể dùng lại dialog của SettingsPage
-                    // nhưng dialog đó là private method của _SettingsPageState.
-                    // Tạm thời user yêu cầu "đồng bộ thông tin", nút này đã có sẵn nên ta giữ nguyên.
-                    // Nếu route lỗi, user sẽ báo.
-                    context.go('/settings/account/edit');
-                  },
+                  // go('/settings/account/edit') thay vì push để không chồng route
+                  onPressed: () => context.go('/settings/account/edit'),
                 ),
                 const SizedBox(height: 12),
 
-                // Nút đổi mật khẩu
                 ElevatedButton.icon(
                   icon: const Icon(Icons.lock_reset),
                   label: const Text('Đổi mật khẩu'),
@@ -139,6 +130,7 @@ class AccountPage extends StatelessWidget {
   }
 }
 
+// Dialog đổi mật khẩu — StatefulWidget riêng để quản lý form state độc lập
 class ChangePasswordDialog extends StatefulWidget {
   const ChangePasswordDialog({super.key});
 
@@ -221,11 +213,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                         setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
-                validator: (val) {
-                  if (val != _newPassController.text)
-                    return 'Mật khẩu xác nhận không khớp';
-                  return null;
-                },
+                validator: (val) => val != _newPassController.text
+                    ? 'Mật khẩu xác nhận không khớp'
+                    : null,
               ),
             ],
           ),
@@ -251,10 +241,12 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   }
 
   Future<void> _changePassword() async {
+    // Validate tất cả  — dừng nếu có lỗi
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
     try {
+      // AuthService.changePassword: re-authenticate rồi updatePassword qua Firebase Auth
       await AuthService().changePassword(
         _currentPassController.text,
         _newPassController.text,

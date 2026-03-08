@@ -2,33 +2,32 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../data/models.dart';
 
+// HistoryService: lưu và đồng bộ lịch sử đọc lên Firestore.
+// Mỗi truyện có 1 document trong users/{uid}/history/{mangaId}
+// → ghi đè toàn bộ khi đọc chapter mới (không append)
 class HistoryService {
   static final HistoryService instance = HistoryService._();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
   HistoryService._();
 
-  /// Lưu tiến độ đọc truyện (lịch sử) của người dùng hiện tại lên Cloud Firestore
-  /// Dữ liệu sẽ được lưu trong subcollection 'history' của user đó
+  /// Lưu tiến độ đọc lên Firestore — set() ghi đè toàn document nên không cần merge
   Future<void> saveHistory(ReadingHistory history) async {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) return; 
 
     try {
       await _db
           .collection('users')
           .doc(uid)
           .collection('history')
-          .doc(history.mangaId)
+          .doc(history.mangaId) 
           .set({...history.toMap(), 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
       print('Lỗi khi lưu lịch sử lên cloud: $e');
     }
   }
 
-  /// Truy xuất lịch sử đọc của một bộ truyện cụ thể
-  /// Giúp người dùng tiếp tục đọc từ chương đang dang dở
   Future<ReadingHistory?> getHistoryForManga(String mangaId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return null;
@@ -40,10 +39,8 @@ class HistoryService {
           .collection('history')
           .doc(mangaId)
           .get();
-
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        // Chuyển đổi Timestamp của Firestore về dạng mili-giây
         if (data['updatedAt'] is Timestamp) {
           data['updatedAt'] =
               (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
@@ -56,6 +53,7 @@ class HistoryService {
     return null;
   }
 
+  /// Lấy toàn bộ lịch sử — orderBy updatedAt để hiện mới nhất trước
   Future<List<ReadingHistory>> getAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
@@ -82,11 +80,9 @@ class HistoryService {
     }
   }
 
-  /// Xoá lịch sử đọc của một bộ truyện cụ thể khỏi danh sách
   Future<void> deleteHistory(String mangaId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-
     try {
       await _db
           .collection('users')
@@ -99,16 +95,13 @@ class HistoryService {
     }
   }
 
-  /// Xoá sạch toàn bộ lịch sử đọc của người dùng hiện tại
-  /// Sử dụng Batch Write để thực hiện xoá hàng loạt document cùng lúc
+  /// Xóa toàn bộ history — dùng Batch Write để xóa nhiều document trong 1 request
   Future<void> clearAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-
     try {
       final collection = _db.collection('users').doc(uid).collection('history');
       final snapshot = await collection.get();
-
       final batch = _db.batch();
       for (var doc in snapshot.docs) {
         batch.delete(doc.reference);

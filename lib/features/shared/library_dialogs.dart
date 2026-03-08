@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../services/library_service.dart';
 
+// Class chứa các dialog dùng chung liên quan đến thư viện cá nhân.
+// Tách ra file riêng để nhiều màn hình cùng dùng mà không bị lặp code.
 class LibraryDialogs {
+  // Hiện dialog chọn danh mục cho một hoặc nhiều bộ truyện cùng lúc.
+  // Trả về true nếu người dùng bấm "Lưu", null nếu bấm "Hủy" hoặc đóng dialog.
+  //
   static Future<bool?> showSetCategoryDialog(
     BuildContext context,
     List<String> mangaIds,
@@ -43,6 +48,8 @@ class LibraryDialogs {
                             itemBuilder: (context, index) {
                               final cat = categories[index];
                               final isChecked = tempSelected.contains(cat);
+                              // Mỗi danh mục là một CheckboxListTile
+                              // tick → thêm vào tempSelected, bỏ tick → xóa khỏi tempSelected
                               return CheckboxListTile(
                                 title: Text(
                                   cat,
@@ -79,6 +86,7 @@ class LibraryDialogs {
                     ),
                     ElevatedButton(
                       onPressed: () async {
+                        // Ghi danh mục mới vào SQLite cho từng truyện trong batch
                         for (final id in mangaIds) {
                           await LibraryService.instance.setMangaCategories(
                             id,

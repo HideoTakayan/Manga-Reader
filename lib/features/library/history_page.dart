@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/database_helper.dart';
@@ -9,6 +8,8 @@ import '../../data/drive_service.dart';
 import '../../services/history_service.dart';
 import '../shared/drive_image.dart';
 
+// Trang lịch sử đọc truyện — dùng FutureBuilder thủ công (không dùng StreamBuilder)
+// vì cần gộp 2 nguồn: SQLite local + Firestore cloud trước khi render.
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
@@ -18,7 +19,7 @@ class HistoryPage extends StatefulWidget {
 
 class _HistoryPageState extends State<HistoryPage> {
   List<ReadingHistory> _historyList = [];
-  List<CloudManga> _mangas = []; // Renamed from _comics
+  List<CloudManga> _mangas = []; //
   bool _isLoading = true;
 
   @override
@@ -27,22 +28,19 @@ class _HistoryPageState extends State<HistoryPage> {
     _initData();
   }
 
+  // Load dữ liệu: tải catalog Drive + gộp lịch sử local/cloud
+  // forceRefresh: true khi pull-to-refresh (bỏ cache Drive)
   Future<void> _initData({bool forceRefresh = false}) async {
     if (!mounted) return;
-    // Chỉ hiển thị loading full màn hình khi load lần đầu (chưa có dữ liệu)
     if (!forceRefresh && _historyList.isEmpty) {
       setState(() => _isLoading = true);
     }
 
     try {
-      // 1. Tải danh sách truyện từ Drive (Metadata)
       final mangas = await DriveService.instance.getMangas(
         forceRefresh: forceRefresh,
       );
-
-      // 2. Tải lịch sử đọc và gộp dữ liệu
       final hList = await _fetchAndMergeHistory();
-
       if (mounted) {
         setState(() {
           _mangas = mangas;
@@ -52,28 +50,28 @@ class _HistoryPageState extends State<HistoryPage> {
       }
     } catch (e) {
       debugPrint('History Init Error: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // Gộp lịch sử local (SQLite) và cloud (Firestore)
   Future<List<ReadingHistory>> _fetchAndMergeHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
-    // 1. Lấy lịch sử từ Local DB
+    // Guest dùng userId = 'guest' để lưu local — tránh conflict nếu sau đó đăng nhập
     final localId = userId ?? 'guest';
     final localHistory = await DatabaseHelper.instance.getHistory(localId);
 
-    // 2. Lấy lịch sử từ Cloud (nếu đã đăng nhập)
+    // Chỉ lấy cloud history nếu đã đăng nhập (guest không có Firestore)
     List<ReadingHistory> cloudHistory = [];
     if (userId != null) {
       cloudHistory = await HistoryService.instance.getAllHistory();
     }
 
-    // 3. Chiến lược gộp lịch sử (Merge Strategy):
-    // - Ưu tiên bản ghi có 'updatedAt' mới nhất
-    // - Gộp dựa trên mangaId
+    // Chiến lược gộp theo mangaId:
+    // 1. Đổ local vào Map trước
+    // 2. Duyệt cloud: nếu cùng mangaId → giữ bản có updatedAt mới hơn
+    // 3. Kết quả: mỗi mangaId chỉ có 1 entry duy nhất (mới nhất)
     final historyMap = <String, ReadingHistory>{};
     for (var h in localHistory) {
       historyMap[h.mangaId] = h;
@@ -81,17 +79,18 @@ class _HistoryPageState extends State<HistoryPage> {
     for (var h in cloudHistory) {
       if (historyMap.containsKey(h.mangaId)) {
         if (h.updatedAt.isAfter(historyMap[h.mangaId]!.updatedAt)) {
-          historyMap[h.mangaId] = h;
+          historyMap[h.mangaId] = h; // Cloud mới hơn → ghi đè local
         }
       } else {
-        historyMap[h.mangaId] = h;
+        historyMap[h.mangaId] = h; // Chỉ có trên cloud → thêm vào
       }
     }
 
+    // Sort theo updatedAt giảm dần → mới đọc nhất lên đầu
     final merged = historyMap.values.toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-    // Đồng bộ ngược lại Local DB nếu đã đăng nhập để có dữ liệu offline mới nhất
+    // Đồng bộ ngược lại local DB: đảm bảo offline có dữ liệu mới nhất từ cloud
     if (userId != null && merged.isNotEmpty) {
       for (var h in merged) {
         await DatabaseHelper.instance.saveHistory(h);
@@ -101,31 +100,26 @@ class _HistoryPageState extends State<HistoryPage> {
     return merged;
   }
 
+  // Xóa sạch lịch sử ở cả 2 nơi: SQLite (guest + uid) và Firestore
   Future<void> _handleDeepClear() async {
-    // Hiển thị trạng thái đang xử lý
     if (mounted) setState(() => _isLoading = true);
-
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
     try {
-      // 1. Xoá lịch sử Local
+      // Xóa local: phải xóa cả 'guest' và uid (user có thể đã đọc trước khi đăng nhập)
       await DatabaseHelper.instance.clearHistory('guest');
       if (userId != null) {
         await DatabaseHelper.instance.clearHistory(userId);
       }
-
-      // 2. Xoá lịch sử Cloud trên Firestore
+      // Xóa cloud
       if (userId != null) {
         await HistoryService.instance.clearAllHistory();
       }
-
-      // 3. Cập nhật UI
       if (mounted) {
         setState(() {
           _historyList = [];
           _isLoading = false;
         });
-
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Đã xoá sạch lịch sử!')));
@@ -144,7 +138,8 @@ class _HistoryPageState extends State<HistoryPage> {
   void _showDeleteConfirmDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible:
+          false,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
         title: const Text('Xoá tất cả?'),
@@ -170,6 +165,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Hiện spinner khi _isLoading = true (lần đầu load)
     if (_isLoading) {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -237,6 +233,7 @@ class _HistoryPageState extends State<HistoryPage> {
           itemBuilder: (context, index) {
             final item = _historyList[index];
 
+            // Map mangaId → CloudManga. orElse: truyện đã bị xóa khỏi catalog
             final manga = _mangas.firstWhere(
               (c) => c.id == item.mangaId,
               orElse: () => CloudManga(
@@ -253,10 +250,11 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             );
 
+            // Ẩn dòng nếu không tìm thấy ảnh bìa (truyện đã bị xóa)
             if (manga.coverFileId.isEmpty) return const SizedBox.shrink();
 
             final date =
-                "${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}";
+                '${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}';
 
             return Card(
               color: Theme.of(context).cardColor,
@@ -290,6 +288,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 4),
+                    // Hiện "chapterTitle • Trang X" — lastPageIndex là 0-based nên +1
                     Text(
                       '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
                       style: const TextStyle(
@@ -306,8 +305,10 @@ class _HistoryPageState extends State<HistoryPage> {
                   ],
                 ),
                 onTap: () async {
-                  await context.push('/reader/${item.chapterId}');
-                  _initData();
+                  await context.push(
+                    '/reader/${item.chapterId}',
+                  ); // Chờ user đọc xong
+                  _initData(); // Reload để cập nhật lastPageIndex mới
                 },
               ),
             );

@@ -3,6 +3,8 @@ import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/auth_service.dart';
 
+// Trang đăng nhập / đăng ký .
+// Giao tiếp hoàn toàn qua AuthService, không tự gọi Firebase trực tiếp.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -15,18 +17,21 @@ class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+
   final _auth = AuthService();
 
-  bool isLogin = true;
-  bool _obscure = true;
-  bool _obscureConfirm = true;
+  bool isLogin = true; // true = form đăng nhập, false = form đăng ký
+  bool _obscure = true; // Ẩn/hiện mật khẩu
+  bool _obscureConfirm = true; // Ẩn/hiện ô xác nhận mật khẩu
 
+  // Xử lý submit cho cả 2 luồng (đăng nhập + đăng ký) trong cùng 1 hàm.
   Future<void> _submit() async {
     final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final password = _passCtrl.text.trim();
     final confirm = _confirmCtrl.text.trim();
 
+    // Validate: đăng ký cần thêm tên + xác nhận mật khẩu
     if (!isLogin) {
       if (name.isEmpty ||
           email.isEmpty ||
@@ -50,42 +55,51 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       if (isLogin) {
-        await _auth.login(email, password);
+        await _auth.login(
+          email,
+          password,
+        ); // Firebase signInWithEmailAndPassword
       } else {
-        await _auth.register(email, password, name);
+        await _auth.register(
+          email,
+          password,
+          name,
+        ); // Firebase createUserWithEmailAndPassword
       }
 
       EasyLoading.dismiss();
 
       if (mounted) {
         if (!isLogin) {
+          // Nhắc user kiểm tra email xác minh sau khi đăng ký thành công
           EasyLoading.showSuccess(
             'Đăng ký thành công! Kiểm tra email xác minh.',
           );
         }
-
-        context.go('/');
+        context.go(
+          '/',
+        ); // Điều hướng về Home sau khi đăng nhập/đăng ký thành công
       }
     } catch (e) {
+      // AuthService ném Exception với message tiếng Việt — xóa prefix "Exception: " cho gọn
       EasyLoading.showError(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
+  // Đăng nhập bằng Google OAuth — AuthService xử lý toàn bộ luồng popup + token.
   Future<void> _signInWithGoogle() async {
     EasyLoading.show(status: 'Đang đăng nhập...');
-
     try {
       await _auth.signInWithGoogle();
       EasyLoading.dismiss();
-
-      if (mounted) {
-        context.go('/');
-      }
+      if (mounted) context.go('/');
     } catch (e) {
       EasyLoading.showError(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
+  // Helper tạo InputDecoration đồng nhất cho tất cả TextField trong form.
+  // suffix dùng để gắn nút show/hide mật khẩu.
   InputDecoration _inputDecoration(
     String label,
     IconData icon, {
@@ -109,6 +123,8 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  // Dialog quên mật khẩu: nhập email → gọi AuthService.sendPasswordResetEmail() → Firebase gửi link.
+  // Pre-fill email từ ô email trên form để tiện cho user.
   Future<void> _showForgotPasswordDialog() async {
     final resetEmailCtrl = TextEditingController(text: _emailCtrl.text);
 
@@ -180,14 +196,11 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 🔹 Icon quyển sách
               Icon(
                 Icons.menu_book_rounded,
                 color: Colors.orange.shade400,
                 size: 85,
               ),
-
-              // 🔹 Thêm chữ "MangaReader" ngay dưới icon
               const SizedBox(height: 10),
               Text(
                 'MangaReader',
@@ -208,7 +221,7 @@ class _LoginPageState extends State<LoginPage> {
 
               const SizedBox(height: 25),
 
-              // 🔹 Tiêu đề đăng nhập / đăng ký
+              // Tiêu đề thay đổi theo isLogin — cùng widget, khác nội dung
               Text(
                 isLogin ? 'Đăng nhập' : 'Tạo tài khoản',
                 style: const TextStyle(
@@ -220,6 +233,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 35),
 
+              // Ô tên hiển thị — chỉ hiện khi đăng ký (spread operator [...] để conditional render)
               if (!isLogin) ...[
                 TextField(
                   controller: _nameCtrl,
@@ -240,6 +254,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 18),
 
+              // Ô mật khẩu với nút show/hide (suffixIcon toggle _obscure)
               TextField(
                 controller: _passCtrl,
                 obscureText: _obscure,
@@ -258,7 +273,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 8),
 
-              // 🔹 Nút Quên mật khẩu
+              // Nút "Quên mật khẩu?" — chỉ hiện ở chế độ đăng nhập
               if (isLogin)
                 Align(
                   alignment: Alignment.centerRight,
@@ -280,10 +295,11 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-              const SizedBox(height: 20), // Tăng khoảng cách nếu cần
+              const SizedBox(height: 20),
 
+              // Ô xác nhận mật khẩu — chỉ hiện khi đăng ký
               if (!isLogin) ...[
-                SizedBox(height: 10), // Adjust spacing for register mode
+                const SizedBox(height: 10),
                 TextField(
                   controller: _confirmCtrl,
                   obscureText: _obscureConfirm,
@@ -307,6 +323,7 @@ class _LoginPageState extends State<LoginPage> {
               ] else
                 const SizedBox(height: 8),
 
+              // Nút Đăng nhập / Đăng ký — cùng widget, text thay đổi theo isLogin
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -333,7 +350,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 20),
 
-              // Divider with "hoặc"
+              // Divider "hoặc" phân tách email/password và Google login
               Row(
                 children: [
                   Expanded(child: Divider(color: Colors.grey.shade700)),
@@ -350,10 +367,8 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(child: Divider(color: Colors.grey.shade700)),
                 ],
               ),
-
               const SizedBox(height: 20),
 
-              // Google Sign-In Button
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -380,6 +395,7 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 20),
 
+              // Nút toggle giữa đăng nhập và đăng ký — chỉ cần setState, không cần navigate
               TextButton(
                 onPressed: () => setState(() => isLogin = !isLogin),
                 child: Text(

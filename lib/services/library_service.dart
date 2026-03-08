@@ -2,17 +2,18 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import '../data/database_helper.dart';
 
+// LibraryService: quản lý Categories và Mapping trong SQLite local.
+// Dùng StreamController thủ công vì SQLite không có built-in reactive streams như Firestore.
+// Mỗi khi data thay đổi, service tự push update vào controller để UI rebuild.
 class LibraryService {
   static final LibraryService instance = LibraryService._();
   LibraryService._();
 
   final _dbHelper = DatabaseHelper.instance;
 
-  // StreamController để phát thông báo khi có thay đổi dữ liệu LOCAL
-  final _categoriesController = StreamController<List<String>>.broadcast();
+  final _categoriesController =
+      StreamController<List<String>>.broadcast(); 
   final _mappingController = StreamController<void>.broadcast();
-
-  // 1. Lấy danh sách danh mục (Local DB)
   Stream<List<String>> streamCategories() {
     _refreshCategories();
     return _categoriesController.stream;
@@ -20,36 +21,33 @@ class LibraryService {
 
   Future<void> _refreshCategories() async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'lib_categories',
-      orderBy: 'sortIndex ASC',
-    );
+    final maps = await db.query('lib_categories', orderBy: 'sortIndex ASC');
     final cats = maps.map((m) => m['name'] as String).toList();
     if (cats.isEmpty) {
-      // Nếu không còn danh mục nào, tự động tạo lại một cái tên là 'Mặc định'
+      // Auto-tạo category "Mặc định" nếu user xóa hết — đảm bảo có ít nhất 1 category
       await addCategory('Mặc định');
-      return _refreshCategories();
+      return _refreshCategories(); // Gọi lại để emit category mới
     }
     _categoriesController.add(cats);
   }
 
-  // 2. Thêm/Xóa danh mục (Local DB)
   Future<void> addCategory(String name) async {
     final db = await _dbHelper.database;
     final countMap = await db.rawQuery(
       'SELECT count(*) as count FROM lib_categories',
     );
     final count = countMap.first['count'] as int;
-
-    await db.insert('lib_categories', {
-      'name': name,
-      'sortIndex': count,
-    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    await db.insert(
+      'lib_categories',
+      {'name': name, 'sortIndex': count},
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    ); 
     _refreshCategories();
   }
 
   Future<void> updateCategory(String oldName, String newName) async {
     final db = await _dbHelper.database;
+    // transaction: đảm bảo cả 2 update thành công hoặc cả 2 rollback
     await db.transaction((txn) async {
       await txn.update(
         'lib_categories',
@@ -79,34 +77,32 @@ class LibraryService {
         whereArgs: [orderedNames[i]],
       );
     }
-    await batch.commit(noResult: true);
+    await batch.commit(
+      noResult: true,
+    ); 
     _refreshCategories();
   }
 
   Future<void> removeCategory(String name) async {
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      // Xóa mapping liên quan
       await txn.delete(
         'lib_mapping',
         where: 'categoryName = ?',
         whereArgs: [name],
       );
-      // Xóa tên danh mục
       await txn.delete('lib_categories', where: 'name = ?', whereArgs: [name]);
     });
     _refreshCategories();
     _mappingController.add(null);
   }
 
-  // 3. Lấy danh mục mà 1 truyện đang thuộc về
-  // Vì SQLite không có Stream mặc định theo query like Firestore, ta dùng kết hợp StreamController
   Stream<List<String>> streamMangaCategories(String mangaId) {
     final controller = StreamController<List<String>>();
 
     Future<void> fetch() async {
       final db = await _dbHelper.database;
-      final List<Map<String, dynamic>> maps = await db.query(
+      final maps = await db.query(
         'lib_mapping',
         where: 'mangaId = ?',
         whereArgs: [mangaId],
@@ -116,12 +112,11 @@ class LibraryService {
 
     fetch();
     final subscription = _mappingController.stream.listen((_) => fetch());
-    controller.onCancel = () => subscription.cancel();
-
+    controller.onCancel = () =>
+        subscription.cancel(); 
     return controller.stream;
   }
 
-  // 4. Gán truyện vào các danh mục (Local DB)
   Future<void> setMangaCategories(
     String mangaId,
     List<String> categories,
@@ -143,13 +138,11 @@ class LibraryService {
     _mappingController.add(null);
   }
 
-  // 5. Lấy danh sách mangaId thuộc một danh mục cụ thể
   Stream<List<String>> streamMangasInCategory(String category) {
     final controller = StreamController<List<String>>();
-
     Future<void> fetch() async {
       final db = await _dbHelper.database;
-      final List<Map<String, dynamic>> maps = await db.query(
+      final maps = await db.query(
         'lib_mapping',
         where: 'categoryName = ?',
         whereArgs: [category],
@@ -160,13 +153,12 @@ class LibraryService {
     fetch();
     final subscription = _mappingController.stream.listen((_) => fetch());
     controller.onCancel = () => subscription.cancel();
-
     return controller.stream;
   }
 
   Future<List<String>> getMangaCategories(String mangaId) async {
     final db = await _dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
+    final maps = await db.query(
       'lib_mapping',
       where: 'mangaId = ?',
       whereArgs: [mangaId],

@@ -3,40 +3,29 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/ui_service.dart';
 
+// MainScaffold là shell bao quanh toàn bộ app — chứa bottom navigation bar
+// và nhúng nội dung các nhánh route thông qua StatefulNavigationShell của go_router.
 class MainScaffold extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
-
   const MainScaffold({super.key, required this.navigationShell});
-
   @override
   Widget build(BuildContext context) {
     final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
     final isAdmin =
         currentUserEmail == 'admin@gmail.com' ||
         currentUserEmail == 'anhlasinhvien2k51@gmail.com';
-
-    /*
-      Hệ thống Router Branch cố định:
-      0: Trang chủ
-      1: Thư viện (Custom)
-      2: Theo dõi (Old Library)
-      3: Quản trị
-      4: Cài đặt
-    */
-
-    // Tính toán index hiển thị trên Bottom Bar
     int navIndex;
     if (isAdmin) {
-      // Admin thấy đủ 5 tab -> Index khớp 1:1
       navIndex = navigationShell.currentIndex;
     } else {
-      // User thường chỉ thấy 4 tab: 0, 1, 2, 4
       if (navigationShell.currentIndex == 4) {
-        navIndex = 3; // Cài đặt (Router 4) hiển thị ở vị trí 3 trên UI
+        navIndex = 3; // Router branch 4 (Cài đặt) → UI tab 3 với user thường
       } else if (navigationShell.currentIndex == 3) {
-        navIndex = 0; // Backup, Admin page k nên được truy cập bởi User
+        navIndex =
+            0; 
       } else {
-        navIndex = navigationShell.currentIndex;
+        navIndex =
+            navigationShell.currentIndex; 
       }
     }
 
@@ -114,7 +103,7 @@ class MainScaffold extends StatelessWidget {
                       ],
                     ),
                   )
-                : const SizedBox.shrink(),
+                : const SizedBox.shrink(), 
           );
         },
       ),

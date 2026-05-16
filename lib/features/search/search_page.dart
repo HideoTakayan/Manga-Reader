@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 import 'package:go_router/go_router.dart';
 
 enum GenreFilterState { none, included, excluded }
+
+enum SearchSortMode { updated, views, title }
 
 // Trang tìm kiếm — lọc realtime client-side trên catalog đã load sẵn.
 // Hỗ trợ: tìm theo tên/tác giả + filter thể loại (include/exclude) + filter trạng thái.
@@ -23,9 +27,13 @@ class _SearchPageState extends State<SearchPage> {
   bool isLoading = true;
 
   Map<String, GenreFilterState> genreFilters = {};
-  String? selectedStatus; // 
-  List<String> allGenres = []; 
+  String? selectedStatus;
+  SearchSortMode sortMode = SearchSortMode.updated;
+  List<String> allGenres = [];
   final List<String> allStatuses = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
+
+  // Debounce timer: chỏ 200ms sau khi user dừng gõ mới filter
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -36,24 +44,39 @@ class _SearchPageState extends State<SearchPage> {
     _loadMangas();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
   // Load toàn bộ catalog một lần duy nhất — filter chạy client-side sau đó
   // Dùng Set<String> để dedup genre tự động, rồi sort
   Future<void> _loadMangas({bool forceRefresh = false}) async {
-    final mangas = await DriveService.instance.getMangas(
-      forceRefresh: forceRefresh,
-    );
-    if (mounted) {
-      setState(() {
-        allMangas = mangas;
-        // Gom tất cả genre từ mọi truyện → Set dedup → sort alphabetical
-        final genres = <String>{};
-        for (var c in mangas) {
-          genres.addAll(c.genres);
-        }
-        allGenres = genres.toList()..sort();
-        isLoading = false;
-      });
+    final cached = await CatalogCacheService.instance.getCachedCatalog();
+    if (mounted && cached.isNotEmpty && !forceRefresh) {
+      _applyCatalog(cached, loading: false);
     }
+
+    final mangas = await DriveService.instance.getMangas(forceRefresh: forceRefresh);
+    if (mangas.isNotEmpty) {
+      await CatalogCacheService.instance.saveCatalog(mangas);
+    }
+    if (mounted) {
+      _applyCatalog(mangas.isNotEmpty ? mangas : cached, loading: false);
+    }
+  }
+
+  void _applyCatalog(List<CloudManga> mangas, {required bool loading}) {
+    setState(() {
+      allMangas = mangas;
+      final genres = <String>{};
+      for (var c in mangas) {
+        genres.addAll(c.genres);
+      }
+      allGenres = genres.toList()..sort();
+      isLoading = loading;
+    });
   }
 
   void _showFilterDialog() {
@@ -142,7 +165,7 @@ class _SearchPageState extends State<SearchPage> {
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: filterState == GenreFilterState.none
-                                    ? Colors.grey.withOpacity(0.3)
+                                    ? Colors.grey.withValues(alpha: 0.3)
                                     : Colors.transparent,
                               ),
                             ),
@@ -237,8 +260,13 @@ class _SearchPageState extends State<SearchPage> {
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: TextField(
           autofocus: true,
-          onChanged: (val) =>
-              setState(() => query = val), // Filter realtime mỗi ký tự
+          onChanged: (val) {
+            // Debounce 200ms: chỏ user dừng gõ mới rebuild kết quả
+            if (_debounce?.isActive ?? false) _debounce!.cancel();
+            _debounce = Timer(const Duration(milliseconds: 200), () {
+              setState(() => query = val);
+            });
+          },
           style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
             hintText: 'Tìm truyện...',
@@ -258,25 +286,52 @@ class _SearchPageState extends State<SearchPage> {
             ),
             onPressed: _showFilterDialog,
           ),
+          PopupMenuButton<SearchSortMode>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sắp xếp',
+            initialValue: sortMode,
+            onSelected: (value) => setState(() => sortMode = value),
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: SearchSortMode.updated,
+                child: Text('Mới cập nhật'),
+              ),
+              PopupMenuItem(
+                value: SearchSortMode.views,
+                child: Text('Lượt xem'),
+              ),
+              PopupMenuItem(
+                value: SearchSortMode.title,
+                child: Text('Tên A-Z'),
+              ),
+            ],
+          ),
         ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : Builder(
               builder: (context) {
+                final normalizedQuery = CatalogCacheService.instance.normalize(
+                  query,
+                );
                 final mangas = allMangas.where((c) {
-                  final q = query.toLowerCase();
+                  final searchText = CatalogCacheService.instance.normalize(
+                    '${c.title} ${c.author} ${c.genres.join(' ')}',
+                  );
                   final matchesQuery =
-                      c.title.toLowerCase().contains(q) ||
-                      c.author.toLowerCase().contains(q);
+                      normalizedQuery.isEmpty ||
+                      searchText.contains(normalizedQuery);
 
                   bool matchesGenre = true;
                   if (genreFilters.isNotEmpty) {
                     matchesGenre = genreFilters.entries.every((entry) {
-                      if (entry.value == GenreFilterState.included)
+                      if (entry.value == GenreFilterState.included) {
                         return c.genres.contains(entry.key);
-                      if (entry.value == GenreFilterState.excluded)
+                      }
+                      if (entry.value == GenreFilterState.excluded) {
                         return !c.genres.contains(entry.key);
+                      }
                       return true;
                     });
                   }
@@ -286,6 +341,18 @@ class _SearchPageState extends State<SearchPage> {
 
                   return matchesQuery && matchesGenre && matchesStatus;
                 }).toList();
+
+                switch (sortMode) {
+                  case SearchSortMode.updated:
+                    mangas.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                    break;
+                  case SearchSortMode.views:
+                    mangas.sort((a, b) => b.viewCount.compareTo(a.viewCount));
+                    break;
+                  case SearchSortMode.title:
+                    mangas.sort((a, b) => a.title.compareTo(b.title));
+                    break;
+                }
 
                 if (mangas.isEmpty) {
                   return RefreshIndicator(
@@ -345,7 +412,7 @@ class _SearchPageState extends State<SearchPage> {
                                           .textTheme
                                           .bodySmall
                                           ?.color
-                                          ?.withOpacity(0.7),
+                                          ?.withValues(alpha: 0.7),
                                     ),
                               ),
                           ],

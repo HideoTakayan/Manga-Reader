@@ -138,8 +138,7 @@ class _HistoryPageState extends State<HistoryPage> {
   void _showDeleteConfirmDialog() {
     showDialog(
       context: context,
-      barrierDismissible:
-          false,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).cardColor,
         title: const Text('Xoá tất cả?'),

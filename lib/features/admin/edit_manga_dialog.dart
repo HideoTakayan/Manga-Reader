@@ -108,8 +108,9 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
       List<String> changes = [];
       if (_newCoverFile != null) changes.add('Ảnh bìa mới');
       if (_status != widget.manga.status) changes.add('Trạng thái: $_status');
-      if (_titleController.text.trim() != widget.manga.title)
+      if (_titleController.text.trim() != widget.manga.title) {
         changes.add('Đổi tên truyện');
+      }
 
       if (changes.isNotEmpty) {
         await FirebaseFirestore.instance.collection('notifications').add({

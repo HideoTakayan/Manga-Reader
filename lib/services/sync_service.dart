@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../data/database_helper.dart';
 import 'history_service.dart';
 
@@ -12,7 +13,8 @@ class SyncService {
 
   bool _isSyncing = false;
 
-  /// Đẩy tất cả history chưa sync lên Firestore
+  /// Đẩy tất cả history chưa sync lên Firestore — xử lý theo từng batch 10 items.
+  /// Tránh Firestore rate-limit khi có nhiều items tích lũy offline.
   Future<void> syncPendingHistory() async {
     if (_isSyncing) return;
     final user = FirebaseAuth.instance.currentUser;
@@ -25,31 +27,38 @@ class SyncService {
         user.uid,
       );
       if (unsynced.isEmpty) return;
-      print(
+      debugPrint(
         '🔄 SyncService: Found ${unsynced.length} pending items. Syncing...',
       );
 
-      // 2. Chạy song song tất cả items — Future.wait đợi tất cả hoàn thành
-      final List<Future> syncTasks = unsynced.map((history) async {
-        try {
-          await HistoryService.instance.saveHistory(
-            history,
-          ); // Đẩy lên Firestore
-          // 3. Đánh dấu synced trong SQLite sau khi thành công
-          await DatabaseHelper.instance.markHistoryAsSynced(
-            user.uid,
-            history.mangaId,
-          );
-        } catch (e) {
-          print('❌ Sync failed for ${history.mangaId}: $e');
-          // Không markAsSynced nếu lỗi → sẽ retry lần sau
+      // 2. Xử lý theo batch 10 items — tránh 50+ Firestore writes đồng thời
+      const batchSize = 10;
+      int synced = 0;
+      for (int i = 0; i < unsynced.length; i += batchSize) {
+        final chunk = unsynced.skip(i).take(batchSize).toList();
+        await Future.wait(
+          chunk.map((history) async {
+            try {
+              await HistoryService.instance.saveHistory(history); // Firestore
+              await DatabaseHelper.instance.markHistoryAsSynced(
+                user.uid,
+                history.mangaId,
+              );
+              synced++;
+            } catch (e) {
+              debugPrint('❌ Sync failed for ${history.mangaId}: $e');
+              // Không markAsSynced nếu lỗi → retry lần sau
+            }
+          }),
+        );
+        // Delay nhỏ giữa các batch — giảm tải Firestore
+        if (i + batchSize < unsynced.length) {
+          await Future.delayed(const Duration(milliseconds: 300));
         }
-      }).toList();
-
-      await Future.wait(syncTasks);
-      print('✅ SyncService: Sync cycle completed.');
+      }
+      debugPrint('✅ SyncService: Synced $synced/${unsynced.length} items.');
     } catch (e) {
-      print('❌ SyncService Error: $e');
+      debugPrint('❌ SyncService Error: $e');
     } finally {
       _isSyncing = false; // Luôn unlock, kể cả khi có exception
     }

@@ -32,6 +32,8 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+**/build/reports/
+**/.gradle/
 
 # Symbolication related
 app.*.symbols
@@ -56,11 +58,16 @@ app.*.map.json
 lib/config/service_account_credentials.dart
 lib/config/service_account.json
 
-# API Keys
+# API Keys and Environment Variables
 lib/config/drive_config.dart
+*.env
+.env
+android/key.properties
+android/key.jks
 
 # Firebase configuration
 lib/firebase_options.dart
+google-services.json
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 

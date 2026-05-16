@@ -2,19 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/follow_service.dart';
-import '../shared/drive_image.dart';
 import '../../data/models_cloud.dart';
 import '../../data/models.dart';
 import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/history_service.dart';
-import '../../services/interaction_service.dart';
 import '../../services/library_service.dart';
+import '../../services/library_status_service.dart';
 import '../../services/download_service.dart';
 import '../../services/folder_service.dart';
 import '../../core/utils/chapter_sort_helper.dart';
 import '../../core/utils/chapter_utils.dart';
 import '../shared/library_dialogs.dart';
+import 'widgets/chapter_list_sliver.dart';
+import 'widgets/manga_header_section.dart';
+import 'widgets/manga_description_section.dart';
 
 class MangaDetailPage extends StatefulWidget {
   final String mangaId;
@@ -26,14 +28,12 @@ class MangaDetailPage extends StatefulWidget {
 
 class _MangaDetailPageState extends State<MangaDetailPage> {
   ReadingHistory? _history;
+  ReaderProgress? _readerProgress;
+  List<ReaderBookmark> _bookmarks = [];
+  LibraryStatusEntry? _libraryStatus;
   CloudManga? _manga;
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
-  bool _isDescriptionExpanded = false;
-
-  // Dữ liệu giả cho phần bình luận (chức năng comment chưa hoàn thiện)
-  List<String> comments = [];
-  final TextEditingController _commentController = TextEditingController();
 
   // Helper chuyển đổi CloudManga -> Local Manga
   Manga _cloudToLocal(CloudManga cm) {
@@ -55,7 +55,6 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
   @override
   void dispose() {
-    _commentController.dispose();
     super.dispose();
   }
 
@@ -123,23 +122,26 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         // 🔧 SỬA LỖI: Loại bỏ các chương tải xuống bị trùng lặp (phòng trường hợp DB có duplicate)
         final Map<String, Map<String, dynamic>> uniqueDownloads = {};
         for (final d in downloadedMaps) {
-          final chapterId = d['chapterId'] as String;
+          final chapterId = _readString(d, 'chapterId');
+          if (chapterId.isEmpty) continue;
           // Giữ entry mới nhất (downloadDate cao nhất)
           if (!uniqueDownloads.containsKey(chapterId) ||
-              (d['downloadDate'] ?? 0) >
-                  (uniqueDownloads[chapterId]!['downloadDate'] ?? 0)) {
+              _readInt(d, 'downloadDate') >
+                  _readInt(uniqueDownloads[chapterId]!, 'downloadDate')) {
             uniqueDownloads[chapterId] = d;
           }
         }
 
         localChaptersList = uniqueDownloads.values.map((d) {
+          final chapterId = _readString(d, 'chapterId');
+          final chapterTitle = _readString(d, 'chapterTitle');
           return CloudChapter(
-            id: d['chapterId'],
-            title: d['chapterTitle'] ?? d['chapterId'],
-            fileId: d['chapterId'],
+            id: chapterId,
+            title: chapterTitle.isEmpty ? chapterId : chapterTitle,
+            fileId: chapterId,
             fileType: 'cbz',
             uploadedAt: DateTime.fromMillisecondsSinceEpoch(
-              d['downloadDate'] ?? 0,
+              _readInt(d, 'downloadDate'),
             ),
             viewCount: 0,
           );
@@ -148,6 +150,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         // Sắp xếp số tăng dần (Khớp với Chế độ Trực tuyến)
         localChaptersList = ChapterSortHelper.sort(localChaptersList);
       }
+
+      await _fetchLocalReaderData();
 
       // Hiển thị dữ liệu cục bộ ngay lập tức nếu có
       if (localData != null && mounted) {
@@ -179,6 +183,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       // Lưu thông tin mới vào CSDL cục bộ
       await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(manga));
       await _fetchHistory();
+      await _fetchBookmarks();
 
       // 🔧 SỬA LỖI: Loại bỏ trùng lặp Nâng cao & Sắp xếp (Tập trung)
       // Gọi helper để xử lý logic gộp và sắp xếp nhất quán
@@ -222,19 +227,28 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   Future<void> _fetchHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     ReadingHistory? history;
+    final localUserId = userId ?? 'guest';
 
-    // Bước 1: Thử lấy dữ liệu từ Cloud Firestore (nếu người dùng đã đăng nhập)
-    if (userId != null) {
-      history = await HistoryService.instance.getHistoryForManga(
-        widget.mangaId,
+    // Ưu tiên local để tiết kiệm Firebase read.
+    history = await DatabaseHelper.instance.getHistoryForManga(
+      localUserId,
+      widget.mangaId,
+    );
+
+    if (history == null && _readerProgress != null) {
+      history = ReadingHistory(
+        userId: localUserId,
+        mangaId: widget.mangaId,
+        chapterId: _readerProgress!.chapterId,
+        chapterTitle: _chapterTitleFor(_readerProgress!.chapterId),
+        lastPageIndex: _readerProgress!.pageIndex,
+        updatedAt: _readerProgress!.updatedAt,
       );
     }
 
-    // Bước 2: Nếu không có trên Cloud (hoặc guest), tìm trong Local Database
-    if (history == null) {
-      final localUserId = userId ?? 'guest';
-      history = await DatabaseHelper.instance.getHistoryForManga(
-        localUserId,
+    // Cloud chỉ là fallback khi máy chưa có dữ liệu local.
+    if (history == null && userId != null) {
+      history = await HistoryService.instance.getHistoryForManga(
         widget.mangaId,
       );
     }
@@ -244,6 +258,42 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         _history = history;
       });
     }
+  }
+
+  Future<void> _fetchBookmarks() async {
+    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
+      widget.mangaId,
+    );
+    if (mounted) {
+      setState(() => _bookmarks = bookmarks);
+    }
+  }
+
+  Future<void> _fetchLocalReaderData() async {
+    final progress = await DatabaseHelper.instance.getReaderProgress(
+      widget.mangaId,
+    );
+    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
+      widget.mangaId,
+    );
+    final libraryStatus = await LibraryStatusService.instance.getEntry(
+      widget.mangaId,
+    );
+    if (!mounted) return;
+
+    setState(() {
+      _readerProgress = progress;
+      _bookmarks = bookmarks;
+      _libraryStatus = libraryStatus;
+    });
+    await _fetchHistory();
+  }
+
+  String _chapterTitleFor(String chapterId) {
+    for (final chapter in _chapters) {
+      if (chapter.id == chapterId) return chapter.title;
+    }
+    return 'Chương $chapterId';
   }
 
   @override
@@ -276,181 +326,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               slivers: [
                 // 1. Phần Đầu Trang (Ảnh bìa + Thông tin chính)
                 SliverToBoxAdapter(
-                  child: Stack(
-                    children: [
-                      // Nền mờ
-                      Positioned.fill(
-                        child: DriveImage(
-                          fileId: manga.coverFileId,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      // Lớp phủ làm tối
-                      Positioned.fill(
-                        child: Container(color: Colors.black.withOpacity(0.7)),
-                      ),
-                      // Gradient che dưới (Hòa vào nền Scaffold)
-                      Positioned.fill(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                theme.scaffoldBackgroundColor,
-                              ],
-                              stops: const [0.0, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Nội dung chính
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 80, 16, 20),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Ảnh bìa chính
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: SizedBox(
-                                width: 120,
-                                height: 160,
-                                child: DriveImage(
-                                  fileId: manga.coverFileId,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            // Thông tin bên phải
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    manga.title,
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      color: Colors
-                                          .white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.person_outline,
-                                        size: 16,
-                                        color: Colors.white70,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          manga.author,
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 13,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.info_outline,
-                                        size: 16,
-                                        color: Colors.white70,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        manga.status,
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.list,
-                                        size: 16,
-                                        color: Colors.white70,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Chương ${chapters.length}',
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  StreamBuilder<Map<String, int>>(
-                                    stream: InteractionService.instance
-                                        .streamMangaStats(widget.mangaId),
-                                    builder: (context, statsSnapshot) {
-                                      final stats =
-                                          statsSnapshot.data ??
-                                          {
-                                            'viewCount': manga.viewCount,
-                                            'likeCount': manga.likeCount,
-                                          };
-                                      final viewCount = stats['viewCount'] ?? 0;
-                                      final likeCount = stats['likeCount'] ?? 0;
-
-                                      return Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.remove_red_eye_outlined,
-                                            size: 16,
-                                            color: Colors.white70,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '$viewCount',
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 16),
-                                          const Icon(
-                                            Icons.favorite_border,
-                                            size: 16,
-                                            color: Colors.white70,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _formatCount(likeCount),
-                                            style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                  child: MangaHeaderSection(
+                    manga: manga,
+                    chaptersLength: chapters.length,
                   ),
                 ),
 
@@ -488,7 +366,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               color: Colors.white10,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
                             ),
                             alignment: Alignment.center,
@@ -577,346 +455,23 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
                 // 4. Phần giới thiệu nội dung truyện
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Giới Thiệu',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _isDescriptionExpanded = !_isDescriptionExpanded;
-                            });
-                          },
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                manga.description,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  height: 1.4,
-                                  color: Colors.white70,
-                                ),
-                                maxLines: _isDescriptionExpanded ? null : 4,
-                                overflow: _isDescriptionExpanded
-                                    ? TextOverflow.visible
-                                    : TextOverflow.ellipsis,
-                              ),
-                              if (manga.description.length > 150)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    _isDescriptionExpanded
-                                        ? 'Rút gọn'
-                                        : 'Xem thêm...',
-                                    style: TextStyle(
-                                      color: theme.primaryColor,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: MangaDescriptionSection(
+                    description: manga.description,
                   ),
                 ),
 
                 const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
                 // 5. Danh sách các chương (Hiển thị dạng List)
-                SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final ch = displayChapters[index];
-                    return InkWell(
-                      onTap: () async {
-                        await context.push('/reader/${ch.id}');
-                        // Khi quay lại, làm mới toàn bộ dữ liệu để cập nhật views/history
-                        _fetchData();
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(
-                              color: theme.dividerColor.withOpacity(0.1),
-                            ),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                ch.title,
-                                style: theme.textTheme.bodyLarge,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  _formatDate(ch.uploadedAt),
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                                const SizedBox(height: 2),
-                                // Sử dụng StreamBuilder để cập nhật lượt xem thời gian thực cho từng chapter
-                                StreamBuilder<Map<String, int>>(
-                                  stream: InteractionService.instance
-                                      .streamChapterViews(widget.mangaId),
-                                  builder: (context, snapshot) {
-                                    final viewsMap = snapshot.data ?? {};
-                                    final views =
-                                        viewsMap[ch.id] ?? ch.viewCount;
-
-                                    return Row(
-                                      children: [
-                                        Icon(
-                                          Icons.remove_red_eye,
-                                          size: 10,
-                                          color:
-                                              theme.textTheme.bodySmall?.color,
-                                        ),
-                                        const SizedBox(width: 2),
-                                        Text(
-                                          '$views',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(fontSize: 10),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                            const SizedBox(width: 12),
-                            // Download Icon với 3 trạng thái
-                            StreamBuilder<Map<String, DownloadTask>>(
-                              stream: DownloadService.instance.downloadStream,
-                              builder: (context, downloadSnapshot) {
-                                final task = downloadSnapshot.data?[ch.id];
-
-                                // Nếu đang tải
-                                if (task?.status ==
-                                    DownloadStatus.downloading) {
-                                  return SizedBox(
-                                    width: 32,
-                                    height: 32,
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        CircularProgressIndicator(
-                                          value: task!.progress,
-                                          strokeWidth: 3,
-                                          valueColor:
-                                              const AlwaysStoppedAnimation<
-                                                Color
-                                              >(Colors.blue),
-                                          backgroundColor: Colors.grey
-                                              .withOpacity(0.3),
-                                        ),
-                                        Text(
-                                          '${(task.progress * 100).toInt()}%',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                            color:
-                                                theme.brightness ==
-                                                    Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-
-                                // Nếu đang chờ trong queue
-                                if (task?.status == DownloadStatus.queued) {
-                                  return SizedBox(
-                                    width: 32,
-                                    height: 32,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      valueColor:
-                                          const AlwaysStoppedAnimation<Color>(
-                                            Colors.orange,
-                                          ),
-                                      backgroundColor: Colors.grey.withOpacity(
-                                        0.3,
-                                      ),
-                                    ),
-                                  );
-                                }
-
-                                // Nếu bị tạm dừng
-                                if (task?.status == DownloadStatus.paused) {
-                                  return IconButton(
-                                    icon: const Icon(
-                                      Icons.pause_circle,
-                                      size: 28,
-                                      color: Colors.orange,
-                                    ),
-                                    onPressed: () {
-                                      DownloadService.instance.resumeDownload(
-                                        ch.id,
-                                      );
-                                    },
-                                  );
-                                }
-
-                                // Nếu lỗi
-                                if (task?.status == DownloadStatus.failed) {
-                                  return IconButton(
-                                    icon: const Icon(
-                                      Icons.error,
-                                      size: 28,
-                                      color: Colors.red,
-                                    ),
-                                    onPressed: () {
-                                      DownloadService.instance.retryDownload(
-                                        ch.id,
-                                      );
-                                    },
-                                  );
-                                }
-
-                                // Kiểm tra đã tải chưa
-                                return FutureBuilder<bool>(
-                                  future: DownloadService.instance.isDownloaded(
-                                    ch.id,
-                                    mangaId: widget
-                                        .mangaId, // Sử dụng bộ đệm (cache) để kiểm tra nhanh hơn
-                                  ),
-                                  builder: (context, snapshot) {
-                                    final isDownloaded = snapshot.data ?? false;
-
-                                    return IconButton(
-                                      icon: Icon(
-                                        isDownloaded
-                                            ? Icons.check_circle
-                                            : Icons.download_outlined,
-                                        size: 28,
-                                        color: isDownloaded
-                                            ? Colors.green
-                                            : theme.iconTheme.color
-                                                  ?.withOpacity(0.6),
-                                      ),
-                                      onPressed: () async {
-                                        if (isDownloaded) {
-                                          // Xóa tải xuống
-                                          final confirm = await showDialog<bool>(
-                                            context: context,
-                                            builder: (context) => AlertDialog(
-                                              backgroundColor: theme.cardColor,
-                                              title: Text(
-                                                'Xóa chương đã tải?',
-                                                style:
-                                                    theme.textTheme.titleLarge,
-                                              ),
-                                              content: Text(
-                                                'Bạn có chắc muốn xóa "${ch.title}" khỏi bộ nhớ máy?',
-                                                style:
-                                                    theme.textTheme.bodyMedium,
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        false,
-                                                      ),
-                                                  child: const Text('Hủy'),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                        context,
-                                                        true,
-                                                      ),
-                                                  child: const Text(
-                                                    'Xóa',
-                                                    style: TextStyle(
-                                                      color: Colors.red,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-
-                                          if (confirm == true) {
-                                            await DownloadService.instance
-                                                .deleteDownload(ch.id);
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Đã xóa chương',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        } else {
-                                          // Tải chương
-                                          await DownloadService.instance
-                                              .addToQueue(
-                                                chapterId: ch.id,
-                                                mangaId: widget.mangaId,
-                                                mangaTitle: manga.title,
-                                                chapterTitle: ch.title,
-                                                fileType: ch.fileType,
-                                                mangaInfo: _manga != null
-                                                    ? _cloudToLocal(_manga!)
-                                                    : null,
-                                              );
-
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Đã thêm vào hàng đợi tải',
-                                                ),
-                                                backgroundColor: Colors.green,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }, childCount: displayChapters.length),
+                ChapterListSliver(
+                  displayChapters: displayChapters,
+                  mangaId: widget.mangaId,
+                  manga: manga,
+                  localMangaInfo: _manga != null
+                      ? _cloudToLocal(_manga!)
+                      : null,
+                  theme: theme,
+                  onChapterRead: _fetchData,
                 ),
 
                 // Khoảng trống dưới cùng để không bị che bởi Bottom Dock
@@ -952,7 +507,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             style: theme.textTheme.titleLarge,
                           ),
                           content: Text(
-                            'Tải ${chapters.length} chương của "${manga.title}" về máy?',
+                            'Tải ${chapters.length} chương của "${manga.title}" về máy?\n\n'
+                            'Lưu ý: Quá trình này có thể tốn khoảng ${(chapters.length * 5)} MB dung lượng trống.',
                             style: theme.textTheme.bodyMedium,
                           ),
                           actions: [
@@ -1035,7 +591,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       }
                     },
                   ),
-                  // Nút Đặt vào Thư viện (Folder) 
+                  // Nút Đặt vào Thư viện (Folder)
                   StreamBuilder<List<String>>(
                     stream: LibraryService.instance.streamMangaCategories(
                       widget.mangaId,
@@ -1149,7 +705,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     end: Alignment.topCenter,
                     colors: [
                       theme.scaffoldBackgroundColor, // Mờ dần theo nền
-                      theme.scaffoldBackgroundColor.withOpacity(0.0),
+                      theme.scaffoldBackgroundColor.withValues(alpha: 0.0),
                     ],
                     stops: const [0.6, 1.0],
                   ),
@@ -1162,7 +718,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     borderRadius: BorderRadius.circular(30),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -1178,7 +734,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           children: [
                             Text('Đọc Đến', style: theme.textTheme.bodySmall),
                             Text(
-                              _history != null
+                              _readerProgress != null
+                                  ? '${_chapterTitleFor(_readerProgress!.chapterId)} • ${_formatDate(_readerProgress!.updatedAt)}'
+                                  : _history != null
                                   ? '${_history!.chapterTitle ?? "Chương ${_history!.chapterId}"} • ${_formatDate(_history!.updatedAt)}'
                                   : (chapters.isNotEmpty
                                         ? 'Chưa đọc'
@@ -1196,7 +754,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       ElevatedButton(
                         onPressed: () async {
                           String? chapterIdToOpen;
-                          if (_history != null) {
+                          if (_readerProgress != null &&
+                              _readerProgress!.chapterId.isNotEmpty) {
+                            chapterIdToOpen = _readerProgress!.chapterId;
+                          } else if (_history != null) {
                             chapterIdToOpen = _history!.chapterId;
                           } else if (chapters.isNotEmpty) {
                             // Nếu chưa đọc, bắt đầu từ chương đầu tiên (giả định list đã sort)
@@ -1205,7 +766,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
                           if (chapterIdToOpen != null) {
                             await context.push('/reader/$chapterIdToOpen');
-                            _fetchHistory(); // Làm mới khi quay lại
+                            await _fetchLocalReaderData();
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -1220,14 +781,62 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           ),
                         ),
                         child: Text(
-                          _history != null ? 'Đọc Tiếp' : 'Bắt Đầu Đọc',
+                          _readerProgress != null || _history != null
+                              ? 'Đọc Tiếp'
+                              : 'Bắt Đầu Đọc',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Icon(
-                        Icons.bookmark_border,
-                        color: theme.iconTheme.color?.withOpacity(0.6),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          IconButton(
+                            tooltip: 'Bookmark',
+                            icon: Icon(
+                              _bookmarks.isEmpty
+                                  ? Icons.bookmark_border
+                                  : Icons.bookmarks,
+                              color: _bookmarks.isEmpty
+                                  ? theme.iconTheme.color?.withValues(
+                                      alpha: 0.6,
+                                    )
+                                  : Colors.amber,
+                            ),
+                            onPressed: () => _showBookmarkList(theme),
+                          ),
+                          if (_bookmarks.isNotEmpty)
+                            Positioned(
+                              top: 3,
+                              right: 3,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  _bookmarks.length.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      IconButton(
+                        tooltip: 'Trạng thái đọc',
+                        icon: Icon(
+                          _statusIcon(_libraryStatus?.status),
+                          color: Colors.lightBlueAccent,
+                        ),
+                        onPressed: () => _showReadingStatusDialog(theme),
                       ),
                     ],
                   ),
@@ -1248,10 +857,183 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     return 'Mới đây';
   }
 
-  String _formatCount(int count) {
-    if (count < 1000) return count.toString();
-    if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}k';
-    return '${(count / 1000000).toStringAsFixed(1)}m';
+  void _showBookmarkList(ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.cardColor,
+      showDragHandle: true,
+      builder: (context) {
+        if (_bookmarks.isEmpty) {
+          return const SizedBox(
+            height: 180,
+            child: Center(child: Text('Chưa có bookmark nào')),
+          );
+        }
+
+        return SafeArea(
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: _bookmarks.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final bookmark = _bookmarks[index];
+              return ListTile(
+                leading: const Icon(Icons.bookmark, color: Colors.amber),
+                title: Text(
+                  _chapterTitleFor(bookmark.chapterId),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  'Trang ${bookmark.pageIndex + 1} • ${_formatDate(bookmark.updatedAt)}',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Xóa bookmark',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    await DatabaseHelper.instance.deleteBookmark(bookmark.id);
+                    await _fetchBookmarks();
+                    if (context.mounted) Navigator.pop(context);
+                    if (mounted) _showBookmarkList(theme);
+                  },
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await context.push('/reader/${bookmark.chapterId}');
+                  await _fetchLocalReaderData();
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showReadingStatusDialog(ThemeData theme) async {
+    final selected = await showModalBottomSheet<MangaReadingStatus>(
+      context: context,
+      backgroundColor: theme.cardColor,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...MangaReadingStatus.values.map((status) {
+                final isSelected = _libraryStatus?.status == status;
+                return ListTile(
+                  leading: Icon(
+                    _statusIcon(status),
+                    color: isSelected ? Colors.orange : null,
+                  ),
+                  title: Text(_statusLabel(status)),
+                  trailing: isSelected ? const Icon(Icons.check) : null,
+                  onTap: () => Navigator.pop(context, status),
+                );
+              }),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.sell_outlined),
+                title: const Text('Tag tùy chỉnh'),
+                subtitle: Text(
+                  (_libraryStatus?.tags.isNotEmpty ?? false)
+                      ? _libraryStatus!.tags.join(', ')
+                      : 'Chưa có tag',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  Future.microtask(_showTagsDialog);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected == null) return;
+
+    await LibraryStatusService.instance.setStatus(widget.mangaId, selected);
+    await _fetchLocalReaderData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Đã đặt trạng thái: ${_statusLabel(selected)}')),
+    );
+  }
+
+  Future<void> _showTagsDialog() async {
+    final controller = TextEditingController(
+      text: _libraryStatus?.tags.join(', ') ?? '',
+    );
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tag tùy chỉnh'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Ví dụ: hay, đọc sau, ưu tiên',
+            helperText: 'Phân tách tag bằng dấu phẩy',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+
+    final tags = result
+        .split(',')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList();
+    await LibraryStatusService.instance.setTags(widget.mangaId, tags);
+    await _fetchLocalReaderData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Đã cập nhật tag')),
+    );
+  }
+
+  IconData _statusIcon(MangaReadingStatus? status) {
+    switch (status) {
+      case MangaReadingStatus.completed:
+        return Icons.done_all;
+      case MangaReadingStatus.paused:
+        return Icons.pause_circle_outline;
+      case MangaReadingStatus.dropped:
+        return Icons.remove_circle_outline;
+      case MangaReadingStatus.planToRead:
+        return Icons.schedule;
+      case MangaReadingStatus.reading:
+      case null:
+        return Icons.menu_book_outlined;
+    }
+  }
+
+  String _statusLabel(MangaReadingStatus status) {
+    switch (status) {
+      case MangaReadingStatus.reading:
+        return 'Đang đọc';
+      case MangaReadingStatus.completed:
+        return 'Đã đọc xong';
+      case MangaReadingStatus.paused:
+        return 'Tạm dừng';
+      case MangaReadingStatus.dropped:
+        return 'Dropped';
+      case MangaReadingStatus.planToRead:
+        return 'Đọc sau';
+    }
   }
 
   void _showSetCategoryDialog(
@@ -1357,5 +1139,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         SnackBar(content: Text('Đã xóa $deletedCount chương tải xuống')),
       );
     }
+  }
+
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
+  }
+
+  int _readInt(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

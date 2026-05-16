@@ -20,11 +20,32 @@ class DownloadQueuePage extends StatelessWidget {
             stream: DownloadService.instance.downloadStream,
             builder: (context, snapshot) {
               final queue = snapshot.data ?? {};
+              final hasFailed = queue.values.any(
+                (t) => t.status == DownloadStatus.failed,
+              );
+              if (!hasFailed) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Thử lại tất cả lỗi',
+                onPressed: () {
+                  DownloadService.instance.retryAllFailed();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Đã thử lại tất cả tải xuống bị lỗi'),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+          StreamBuilder<Map<String, DownloadTask>>(
+            stream: DownloadService.instance.downloadStream,
+            builder: (context, snapshot) {
+              final queue = snapshot.data ?? {};
               final hasPaused = queue.values.any(
                 (t) => t.status == DownloadStatus.paused,
               );
-              if (!hasPaused)
-                return const SizedBox.shrink(); 
+              if (!hasPaused) return const SizedBox.shrink();
               return IconButton(
                 icon: const Icon(Icons.play_arrow),
                 tooltip: 'Tiếp tục tất cả',
@@ -114,7 +135,7 @@ class DownloadQueuePage extends StatelessWidget {
                   Icon(
                     Icons.download_done,
                     size: 64,
-                    color: theme.iconTheme.color?.withOpacity(0.3),
+                    color: theme.iconTheme.color?.withValues(alpha: 0.3),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -181,7 +202,7 @@ class _MangaDownloadGroup extends StatelessWidget {
         children: [
           // Header: bấm → navigate đến trang chi tiết truyện
           InkWell(
-            onTap: () => context.push('/manga/$mangaId'),
+            onTap: () => context.push('/detail/$mangaId'),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -326,7 +347,7 @@ class _ChapterDownloadItem extends StatelessWidget {
                 value: task.progress, // 0.0 → 1.0
                 strokeWidth: 4,
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                backgroundColor: Colors.grey.withOpacity(0.2),
+                backgroundColor: Colors.grey.withValues(alpha: 0.2),
               ),
               Text(
                 '${(task.progress * 100).toInt()}%',
@@ -346,7 +367,7 @@ class _ChapterDownloadItem extends StatelessWidget {
           child: CircularProgressIndicator(
             strokeWidth: 3,
             valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
-            backgroundColor: Colors.grey.withOpacity(0.2),
+            backgroundColor: Colors.grey.withValues(alpha: 0.2),
           ),
         );
       case DownloadStatus.paused:
@@ -356,7 +377,7 @@ class _ChapterDownloadItem extends StatelessWidget {
       default:
         return Icon(
           Icons.download,
-          color: theme.iconTheme.color?.withOpacity(0.6),
+          color: theme.iconTheme.color?.withValues(alpha: 0.6),
           size: 32,
         );
     }
@@ -435,8 +456,9 @@ class _ChapterDownloadItem extends StatelessWidget {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 }

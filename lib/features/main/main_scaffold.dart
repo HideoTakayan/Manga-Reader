@@ -2,32 +2,54 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/ui_service.dart';
+import '../../config/admin_config.dart';
+
+// ── Branch indices trong GoRouter StatefulNavigationShell ──────────────────
+// Thứ tự này phải khớp với thứ tự khai báo branches trong app_router.dart.
+// Branches: 0=home, 1=library, 2=follow, 3=admin(admin only), 4=settings
+abstract class _Branch {
+  static const admin = 3; // Chỉ tồn tại cho Admin users
+  static const settings = 4; // Branch 4 với Admin, branch 3 với User thường
+}
+
+// ── UI tab indices (NavigationBar) ─────────────────────────────────────────
+// Admin thấy 5 tabs: Home, Library, Follow, Admin, Settings.
+// User thấy 4 tabs:  Home, Library, Follow, Settings.
+// Tabs: 0=home, 1=library, 2=follow, 3=admin|settings, 4=settings(admin only)
+abstract class _Tab {
+  static const adminOrSettings = 3; // Admin tab cho admin / Settings cho user
+}
 
 // MainScaffold là shell bao quanh toàn bộ app — chứa bottom navigation bar
 // và nhúng nội dung các nhánh route thông qua StatefulNavigationShell của go_router.
 class MainScaffold extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
   const MainScaffold({super.key, required this.navigationShell});
+
+  /// Chuyển router branch index → UI tab index để highlight đúng tab.
+  int _branchToTab(int branchIndex, bool isAdmin) {
+    if (isAdmin) return branchIndex; // Admin: 1-to-1 mapping
+    // User thường: branch 3 (admin) không tồn tại, branch 4 (settings) → tab 3
+    if (branchIndex == _Branch.settings) return _Tab.adminOrSettings;
+    if (branchIndex == _Branch.admin) {
+      return 0; // fallback: admin route → home tab
+    }
+    return branchIndex;
+  }
+
+  /// Chuyển UI tab index → router branch index khi user tap tab.
+  int _tabToBranch(int tabIndex, bool isAdmin) {
+    if (isAdmin) return tabIndex; // Admin: 1-to-1 mapping
+    // User thường: tab 3 (Settings) → branch 4 (settings)
+    if (tabIndex == _Tab.adminOrSettings) return _Branch.settings;
+    return tabIndex;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
-    final isAdmin =
-        currentUserEmail == 'admin@gmail.com' ||
-        currentUserEmail == 'anhlasinhvien2k51@gmail.com';
-    int navIndex;
-    if (isAdmin) {
-      navIndex = navigationShell.currentIndex;
-    } else {
-      if (navigationShell.currentIndex == 4) {
-        navIndex = 3; // Router branch 4 (Cài đặt) → UI tab 3 với user thường
-      } else if (navigationShell.currentIndex == 3) {
-        navIndex =
-            0; 
-      } else {
-        navIndex =
-            navigationShell.currentIndex; 
-      }
-    }
+    final isAdmin = AdminConfig.isAdmin(currentUserEmail);
+    final navIndex = _branchToTab(navigationShell.currentIndex, isAdmin);
 
     return Scaffold(
       body: navigationShell,
@@ -49,7 +71,7 @@ class MainScaffold extends StatelessWidget {
                       backgroundColor: Theme.of(
                         context,
                       ).bottomNavigationBarTheme.backgroundColor,
-                      indicatorColor: Colors.redAccent.withOpacity(0.15),
+                      indicatorColor: Colors.redAccent.withValues(alpha: 0.15),
                       labelTextStyle: WidgetStateProperty.all(
                         const TextStyle(
                           fontSize: 11,
@@ -60,13 +82,7 @@ class MainScaffold extends StatelessWidget {
                     child: NavigationBar(
                       selectedIndex: navIndex,
                       onDestinationSelected: (index) {
-                        int targetBranch;
-                        if (isAdmin) {
-                          targetBranch = index;
-                        } else {
-                          targetBranch = (index == 3) ? 4 : index;
-                        }
-
+                        final targetBranch = _tabToBranch(index, isAdmin);
                         navigationShell.goBranch(
                           targetBranch,
                           initialLocation:
@@ -103,7 +119,7 @@ class MainScaffold extends StatelessWidget {
                       ],
                     ),
                   )
-                : const SizedBox.shrink(), 
+                : const SizedBox.shrink(),
           );
         },
       ),

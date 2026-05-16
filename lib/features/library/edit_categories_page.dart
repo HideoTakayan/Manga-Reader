@@ -26,8 +26,9 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
       body: StreamBuilder<List<String>>(
         stream: LibraryService.instance.streamCategories(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
 
           final categories = snapshot.data!;
 
@@ -48,7 +49,7 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
             itemBuilder: (context, index) {
               final cat = categories[index];
               return _CategoryItem(
-                key: ValueKey(cat), 
+                key: ValueKey(cat),
                 name: cat,
                 isDefault:
                     cat == 'Mặc định', // Danh mục Mặc định không được xóa

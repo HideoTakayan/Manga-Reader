@@ -10,8 +10,7 @@ class FollowService {
 
   Stream<bool> isFollowing(String mangaId) {
     final uid = _auth.currentUser?.uid;
-    if (uid == null)
-      return const Stream.empty(); // C
+    if (uid == null) return Stream.value(false);
     return _db
         .collection('users')
         .doc(uid)
@@ -33,17 +32,18 @@ class FollowService {
         .doc(uid)
         .collection('following')
         .doc(mangaId);
+    final doc = await ref.get();
+    if (doc.exists) return;
+
     await ref.set({
       'mangaId': mangaId,
-      'comicId':
-          mangaId,
       'title': title,
       'coverUrl': coverUrl,
       'followedAt': FieldValue.serverTimestamp(),
     });
     await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(1),
-    }, SetOptions(merge: true)); 
+    }, SetOptions(merge: true));
   }
 
   Future<void> unfollowManga(String mangaId) async {
@@ -54,6 +54,9 @@ class FollowService {
         .doc(uid)
         .collection('following')
         .doc(mangaId);
+    final doc = await ref.get();
+    if (!doc.exists) return;
+
     await ref.delete();
     await _db.collection('comics').doc(mangaId).set({
       'likeCount': FieldValue.increment(-1),
@@ -82,11 +85,11 @@ class FollowService {
       }, SetOptions(merge: true));
     } else {
       // Chưa theo dõi → theo dõi (title + coverUrl bắt buộc vì cần lưu metadata)
-      if (title == null || coverUrl == null)
+      if (title == null || coverUrl == null) {
         throw Exception('Thiếu thông tin để theo dõi');
+      }
       await ref.set({
         'mangaId': mangaId,
-        'comicId': mangaId,
         'title': title,
         'coverUrl': coverUrl,
         'followedAt': FieldValue.serverTimestamp(),

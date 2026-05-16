@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../services/library_service.dart';
+import '../../services/library_status_service.dart';
 import '../../services/local_scan_service.dart';
+import '../../services/novel_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/ui_service.dart';
 import '../../services/download_service.dart';
 import '../../data/drive_service.dart';
-import '../../data/models_cloud.dart';
-import '../shared/drive_image.dart';
 import '../shared/library_dialogs.dart';
+import 'widgets/novel_list_tab.dart';
+import 'widgets/category_manga_list.dart';
 
 // Trang thư viện — quản lý truyện theo danh mục (tab), hỗ trợ chọn nhiều truyện,
 // tìm kiếm, lọc theo trạng thái, tải xuống batch, và xóa khỏi thư viện.
@@ -21,13 +24,19 @@ class CustomLibraryPage extends StatefulWidget {
 
 class _CustomLibraryPageState extends State<CustomLibraryPage> {
   String _searchQuery = '';
-  List<String> _selectedStatuses =
+  final List<String> _selectedStatuses =
       []; // Filter theo trạng thái: Đang tiến hành / Hoàn thành / Drop
+  final List<MangaReadingStatus> _selectedReadingStatuses = [];
+  final List<String> _selectedTags = [];
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
 
   // Set<String> thay vì List để O(1) lookup khi check isSelected
   final Set<String> _selectedMangaIds = {};
+
+  // Counter dùng để force rebuild NovelListTab khi import EPUB mới
+  // (AutomaticKeepAliveClientMixin giữ state nên setState() trên parent không đủ)
+  int _novelRefreshKey = 0;
 
   @override
   void dispose() {
@@ -37,8 +46,62 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     super.dispose();
   }
 
-  // Bottom sheet lọc truyện — dùng StatefulBuilder 
-  void _showFilterBottomSheet() {
+  /// Mở file picker để chọn file EPUB từ bộ nhớ máy và thêm vào thư viện.
+  Future<void> _pickEpub() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['epub'],
+        allowMultiple: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      int added = 0;
+      for (final file in result.files) {
+        if (file.path == null) continue;
+        final name = file.name
+            .replaceAll(RegExp(r'\.epub$', caseSensitive: false), '')
+            .trim();
+        final novel = LocalNovel(
+          path: file.path!,
+          title: name.isEmpty ? 'Truyện chữ' : name,
+          importedAt: DateTime.now(),
+        );
+        final ok = await NovelService.instance.add(novel);
+        if (ok) added++;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              added > 0
+                  ? 'Đã thêm $added truyện chữ vào thư viện'
+                  : 'Truyện đã có trong thư viện rồi',
+            ),
+            backgroundColor: added > 0 ? Colors.green : Colors.orange,
+          ),
+        );
+        setState(() {
+          // Increment key để force rebuild NovelListTab
+          if (added > 0) _novelRefreshKey++;
+        });
+      }
+    } catch (e) {
+      debugPrint('FilePicker error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không thể mở file. Vui lòng thử lại.')),
+        );
+      }
+    }
+  }
+
+  // Bottom sheet lọc truyện — dùng StatefulBuilder
+  void _showFilterBottomSheet() async {
+    final allTags = await LibraryStatusService.instance.getAllTags();
+    if (!mounted) return;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1C1C1E),
@@ -71,9 +134,89 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
+                            const Text(
+                              'Trạng thái truyện',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
                             _buildFilterItem('Đang tiến hành', setModalState),
                             _buildFilterItem('Đã hoàn thành', setModalState),
                             _buildFilterItem('Drop', setModalState),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Trạng thái đọc',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...MangaReadingStatus.values.map(
+                              (status) => _buildReadingStatusFilterItem(
+                                status,
+                                setModalState,
+                              ),
+                            ),
+                            if (allTags.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Tag tùy chỉnh',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: allTags.map((tag) {
+                                  final selected = _selectedTags.contains(tag);
+                                  return FilterChip(
+                                    label: Text(tag),
+                                    selected: selected,
+                                    selectedColor: Colors.redAccent,
+                                    checkmarkColor: Colors.white,
+                                    labelStyle: TextStyle(
+                                      color: selected
+                                          ? Colors.white
+                                          : Colors.white70,
+                                    ),
+                                    backgroundColor: const Color(0xFF2C2C2E),
+                                    onSelected: (value) {
+                                      setState(() {
+                                        if (value) {
+                                          _selectedTags.add(tag);
+                                        } else {
+                                          _selectedTags.remove(tag);
+                                        }
+                                      });
+                                      setModalState(() {});
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                            if (_selectedStatuses.isNotEmpty ||
+                                _selectedReadingStatuses.isNotEmpty ||
+                                _selectedTags.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedStatuses.clear();
+                                    _selectedReadingStatuses.clear();
+                                    _selectedTags.clear();
+                                  });
+                                  setModalState(() {});
+                                },
+                                icon: const Icon(Icons.clear),
+                                label: const Text('Xóa bộ lọc'),
+                              ),
+                            ],
                           ],
                         ),
                         const Center(
@@ -110,14 +253,56 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
       checkColor: Colors.white,
       onChanged: (val) {
         setState(() {
-          if (val == true)
+          if (val == true) {
             _selectedStatuses.add(title);
-          else
+          } else {
             _selectedStatuses.remove(title);
+          }
         });
         setModalState(() {}); // Refresh checkbox trong modal
       },
     );
+  }
+
+  Widget _buildReadingStatusFilterItem(
+    MangaReadingStatus status,
+    StateSetter setModalState,
+  ) {
+    final isSelected = _selectedReadingStatuses.contains(status);
+    return CheckboxListTile(
+      title: Text(
+        _readingStatusLabel(status),
+        style: const TextStyle(color: Colors.white),
+      ),
+      value: isSelected,
+      activeColor: Colors.redAccent,
+      checkColor: Colors.white,
+      onChanged: (val) {
+        setState(() {
+          if (val == true) {
+            _selectedReadingStatuses.add(status);
+          } else {
+            _selectedReadingStatuses.remove(status);
+          }
+        });
+        setModalState(() {});
+      },
+    );
+  }
+
+  String _readingStatusLabel(MangaReadingStatus status) {
+    switch (status) {
+      case MangaReadingStatus.reading:
+        return 'Đang đọc';
+      case MangaReadingStatus.completed:
+        return 'Đã đọc xong';
+      case MangaReadingStatus.paused:
+        return 'Tạm dừng';
+      case MangaReadingStatus.dropped:
+        return 'Dropped';
+      case MangaReadingStatus.planToRead:
+        return 'Đọc sau';
+    }
   }
 
   // Thoát selection mode: xóa selectedIds, ẩn search nếu đang mở, hiện bottom bar
@@ -184,8 +369,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
             ),
             TextButton(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 if (!removeFromLibrary && !deleteDownloads) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
                       content: Text('Vui lòng chọn ít nhất 1 tùy chọn'),
                     ),
@@ -225,8 +411,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       // Fallback: tìm tên từ bảng downloads nếu không có trong local manga
                       final downloads = await DatabaseHelper.instance
                           .getDownloadsByManga(mangaId);
-                      if (downloads.isNotEmpty)
-                        title = downloads.first['mangaTitle'] as String?;
+                      if (downloads.isNotEmpty) {
+                        title = _readString(downloads.first, 'mangaTitle');
+                        if (title.isEmpty) title = null;
+                      }
                     }
                     if (title != null) {
                       await DownloadService.instance.deleteMangaDownloads(
@@ -237,7 +425,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                     }
                   }
                   if (mounted && successCount > 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       SnackBar(
                         content: Text(
                           'Đã xóa dữ liệu tải xuống của $successCount truyện',
@@ -280,7 +468,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
         final categories = snapshot.data ?? ['Mặc định'];
 
         return DefaultTabController(
-          length: categories.length,
+          // +1 cho tab "Truyện Chữ" cố định
+          length: categories.length + 1,
           child: SafeArea(
             bottom: false,
             child: Scaffold(
@@ -350,9 +539,53 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                           icon: const Icon(Icons.filter_list),
                           onPressed: _showFilterBottomSheet,
                         ),
-                        IconButton(
+                        // Menu 3 chấm — quản lý danh mục + nhập EPUB
+                        PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert),
-                          onPressed: () => context.push('/settings/categories'),
+                          color: const Color(0xFF2C2C2E),
+                          onSelected: (val) {
+                            if (val == 'categories') {
+                              context.push('/settings/categories');
+                            } else if (val == 'import_epub') {
+                              _pickEpub();
+                            }
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                              value: 'import_epub',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.menu_book_outlined,
+                                    color: Colors.blueAccent,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    'Nhập truyện chữ (EPUB)',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'categories',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.folder_outlined,
+                                    color: Colors.white70,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 12),
+                                  Text(
+                                    'Quản lý danh mục',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                 bottom: TabBar(
@@ -361,31 +594,50 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.grey,
                   indicatorWeight: 3,
-                  tabs: categories.map((cat) => Tab(text: cat)).toList(),
+                  tabs: [
+                    ...categories.map((cat) => Tab(text: cat)),
+                    // Tab cố định cho Truyện Chữ
+                    const Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.menu_book_outlined, size: 14),
+                          SizedBox(width: 4),
+                          Text('Truyện Chữ'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               body: TabBarView(
-                children: categories
-                    .map(
-                      (cat) => CategoryMangaList(
-                        category: cat,
-                        searchQuery: _searchQuery,
-                        selectedStatuses: _selectedStatuses,
-                        selectedMangaIds: _selectedMangaIds,
-                        onToggleSelect: (id) {
-                          setState(() {
-                            if (_selectedMangaIds.contains(id))
-                              _selectedMangaIds.remove(id);
-                            else
-                              _selectedMangaIds.add(id);
-                            UiService.instance.setMainBottomBarVisible(
-                              _selectedMangaIds.isEmpty,
-                            );
-                          });
-                        },
-                      ),
-                    )
-                    .toList(),
+                children: [
+                  ...categories.map(
+                    (cat) => CategoryMangaList(
+                      category: cat,
+                      searchQuery: _searchQuery,
+                      selectedStatuses: _selectedStatuses,
+                      selectedReadingStatuses: _selectedReadingStatuses,
+                      selectedTags: _selectedTags,
+                      selectedMangaIds: _selectedMangaIds,
+                      onToggleSelect: (id) {
+                        setState(() {
+                          if (_selectedMangaIds.contains(id)) {
+                            _selectedMangaIds.remove(id);
+                          } else {
+                            _selectedMangaIds.add(id);
+                          }
+                          UiService.instance.setMainBottomBarVisible(
+                            _selectedMangaIds.isEmpty,
+                          );
+                        });
+                      },
+                    ),
+                  ),
+                  // Tab cố định: danh sách truyện chữ đã nhập
+                  // ValueKey(_novelRefreshKey) force rebuild khi import EPUB mới
+                  NovelListTab(key: ValueKey(_novelRefreshKey)),
+                ],
               ),
               // Action bar dưới — chỉ hiện khi selection mode
               bottomNavigationBar: isSelectionMode
@@ -540,285 +792,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
       },
     );
   }
-}
 
-// Widget hiển thị danh sách truyện trong 1 category — chứa logic fetch + filter + search.
-// Là StatelessWidget vì không cần state riêng, nhận toàn bộ state từ CustomLibraryPage.
-class CategoryMangaList extends StatelessWidget {
-  final String category;
-  final String searchQuery;
-  final List<String> selectedStatuses;
-  final Set<String> selectedMangaIds;
-  final Function(String) onToggleSelect;
-
-  const CategoryMangaList({
-    super.key,
-    required this.category,
-    required this.searchQuery,
-    required this.selectedStatuses,
-    required this.selectedMangaIds,
-    required this.onToggleSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // StreamBuilder lấy danh sách mangaId trong category này (Firestore realtime)
-    return StreamBuilder<List<String>>(
-      stream: LibraryService.instance.streamMangasInCategory(category),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData)
-          return const Center(child: CircularProgressIndicator());
-
-        final mangaIds = snapshot.data ?? [];
-        if (mangaIds.isEmpty) return _buildEmptyState(context);
-
-        // fetchMangasWithFallback: thử Drive trước, nếu lỗi → fallback SQLite local
-        Future<List<CloudManga>> fetchMangasWithFallback() async {
-          try {
-            final cloudMangas = await DriveService.instance.getMangas();
-            // Nếu Drive trả về rỗng (offline/token lỗi) → ném exception để vào catch
-            if (cloudMangas.isEmpty) throw Exception('Offline fallback');
-            return cloudMangas;
-          } catch (e) {
-            // Offline mode: đọc từ SQLite, wrap thành CloudManga với status='Offline'
-            final localMangas = await DatabaseHelper.instance
-                .getAllLocalMangas();
-            return localMangas
-                .map(
-                  (m) => CloudManga(
-                    id: m.id,
-                    title: m.title,
-                    coverFileId: m.coverUrl,
-                    author: m.author,
-                    description: m.description,
-                    updatedAt: DateTime.now(),
-                    genres: m.genres,
-                    status: 'Offline',
-                    chapterOrder: [],
-                  ),
-                )
-                .toList();
-          }
-        }
-
-        return FutureBuilder<List<CloudManga>>(
-          future: fetchMangasWithFallback(),
-          builder: (context, mangaSnapshot) {
-            if (!mangaSnapshot.hasData) return const SizedBox.shrink();
-
-            // Lọc chỉ lấy truyện có id trong danh sách category này
-            final allMangasInCat = mangaSnapshot.data!
-                .where((m) => mangaIds.contains(m.id))
-                .toList();
-
-            // Áp dụng search + status filter
-            final filteredMangas = allMangasInCat.where((m) {
-              final matchesSearch = m.title.toLowerCase().contains(
-                searchQuery.toLowerCase(),
-              );
-              bool matchesStatus = true;
-              if (selectedStatuses.isNotEmpty) {
-                // Map label UI → keyword trong status string từ Drive
-                final statusLower = m.status.toLowerCase();
-                matchesStatus = selectedStatuses.any((s) {
-                  if (s == 'Đang tiến hành')
-                    return statusLower.contains('cập nhật') ||
-                        statusLower.contains('hành');
-                  if (s == 'Đã hoàn thành') return statusLower.contains('hoàn');
-                  if (s == 'Drop')
-                    return statusLower.contains('drop') ||
-                        statusLower.contains('ngừng');
-                  return false;
-                });
-              }
-              return matchesSearch && matchesStatus;
-            }).toList();
-
-            if (filteredMangas.isEmpty &&
-                (searchQuery.isNotEmpty || selectedStatuses.isNotEmpty)) {
-              return const Center(
-                child: Text(
-                  'Không tìm thấy truyện phù hợp',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              );
-            }
-            if (filteredMangas.isEmpty) return _buildEmptyState(context);
-
-            return GridView.builder(
-              padding: const EdgeInsets.all(8),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.72,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemCount: filteredMangas.length,
-              itemBuilder: (context, index) {
-                final manga = filteredMangas[index];
-                return _MangaGridItem(
-                  manga: manga,
-                  isSelected: selectedMangaIds.contains(manga.id),
-                  isSelectionMode: selectedMangaIds.isNotEmpty,
-                  onToggle: () => onToggleSelect(manga.id),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.library_books_outlined,
-            size: 80,
-            color: Colors.white.withOpacity(0.1),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Chưa có truyện nào',
-            style: TextStyle(color: Colors.grey, fontSize: 16),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => context.go('/'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-            child: const Text(
-              'Thêm truyện',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Card 1 truyện trong grid — animation viền trắng khi selected, overlay mờ + checkmark icon.
-// onTap: nếu đang selection mode → toggle chọn, không thì navigate đến detail.
-// onLongPress: luôn toggle chọn (để bắt đầu selection mode).
-class _MangaGridItem extends StatelessWidget {
-  final CloudManga manga;
-  final bool isSelected;
-  final bool isSelectionMode;
-  final VoidCallback onToggle;
-
-  const _MangaGridItem({
-    required this.manga,
-    required this.isSelected,
-    required this.isSelectionMode,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isSelectionMode
-          ? onToggle
-          : () => context.push('/detail/${manga.id}'),
-      onLongPress: onToggle, // Long press để bắt đầu selection mode
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          // Viền trắng 3px khi selected — AnimatedContainer animate smooth
-          border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(isSelected ? 9 : 12),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
-              // Overlay mờ trắng khi selected
-              if (isSelected) Container(color: Colors.white.withOpacity(0.2)),
-              // Gradient từ trong suốt → đen ở dưới để nổi tên truyện
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.1),
-                      Colors.black.withOpacity(0.8),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 8,
-                left: 8,
-                right: 8,
-                child: Text(
-                  manga.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-                  ),
-                ),
-              ),
-              // Badge số chapter ở góc trên trái — FutureBuilder gọi getChapters mỗi lần build
-              Positioned(
-                top: 6,
-                left: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: FutureBuilder<List<CloudChapter>>(
-                    future: DriveService.instance.getChapters(manga.id),
-                    builder: (context, snapshot) {
-                      final count = snapshot.data?.length ?? 0;
-                      return Text(
-                        '$count',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              // Checkmark icon ở góc trên phải khi selected
-              if (isSelected)
-                const Positioned(
-                  top: 6,
-                  right: 6,
-                  child: CircleAvatar(
-                    radius: 12,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.check, size: 16, color: Colors.black),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
   }
 }

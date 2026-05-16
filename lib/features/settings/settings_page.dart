@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/auth_service.dart';
+import '../../config/admin_config.dart';
 import '../library/edit_categories_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -17,8 +19,9 @@ class SettingsPage extends ConsumerStatefulWidget {
 }
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
- final user = FirebaseAuth.instance.currentUser;
   bool _loading = false;
+
+  User? get user => FirebaseAuth.instance.currentUser;
 
   @override
   void initState() {
@@ -26,17 +29,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _editProfileDialog(BuildContext context) async {
-    final nameController = TextEditingController(text: user?.displayName ?? '');
+    final currentUser = user;
+    if (currentUser == null) return;
+
+    final nameController = TextEditingController(
+      text: currentUser.displayName ?? '',
+    );
     final bioController = TextEditingController();
     File? newAvatar;
 
     final doc = await FirebaseFirestore.instance
         .collection('users')
-        .doc(user!.uid)
+        .doc(currentUser.uid)
         .get();
     if (doc.exists) {
       bioController.text = doc.data()?['bio'] ?? '';
     }
+    if (!context.mounted) return;
 
     await showModalBottomSheet(
       context: context,
@@ -151,67 +160,91 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   ImageProvider? _getUserAvatar(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
-    if (data['avatarBase64'] != null) {
+    // Ưu tiên avatarUrl (Firebase Storage) — mới hơn và không giới hạn dung lượng
+    final avatarUrl = _readString(data, 'avatarUrl');
+    if (avatarUrl.isNotEmpty) {
+      return NetworkImage(avatarUrl);
+    }
+    // Fallback: avatarBase64 (legacy) — đọc được nhưng không ghi thêm
+    final avatarBase64 = _readString(data, 'avatarBase64');
+    if (avatarBase64.isNotEmpty) {
       try {
-        return MemoryImage(base64Decode(data['avatarBase64']));
-      } catch (_) {
-        return null;
-      }
-    } else if (user?.photoURL != null) {
+        return MemoryImage(base64Decode(avatarBase64));
+      } catch (_) {}
+    }
+    // Fallback cuối: Google avatar từ OAuth
+    if (user?.photoURL != null) {
       return NetworkImage(user!.photoURL!);
     }
     return null;
   }
 
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
+  }
+
   Future<void> _saveProfile(String name, String bio, File? avatar) async {
-    if (user == null) return;
+    final currentUser = user;
+    if (currentUser == null) return;
     setState(() => _loading = true);
 
     try {
-      String? avatarBase64;
+      String? avatarUrl;
       if (avatar != null) {
-        final bytes = await avatar.readAsBytes();
-        avatarBase64 = base64Encode(bytes);
+        // Upload lên Firebase Storage — không giới hạn dung lượng như Firestore
+        final ref = FirebaseStorage.instance.ref(
+          'avatars/${currentUser.uid}.jpg',
+        );
+        await ref.putFile(avatar, SettableMetadata(contentType: 'image/jpeg'));
+        avatarUrl = await ref.getDownloadURL();
+        // Cập nhật photoURL trên Firebase Auth để hiện ở các nơi khác
+        await currentUser.updatePhotoURL(avatarUrl);
       }
 
-      await user!.updateDisplayName(name);
+      await currentUser.updateDisplayName(name);
 
-      final dataToUpdate = {
+      final dataToUpdate = <String, dynamic>{
+        'name': name,
         'displayName': name,
         'bio': bio,
-        'email': user!.email,
-        'updatedAt':
-            FieldValue.serverTimestamp(), 
+        'email': currentUser.email,
+        'updatedAt': FieldValue.serverTimestamp(),
       };
-      if (avatarBase64 != null) {
-        dataToUpdate['avatarBase64'] = avatarBase64;
+      if (avatarUrl != null) {
+        dataToUpdate['avatarUrl'] = avatarUrl;
+        // Xóa field base64 cũ nếu có — giảm dung lượng document
+        dataToUpdate['avatarBase64'] = FieldValue.delete();
       }
 
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user!.uid)
+          .doc(currentUser.uid)
           .set(dataToUpdate, SetOptions(merge: true));
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã lưu thay đổi thành công!')),
-        );
-        setState(
-          () {},
-        ); 
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã lưu thay đổi thành công!')),
+      );
+      setState(() {});
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (user == null) return _buildGuestView(context);
+    final currentUser = user;
+    if (currentUser == null) return _buildGuestView(context);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -221,9 +254,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           : FutureBuilder<DocumentSnapshot>(
               future: FirebaseFirestore.instance
                   .collection('users')
-                  .doc(user!.uid)
+                  .doc(currentUser.uid)
                   .get(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return _buildSettingsError(
+                    context,
+                    'Không thể tải dữ liệu tài khoản.',
+                  );
+                }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -246,20 +285,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         onTap: () => context.go('/settings/account'),
                       ),
 
-                      FutureBuilder<DocumentSnapshot>(
-                        future: FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(user!.uid)
-                            .get(),
-                        builder: (context, userSnapshot) {
-                          if (!userSnapshot.hasData) return const SizedBox();
+                      // Hiển thị tile "Thêm mật khẩu" nếu user đăng nhập bằng Google và chưa có password.
+                      // Lấy dữ liệu trực tiếp từ outer FutureBuilder — không cần query Firestore lần nữa.
+                      Builder(
+                        builder: (context) {
                           final userData =
-                              userSnapshot.data!.data()
-                                  as Map<String, dynamic>? ??
+                              snapshot.data!.data() as Map<String, dynamic>? ??
                               {};
                           final authProvider = userData['authProvider'] ?? '';
                           final hasPassword = userData['hasPassword'] ?? false;
-
                           if (authProvider == 'google' && !hasPassword) {
                             return _buildTile(
                               context,
@@ -270,13 +304,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               onTap: () => _showAddPasswordDialog(context),
                             );
                           }
-                          return const SizedBox(); // Không render gì nếu không thỏa điều kiện
+                          return const SizedBox();
                         },
                       ),
 
-                      // Admin check hardcode — giống main_scaffold.dart
-                      if (user!.email == 'admin@gmail.com' ||
-                          user!.email == 'anhlasinhvien2k51@gmail.com')
+                      // Kiểm tra quyền Admin qua AdminConfig — tập trung tại config/admin_config.dart
+                      if (AdminConfig.isAdmin(currentUser.email))
                         _buildTile(
                           context,
                           icon: Icons.dashboard,
@@ -308,6 +341,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         title: 'Hàng đợi tải xuống',
                         subtitle: 'Quản lý các chương đang tải',
                         onTap: () => context.push('/downloads'),
+                      ),
+
+                      _buildTile(
+                        context,
+                        icon: Icons.storage_outlined,
+                        color: Colors.cyan,
+                        title: 'Dung lượng tải xuống',
+                        subtitle: 'Xem dung lượng, file lỗi và xóa dữ liệu tải',
+                        onTap: () => context.push('/storage'),
+                      ),
+
+                      _buildTile(
+                        context,
+                        icon: Icons.backup_outlined,
+                        color: Colors.indigoAccent,
+                        title: 'Backup & Restore',
+                        subtitle: 'Xuất/nhập thư viện, lịch sử và bookmark',
+                        onTap: () => context.push('/backup'),
+                      ),
+
+                      const SizedBox(height: 8),
+                      _buildTile(
+                        context,
+                        icon: Icons.bar_chart_rounded,
+                        color: Colors.orange,
+                        title: 'Thống kê đọc',
+                        subtitle: 'Xem hoạt động đọc truyện của bạn',
+                        onTap: () => context.push('/analytics'),
                       ),
 
                       const SizedBox(height: 8),
@@ -386,9 +447,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Widget _buildUserCard(BuildContext context, DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     ImageProvider? avatarImage;
-    if (data['avatarBase64'] != null) {
+    final avatarUrl = _readString(data, 'avatarUrl');
+    final avatarBase64 = _readString(data, 'avatarBase64');
+    if (avatarUrl.isNotEmpty) {
+      avatarImage = NetworkImage(avatarUrl);
+    } else if (avatarBase64.isNotEmpty) {
       try {
-        avatarImage = MemoryImage(base64Decode(data['avatarBase64']));
+        avatarImage = MemoryImage(base64Decode(avatarBase64));
       } catch (_) {}
     } else if (user?.photoURL != null) {
       avatarImage = NetworkImage(user!.photoURL!);
@@ -451,6 +516,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  Widget _buildSettingsError(BuildContext context, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 44),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => setState(() {}),
+              child: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Reusable settings tile: icon có background màu nhạt + title + subtitle + chevron
   Widget _buildTile(
     BuildContext context, {
@@ -469,9 +559,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
-          // withOpacity(0.15): icon background mờ, màu tương phản nhẹ với icon đậm
+          // withValues(alpha: 0.15): icon background mờ, màu tương phản nhẹ với icon đậm
           decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
+            color: color.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: color),
@@ -489,7 +579,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           style: TextStyle(
             color: Theme.of(
               context,
-            ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+            ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
             fontSize: 13,
           ),
         ),
@@ -497,7 +587,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             trailing ??
             Icon(
               Icons.chevron_right,
-              color: Theme.of(context).iconTheme.color?.withOpacity(0.5),
+              color: Theme.of(context).iconTheme.color?.withValues(alpha: 0.5),
             ),
         onTap: onTap,
       ),
@@ -682,6 +772,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     // confirm == true (không phải chỉ truthy) để phân biệt với null (bấm ra ngoài dialog)
     if (confirm == true && context.mounted) {
       await AuthService().logout();
+      if (!context.mounted) return;
       context.go('/login');
     }
   }
@@ -690,10 +781,48 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF1C1C1E),
       appBar: _buildAppBar(context),
-      body: const Center(
-        child: Text(
-          "Bạn chưa đăng nhập",
-          style: TextStyle(color: Colors.white, fontSize: 18),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_circle_outlined,
+              size: 72,
+              color: Colors.grey,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Bạn chưa đăng nhập',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Đăng nhập để lưu lịch sử và đồng bộ dữ liệu',
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: () => context.go('/login'),
+              icon: const Icon(Icons.login),
+              label: const Text('Đăng nhập ngay'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

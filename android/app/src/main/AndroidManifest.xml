@@ -9,8 +9,8 @@
     <!-- Android 13+ cần permission này -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <!-- Android 11+ cần permission này để tạo folder riêng -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Android 11+ cần permission này để tạo folder riêng -->
     
     <!-- Background Download Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -23,7 +23,8 @@
         android:label="MangaReader"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -80,6 +81,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="mailto" />
+        </intent>
+        <!-- Cần thiết cho Text-To-Speech (TTS) trên Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 </manifest>

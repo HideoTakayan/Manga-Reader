@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../data/models.dart';
 
@@ -8,22 +9,27 @@ class FolderService {
   static String? _rootPath;
   static String? _downloadPath;
   static String? _cachePath;
+  static String? get rootPath => _rootPath;
 
   static Future<void> init() async {
     try {
-      // Android: /storage/emulated/0/MangaReader — user thấy được trong File Manager
-      _rootPath = '/storage/emulated/0/MangaReader';
+      if (Platform.isAndroid) {
+        _rootPath = await _resolveAndroidRootPath();
+      } else {
+        final appDocDir = await getApplicationDocumentsDirectory();
+        _rootPath = '${appDocDir.path}/MangaReader';
+      }
+
       _downloadPath = '$_rootPath/downloads';
       _cachePath = '$_rootPath/temp_cache';
-      await Directory(
-        _downloadPath!,
-      ).create(recursive: true); // recursive: tạo cả parent dir
+
+      await Directory(_downloadPath!).create(recursive: true);
       await Directory(_cachePath!).create(recursive: true);
-      print('📂 Using External Storage: $_rootPath');
+      debugPrint('📂 Using Storage: $_rootPath');
     } catch (e) {
-      print('⚠️ Failed to use External Storage (Permission Denied): $e');
+      debugPrint('⚠️ Failed to initialize storage: $e');
       final appDocDir = await getApplicationDocumentsDirectory();
-      _rootPath = '${appDocDir.path}/MangaReader';
+      _rootPath = '${appDocDir.path}/MangaReader_Fallback';
       _downloadPath = '$_rootPath/downloads';
       _cachePath = '$_rootPath/temp_cache';
       await Directory(_downloadPath!).create(recursive: true);
@@ -38,18 +44,42 @@ class FolderService {
         if (!await nomediaFile.exists()) await nomediaFile.create();
       } catch (_) {}
     }
-    print('📂 Folder System Initialized: $_rootPath');
+    debugPrint('📂 Folder System Initialized: $_rootPath');
+  }
+
+  static Future<String> _resolveAndroidRootPath() async {
+    const publicRoot = '/storage/emulated/0/MangaReader';
+    try {
+      final publicDir = Directory(publicRoot);
+      await publicDir.create(recursive: true);
+      final probe = File('$publicRoot/.probe');
+      await probe.writeAsString('ok');
+      if (await probe.exists()) await probe.delete();
+      return publicRoot;
+    } catch (e) {
+      debugPrint('⚠️ Cannot use public MangaReader folder: $e');
+    }
+
+    final extDir = await getExternalStorageDirectory();
+    if (extDir != null) {
+      return '${extDir.path}/MangaReader';
+    }
+
+    final appDocDir = await getApplicationDocumentsDirectory();
+    return '${appDocDir.path}/MangaReader';
   }
 
   static String get downloadPath {
-    if (_downloadPath == null)
+    if (_downloadPath == null) {
       throw Exception('FolderService chưa được khởi tạo. Gọi init() trước.');
+    }
     return _downloadPath!;
   }
 
   static String get cachePath {
-    if (_cachePath == null)
+    if (_cachePath == null) {
       throw Exception('FolderService chưa được khởi tạo. Gọi init() trước.');
+    }
     return _cachePath!;
   }
 
@@ -67,7 +97,9 @@ class FolderService {
     final safeTitle = sanitize(title);
     final path = '$downloadPath/$safeTitle';
     final dir = Directory(path);
-    if (!await dir.exists()) await dir.create(recursive: true);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
     return path;
   }
 
@@ -84,12 +116,16 @@ class FolderService {
     String chapterId,
   ) async {
     final dir = Directory(getChapterPath(mangaId, chapterId));
-    if (await dir.exists()) await dir.delete(recursive: true);
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
   }
 
   static Future<void> deleteMangaFolder(String mangaId) async {
     final dir = Directory(getMangaPath(mangaId));
-    if (await dir.exists()) await dir.delete(recursive: true);
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
   }
 
   static Future<void> clearCache() async {
@@ -97,7 +133,7 @@ class FolderService {
     if (await dir.exists()) {
       await dir.delete(recursive: true);
       await dir.create(); // Tạo lại thư mục rỗng thay vì để null
-      print('🗑️ Cache cleared');
+      debugPrint('🗑️ Cache cleared');
     }
   }
 
@@ -107,7 +143,9 @@ class FolderService {
     if (!await dir.exists()) return 0;
     int totalSize = 0;
     await for (final entity in dir.list(recursive: true)) {
-      if (entity is File) totalSize += await entity.length();
+      if (entity is File) {
+        totalSize += await entity.length();
+      }
     }
     return totalSize;
   }
@@ -115,8 +153,9 @@ class FolderService {
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
@@ -134,7 +173,7 @@ class FolderService {
         '$path/details.json',
       ).writeAsString(jsonEncode(manga.toJson()));
     } catch (e) {
-      print('⚠️ Failed to save details.json: $e');
+      debugPrint('⚠️ Failed to save details.json: $e');
     }
   }
 

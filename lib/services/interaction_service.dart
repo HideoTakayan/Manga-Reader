@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 // InteractionService: quản lý lượt xem (viewCount) và lượt thích (likeCount).
 // Dữ liệu lưu trong collection 'comics' (tên collection cũ, giữ lại để tương thích).
@@ -15,7 +16,7 @@ class InteractionService {
         'viewCount': FieldValue.increment(1),
       }, SetOptions(merge: true));
     } catch (e) {
-      print('Lỗi khi tăng lượt xem truyện: $e');
+      debugPrint('Lỗi khi tăng lượt xem truyện: $e');
     }
   }
 
@@ -34,11 +35,11 @@ class InteractionService {
       // 2. Cascade lên manga tổng
       await incrementMangaView(mangaId);
     } catch (e) {
-      print('Lỗi khi tăng lượt xem chapter: $e');
+      debugPrint('Lỗi khi tăng lượt xem chapter: $e');
     }
   }
 
-  /// Lấy tất cả chapter views của 1 manga — trả về Map<chapterId, viewCount>
+  /// Lấy tất cả chapter views của 1 manga — trả về `Map<chapterId, viewCount>`.
   /// Dùng để hiển thị số lượt xem bên cạnh tên chapter
   Future<Map<String, int>> getChapterViews(String mangaId) async {
     try {
@@ -54,12 +55,35 @@ class InteractionService {
       }
       return map;
     } catch (e) {
-      print('Lỗi khi tải thống kê chapter: $e');
+      debugPrint('Lỗi khi tải thống kê chapter: $e');
       return {};
     }
   }
 
-  /// Map<mangaId, {viewCount, likeCount}> — gọi 1 lần để map stats vào danh sách truyện
+  /// Đánh giá truyện (1-5 sao). Lưu vào Document của manga để tiết kiệm Reads/Writes.
+  Future<void> rateManga(String mangaId, int stars) async {
+    try {
+      final ref = _db.collection('comics').doc(mangaId);
+      await ref.set({
+        'ratingSum': FieldValue.increment(stars),
+        'ratingCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Lỗi khi đánh giá truyện: $e');
+    }
+  }
+
+  /// Theo dõi điểm đánh giá trung bình realtime
+  Stream<Map<String, dynamic>> streamMangaRating(String mangaId) {
+    return _db.collection('comics').doc(mangaId).snapshots().map((doc) {
+      final data = doc.data() ?? {};
+      final sum = (data['ratingSum'] as num?)?.toInt() ?? 0;
+      final count = (data['ratingCount'] as num?)?.toInt() ?? 0;
+      return {'sum': sum, 'count': count};
+    });
+  }
+
+  /// `Map<mangaId, {viewCount, likeCount}>` — gọi 1 lần để map stats vào danh sách truyện.
   Future<Map<String, Map<String, int>>> getAllMangaStats() async {
     try {
       final snapshot = await _db.collection('comics').get();
@@ -73,7 +97,7 @@ class InteractionService {
       }
       return map;
     } catch (e) {
-      print('Lỗi khi tải thống kê toàn bộ truyện: $e');
+      debugPrint('Lỗi khi tải thống kê toàn bộ truyện: $e');
       return {};
     }
   }
@@ -81,8 +105,9 @@ class InteractionService {
   /// Stream realtime stats — UI cập nhật ngay khi admin update hoặc user khác follow
   Stream<Map<String, int>> streamMangaStats(String mangaId) {
     return _db.collection('comics').doc(mangaId).snapshots().map((doc) {
-      if (!doc.exists || doc.data() == null)
+      if (!doc.exists || doc.data() == null) {
         return {'viewCount': 0, 'likeCount': 0};
+      }
       final data = doc.data()!;
       return {
         'viewCount': (data['viewCount'] as num?)?.toInt() ?? 0,

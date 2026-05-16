@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
 // Trang chỉnh sửa hồ sơ: tên hiển thị, bio, avatar.
@@ -17,7 +17,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
   File? _imageFile; // File ảnh mới chọn từ gallery (chưa encode)
-  String? _avatarBase64; // Base64 string — đã encode hoặc tải từ Firestore
+  String? _avatarUrl;
   bool _isLoading = false;
 
   @override
@@ -31,53 +31,100 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    final data = doc.data();
-    if (data != null) {
-      _nameController.text = data['name'] ?? '';
+    try {
+      _avatarUrl = user.photoURL;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final data = doc.data();
+      if (data == null) {
+        if (mounted) setState(() {});
+        return;
+      }
+      _nameController.text =
+          data['displayName'] ?? data['name'] ?? user.displayName ?? '';
       _bioController.text = data['bio'] ?? '';
-      _avatarBase64 = data['avatarBase64']; // null nếu chưa upload ảnh bao giờ
+      _avatarUrl = data['avatarUrl'] ?? user.photoURL;
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi tải hồ sơ: $e')));
+      }
     }
   }
 
-  // Chọn ảnh từ gallery → encode base64 ngay trong client
-  // Lưu ý: ảnh lớn sẽ tạo ra string base64 rất dài → có thể vượt giới hạn Firestore (1MB/doc)
+  // Chọn ảnh từ gallery. Ảnh chỉ preview local ở đây, khi lưu mới upload Storage.
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
       final file = File(picked.path);
-      final bytes = await file.readAsBytes();
-      // base64Encode: chuyển Uint8List → String (tăng kích thước ~33%)
-      final base64Image = base64Encode(bytes);
+      if (!mounted) return;
       setState(() {
-        _imageFile =
-            file; // Dùng để hiện preview ngay (FileImage nhanh hơn decode base64)
-        _avatarBase64 = base64Image; // Dùng để lưu lên Firestore
+        _imageFile = file;
       });
     }
   }
 
   Future<void> _saveChanges() async {
-    setState(() => _isLoading = true);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    setState(() => _isLoading = true);
 
-    await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-      'name': _nameController.text.trim(),
-      'bio': _bioController.text.trim(),
-      // Cú pháp if trong Map literal: chỉ ghi 'avatarBase64' khi user đã chọn ảnh mới
-      if (_avatarBase64 != null) 'avatarBase64': _avatarBase64,
-    });
+    try {
+      String? avatarUrl;
+      if (_imageFile != null) {
+        final ref = FirebaseStorage.instance.ref('avatars/${user.uid}.jpg');
+        await ref.putFile(
+          _imageFile!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        avatarUrl = await ref.getDownloadURL();
+        await user.updatePhotoURL(avatarUrl);
+      }
 
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cập nhật thông tin thành công!')),
-    );
-    Navigator.pop(context);
+      final displayName = _nameController.text.trim();
+      await user.updateDisplayName(displayName);
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': displayName,
+        'displayName': displayName,
+        'bio': _bioController.text.trim(),
+        'email': user.email,
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (avatarUrl != null) ...{
+          'avatarUrl': avatarUrl,
+          'avatarBase64': FieldValue.delete(),
+        },
+      }, SetOptions(merge: true));
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cập nhật thông tin thành công!')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _bioController.dispose();
+    super.dispose();
   }
 
   @override
@@ -85,8 +132,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
     ImageProvider? avatarImage;
     if (_imageFile != null) {
       avatarImage = FileImage(_imageFile!);
-    } else if (_avatarBase64 != null && _avatarBase64!.isNotEmpty) {
-      avatarImage = MemoryImage(base64Decode(_avatarBase64!));
+    } else if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+      avatarImage = NetworkImage(_avatarUrl!);
     }
 
     return Scaffold(

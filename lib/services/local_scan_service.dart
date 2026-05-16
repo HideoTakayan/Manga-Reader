@@ -23,8 +23,7 @@ class LocalScanService {
       if (!await rootDir.exists()) return 0;
 
       debugPrint('🔍 Scanning Local Library: $downloadPath');
-      final entities = rootDir
-          .listSync(); 
+      final entities = rootDir.listSync();
       for (var entity in entities) {
         if (entity is Directory) {
           await _importMangaFromFolder(entity);
@@ -55,8 +54,7 @@ class LocalScanService {
     }
 
     // 2. Fallback: tạo Manga giả từ tên folder nếu không có/parse lỗi details.json
-    if (manga == null) {
-      manga = Manga(
+    manga ??= Manga(
         id: 'local_${folderName.hashCode}', // Hash ổn định để ID không đổi giữa các lần scan
         title: folderName,
         coverUrl: '',
@@ -64,14 +62,11 @@ class LocalScanService {
         description: 'Được nhập từ bộ nhớ máy',
         genres: [],
       );
-    }
 
     // 3. Dùng cover.jpg local thay vì URL nếu tồn tại
     final coverFile = File('${folder.path}/cover.jpg');
     if (await coverFile.exists()) {
-      manga = manga.copyWith(
-        coverUrl: coverFile.path,
-      );
+      manga = manga.copyWith(coverUrl: coverFile.path);
     }
 
     // 4. Lưu vào SQLite

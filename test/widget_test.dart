@@ -1,20 +1,55 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:firebase_auth_platform_interface/firebase_auth_platform_interface.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:manga_reader/main.dart'; // Ensure package name wraps correctly
+import 'package:manga_reader/main.dart';
 
 void main() {
-  testWidgets('App smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MangaApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setupFirebaseCoreMocks();
 
-    // Verify that the app builds without crashing
+  setUpAll(() async {
+    await Firebase.initializeApp();
+    FirebaseAuthPlatform.instance = _SignedOutAuthPlatform(Firebase.app());
+  });
+
+  testWidgets('App smoke test', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: MangaApp()));
+    await tester.pump();
+
     expect(find.byType(MangaApp), findsOneWidget);
   });
+}
+
+class _SignedOutAuthPlatform extends FirebaseAuthPlatform {
+  _SignedOutAuthPlatform(FirebaseApp app) : super(appInstance: app);
+
+  UserPlatform? _currentUser;
+
+  @override
+  UserPlatform? get currentUser => _currentUser;
+
+  @override
+  set currentUser(UserPlatform? userPlatform) {
+    _currentUser = userPlatform;
+  }
+
+  @override
+  FirebaseAuthPlatform delegateFor({required FirebaseApp app}) {
+    return _SignedOutAuthPlatform(app);
+  }
+
+  @override
+  FirebaseAuthPlatform setInitialValues({
+    PigeonUserDetails? currentUser,
+    String? languageCode,
+  }) {
+    return this;
+  }
+
+  @override
+  Stream<UserPlatform?> authStateChanges() {
+    return Stream<UserPlatform?>.value(null);
+  }
 }

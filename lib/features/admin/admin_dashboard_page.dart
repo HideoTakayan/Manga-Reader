@@ -136,7 +136,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                   child: Icon(
                     Icons.admin_panel_settings,
                     size: 80,
-                    color: Theme.of(context).iconTheme.color?.withOpacity(0.1),
+                    color: Theme.of(
+                      context,
+                    ).iconTheme.color?.withValues(alpha: 0.1),
                   ),
                 ),
               ),
@@ -194,8 +196,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             context: context,
                             builder: (_) => const _AddMangaDialog(),
                           );
-                          if (result == true)
+                          if (result == true) {
                             _loadStats(); // Cập nhật số liệu sau khi thêm truyện
+                          }
                         },
                         icon: const Icon(Icons.add),
                         label: const Text('Thêm Truyện'),
@@ -221,6 +224,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+
   // Banner hiển thị trạng thái kết nối Google Drive (đã đăng nhập OAuth chưa).
   // Xanh = đã kết nối (có quyền ghi), Đỏ = chưa kết nối (chỉ đọc được).
   Widget _buildDriveStatus() {
@@ -229,16 +233,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: _driveAccount != null
-              ? [Colors.green.withOpacity(0.2), Colors.green.withOpacity(0.05)]
-              : [Colors.red.withOpacity(0.2), Colors.red.withOpacity(0.05)],
+              ? [
+                  Colors.green.withValues(alpha: 0.2),
+                  Colors.green.withValues(alpha: 0.05),
+                ]
+              : [
+                  Colors.red.withValues(alpha: 0.2),
+                  Colors.red.withValues(alpha: 0.05),
+                ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _driveAccount != null
-              ? Colors.green.withOpacity(0.3)
-              : Colors.red.withOpacity(0.3),
+              ? Colors.green.withValues(alpha: 0.3)
+              : Colors.red.withValues(alpha: 0.3),
         ),
       ),
       child: Row(
@@ -269,7 +279,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     fontSize: 13,
                     color: Theme.of(
                       context,
-                    ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -278,14 +288,13 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           // Nút Kết nối/Ngắt kết nối Drive OAuth
           TextButton(
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               if (_driveAccount == null) {
                 try {
                   await DriveService.instance.signIn();
                 } catch (e) {
                   if (context.mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                    messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                   }
                 }
               } else {
@@ -361,7 +370,7 @@ class _AdminMangaCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -397,7 +406,7 @@ class _AdminMangaCard extends StatelessWidget {
                         fontSize: 12,
                         color: Theme.of(
                           context,
-                        ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -616,8 +625,9 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             .toList(),
         status: 'Đang Cập Nhật',
       );
-      if (mounted)
+      if (mounted) {
         Navigator.pop(context, true); // true = báo hiệu thêm thành công
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -745,7 +755,7 @@ class _StatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),

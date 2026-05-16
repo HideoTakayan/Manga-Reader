@@ -10,6 +10,7 @@ import '../../services/notification_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
+import 'widgets/continue_reading_section.dart';
 
 // Trang chủ — wrapper mỏng chỉ đặt Scaffold, toàn bộ logic nằm trong _HomeContent.
 // Tách ra để theo pattern: StatelessWidget ngoài, StatefulWidget bên trong.
@@ -51,6 +52,10 @@ class _HomeContentState extends State<_HomeContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Kiểm tra quyền storage để lưu file manga xuống thư mục /MangaReader/
       _checkStoragePermission();
+    });
+
+    _mangasFuture.then((_) {
+      NotificationService.instance.checkLocalChapterUpdates();
     });
   }
 
@@ -106,6 +111,7 @@ class _HomeContentState extends State<_HomeContent> {
       _mangasFuture = DriveService.instance.getMangas(forceRefresh: true);
     });
     await _mangasFuture;
+    await NotificationService.instance.checkLocalChapterUpdates();
   }
 
   // Helper: chuyển CloudManga → Manga (local model) để truyền vào các widget con
@@ -123,10 +129,132 @@ class _HomeContentState extends State<_HomeContent> {
   // Mục "Mới Cập Nhật": lấy 10 truyện đầu (Drive đã sort theo updatedAt giảm dần)
   List<Manga> _getNewUpdates(List<Manga> all) => all.take(10).toList();
 
-  // Mục ngẫu nhiên (Featured, Hot, Trending): shuffle + take — không cần thuật toán phức tạp
+  // "Hot Hôm Nay": Lượt view cao trong ngày (giả lập bằng truyện cập nhật 24h qua)
+  // Nếu view bằng nhau thì hiển thị ngẫu nhiên
+  List<Manga> _getHotToday(List<CloudManga> all, int count) {
+    final now = DateTime.now();
+    final recent = all
+        .where((m) => now.difference(m.updatedAt).inHours <= 24)
+        .toList();
+    var sourceList = recent.length >= count
+        ? recent
+        : List<CloudManga>.from(all);
+
+    // Xáo trộn danh sách trước. Hàm sort của Dart là stable sort,
+    // nên nếu viewCount bằng nhau, thứ tự ngẫu nhiên này sẽ được giữ lại.
+    sourceList.shuffle();
+    sourceList.sort((a, b) => b.viewCount.compareTo(a.viewCount));
+
+    return sourceList.take(count).map(_fromCloud).toList();
+  }
+
+  // "Top Trending": Lượt view cao trong tháng (giả lập bằng truyện cập nhật 30 ngày qua)
+  // Nếu view bằng nhau thì hiển thị ngẫu nhiên
+  List<Manga> _getTrending(List<CloudManga> all, int count) {
+    final now = DateTime.now();
+    final recent = all
+        .where((m) => now.difference(m.updatedAt).inDays <= 30)
+        .toList();
+    var sourceList = recent.length >= count
+        ? recent
+        : List<CloudManga>.from(all);
+
+    sourceList.shuffle();
+    sourceList.sort((a, b) => b.viewCount.compareTo(a.viewCount));
+
+    return sourceList.take(count).map(_fromCloud).toList();
+  }
+
+  // Banner nổi bật (Featured): ngẫu nhiên — giữ nguyên
   List<Manga> _getRandom(List<Manga> all, int count) {
     final list = List<Manga>.from(all)..shuffle();
     return list.take(count).toList();
+  }
+
+  // Shimmer skeleton hiển thị khi đang chờ getMangas() — không cần package ngoài.
+  // Dùng TweenAnimationBuilder để tạo hiệu ứng opacity pulse liên tục.
+  Widget _buildShimmerSkeleton(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.05, end: 0.15),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeInOut,
+      onEnd: () => setState(() {}), // loop animation
+      builder: (context, alpha, _) {
+        return CustomScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 56, 16, 16),
+                child: _shimmerBox(40, 180, alpha),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _shimmerBox(200, double.infinity, alpha, radius: 12),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _shimmerBox(18, 130, alpha, radius: 6),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 160,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: 5,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, __) =>
+                      _shimmerBox(160, 110, alpha, radius: 10),
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: _shimmerBox(18, 150, alpha, radius: 6),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 160,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: 5,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, __) =>
+                      _shimmerBox(160, 110, alpha, radius: 10),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _shimmerBox(
+    double height,
+    double width,
+    double alpha, {
+    double radius = 8,
+  }) {
+    return Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        color: Colors.white.withValues(alpha: alpha),
+      ),
+    );
   }
 
   @override
@@ -146,7 +274,7 @@ class _HomeContentState extends State<_HomeContent> {
             future: _mangasFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return _buildShimmerSkeleton(context);
               }
 
               final cloudMangas = snapshot.data ?? [];
@@ -188,21 +316,16 @@ class _HomeContentState extends State<_HomeContent> {
               }
 
               // Phân loại danh sách cho từng section
-              final newUpdates = _getNewUpdates(
-                allMangas,
-              ); // Top 10 mới nhất (theo Drive sort)
-              final featured = _getRandom(
-                allMangas,
+              final newUpdates = _getNewUpdates(allMangas);
+              final featured = _getRandom(allMangas, 10); // Banner ngẫu nhiên
+              final hotToday = _getHotToday(
+                cloudMangas,
                 10,
-              ); // Banner nổi bật (ngẫu nhiên)
-              final hotToday = _getRandom(
-                allMangas,
+              ); // Sort theo viewCount
+              final trending = _getTrending(
+                cloudMangas,
                 10,
-              ); // Hot hôm nay (ngẫu nhiên)
-              final trending = _getRandom(
-                allMangas,
-                10,
-              ); // Top trending (ngẫu nhiên)
+              ); // Sort theo likeCount
 
               return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -285,6 +408,8 @@ class _HomeContentState extends State<_HomeContent> {
                       ),
                     ],
                   ),
+
+                  const ContinueReadingSection(),
 
                   SliverToBoxAdapter(
                     child: Padding(
@@ -370,7 +495,7 @@ class _MangaReaderCarousel extends StatelessWidget {
                             decoration: BoxDecoration(
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.4),
+                                  color: Colors.black.withValues(alpha: 0.4),
                                   blurRadius: 6,
                                   offset: const Offset(0, 4),
                                 ),
@@ -409,7 +534,7 @@ class _MangaReaderCarousel extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Chapter 1',
+                      c.author,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -459,7 +584,7 @@ class _RankList extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.9),
+                      color: color.withValues(alpha: 0.9),
                       borderRadius: const BorderRadius.only(
                         bottomRight: Radius.circular(8),
                       ),

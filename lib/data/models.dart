@@ -208,6 +208,7 @@ class Comment {
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) {
+    final rawReplies = json['replies'];
     return Comment(
       id: json['id']?.toString() ?? '',
       mangaId: (json['mangaId'] ?? json['comicId'])?.toString() ?? '',
@@ -223,9 +224,10 @@ class Comment {
           ? DateTime.tryParse(json['createdAt']) ?? DateTime.now()
           : DateTime.now(),
       isLiked: json['isLiked'] == true,
-      replies: json['replies'] is List
-          ? (json['replies'] as List)
-                .map((e) => Comment.fromJson(e as Map<String, dynamic>))
+      replies: rawReplies is List
+          ? rawReplies
+                .whereType<Map<String, dynamic>>()
+                .map(Comment.fromJson)
                 .toList()
           : null,
     );
@@ -319,12 +321,14 @@ class ReadingHistory {
 
   factory ReadingHistory.fromMap(Map<String, dynamic> map) {
     return ReadingHistory(
-      userId: map['userId'] as String? ?? 'guest',
-      mangaId: (map['mangaId'] ?? map['comicId']) as String,
-      chapterId: map['chapterId'] as String,
-      chapterTitle: map['chapterTitle'] as String?,
-      lastPageIndex: map['lastPageIndex'] as int? ?? 0,
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updatedAt'] as int),
+      userId: map['userId']?.toString() ?? 'guest',
+      mangaId: (map['mangaId'] ?? map['comicId'])?.toString() ?? '',
+      chapterId: map['chapterId']?.toString() ?? '',
+      chapterTitle: map['chapterTitle']?.toString(),
+      lastPageIndex: _readInt(map['lastPageIndex']),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        _readInt(map['updatedAt']),
+      ),
     );
   }
 
@@ -338,5 +342,137 @@ class ReadingHistory {
       'lastPageIndex': lastPageIndex,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
     };
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class ReaderProgress {
+  final String mangaId;
+  final String chapterId;
+  final int pageIndex;
+  final double scrollOffset;
+  final String? epubCfi;
+  final double progressPercent;
+  final DateTime updatedAt;
+
+  const ReaderProgress({
+    required this.mangaId,
+    required this.chapterId,
+    this.pageIndex = 0,
+    this.scrollOffset = 0,
+    this.epubCfi,
+    this.progressPercent = 0,
+    required this.updatedAt,
+  });
+
+  factory ReaderProgress.fromMap(Map<String, dynamic> map) {
+    return ReaderProgress(
+      mangaId: map['mangaId']?.toString() ?? '',
+      chapterId: map['chapterId']?.toString() ?? '',
+      pageIndex: _readInt(map['pageIndex']),
+      scrollOffset: _readDouble(map['scrollOffset']),
+      epubCfi: map['epubCfi']?.toString(),
+      progressPercent: _readDouble(map['progressPercent']),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        _readInt(map['updatedAt']),
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'mangaId': mangaId,
+      'chapterId': chapterId,
+      'pageIndex': pageIndex,
+      'scrollOffset': scrollOffset,
+      'epubCfi': epubCfi,
+      'progressPercent': progressPercent,
+      'updatedAt': updatedAt.millisecondsSinceEpoch,
+    };
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _readDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class ReaderBookmark {
+  final String id;
+  final String mangaId;
+  final String chapterId;
+  final int pageIndex;
+  final double scrollOffset;
+  final String? epubCfi;
+  final String? note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  const ReaderBookmark({
+    required this.id,
+    required this.mangaId,
+    required this.chapterId,
+    this.pageIndex = 0,
+    this.scrollOffset = 0,
+    this.epubCfi,
+    this.note,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory ReaderBookmark.fromMap(Map<String, dynamic> map) {
+    return ReaderBookmark(
+      id: map['id']?.toString() ?? '',
+      mangaId: map['mangaId']?.toString() ?? '',
+      chapterId: map['chapterId']?.toString() ?? '',
+      pageIndex: _readInt(map['pageIndex']),
+      scrollOffset: _readDouble(map['scrollOffset']),
+      epubCfi: map['epubCfi']?.toString(),
+      note: map['note']?.toString(),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        _readInt(map['createdAt']),
+      ),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        _readInt(map['updatedAt']),
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'mangaId': mangaId,
+      'chapterId': chapterId,
+      'pageIndex': pageIndex,
+      'scrollOffset': scrollOffset,
+      'epubCfi': epubCfi,
+      'note': note,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt.millisecondsSinceEpoch,
+    };
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _readDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

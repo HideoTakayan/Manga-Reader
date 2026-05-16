@@ -1,7 +1,12 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../data/database_helper.dart';
+import '../data/drive_service.dart';
 
 // NotificationService: 2 hệ thống notification độc lập:
 // 1. LOCAL NOTIFICATIONS: thanh tiến trình tải xuống (system notification bar)
@@ -25,8 +30,7 @@ class NotificationService {
     final initSettings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(
       settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {
-      },
+      onDidReceiveNotificationResponse: (details) {},
     );
     final androidImpl = _localNotifications
         .resolvePlatformSpecificImplementation<
@@ -45,13 +49,13 @@ class NotificationService {
       'download_channel',
       'Download Manager',
       channelDescription: 'Notifications for background downloads',
-      importance: Importance.low, 
+      importance: Importance.low,
       priority: Priority.low,
       onlyAlertOnce: true,
       showProgress: true,
       maxProgress: 100,
-      progress: progress, 
-      ongoing: true, 
+      progress: progress,
+      ongoing: true,
       autoCancel: false,
     );
     await _localNotifications.show(
@@ -71,10 +75,10 @@ class NotificationService {
     final androidDetails = AndroidNotificationDetails(
       'download_channel',
       'Download Manager',
-      importance: Importance.high, 
+      importance: Importance.high,
       priority: Priority.high,
       ongoing: false,
-      autoCancel: true, 
+      autoCancel: true,
     );
     final displayTitle = isError ? '❌ $title' : '✅ $title';
     await _localNotifications.show(
@@ -85,7 +89,12 @@ class NotificationService {
     );
   }
 
+  @Deprecated('Use cancelNotification instead.')
   Future<void> cancelNtification(int id) async {
+    await cancelNotification(id);
+  }
+
+  Future<void> cancelNotification(int id) async {
     await _localNotifications.cancel(id: id);
   }
 
@@ -125,28 +134,22 @@ class NotificationService {
         final filteredNotifications = snapshot.docs
             .where((doc) {
               final data = doc.data();
-              final mangaId =
-                  data['mangaId'] ?? data['comicId']; 
-              if (mangaId == null || mangaId == '')
-                return true; 
-              return followingIds.contains(
-                mangaId,
-              );
+              final mangaId = data['mangaId'] ?? data['comicId'];
+              if (mangaId == null || mangaId == '') return true;
+              return followingIds.contains(mangaId);
             })
             .map(
               (doc) => {
                 ...doc.data(),
                 'id': doc.id,
-                'isRead': readIds.contains(
-                  doc.id,
-                ),
+                'isRead': readIds.contains(doc.id),
               },
             )
             .toList();
 
         yield filteredNotifications;
       } catch (e) {
-        print('Error filtering notifications: $e');
+        debugPrint('Error filtering notifications: $e');
         yield [];
       }
     }
@@ -155,14 +158,10 @@ class NotificationService {
   Future<void> markAsRead(String notificationId) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return;
-    await _db.collection('users').doc(userId).set(
-      {
-        'readNotificationIds': FieldValue.arrayUnion([notificationId]),
-      }, 
-      SetOptions(merge: true),
-    );
+    await _db.collection('users').doc(userId).set({
+      'readNotificationIds': FieldValue.arrayUnion([notificationId]),
+    }, SetOptions(merge: true));
   }
-
 
   final Set<String> _processedIds = {};
   DateTime _startTime = DateTime.now();
@@ -171,15 +170,16 @@ class NotificationService {
   Future<void> initialize() async {
     await initLocalNotifications();
     _auth.authStateChanges().listen((user) {
-      if (user != null)
+      if (user != null) {
         _startListening();
-      else
+      } else {
         _stopListening();
+      }
     });
   }
 
   void _startListening() {
-    _stopListening(); 
+    _stopListening();
     _subscription = streamUserNotifications().listen((notifs) {
       for (var n in notifs) {
         final id = n['notificationId'] ?? n['id'];
@@ -217,14 +217,46 @@ class NotificationService {
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
     );
-    final id =
-        DateTime.now().millisecondsSinceEpoch ~/ 1000; 
+    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     await _localNotifications.show(
       id: id,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(android: androidDetails),
     );
+  }
+
+  Future<void> checkLocalChapterUpdates() async {
+    try {
+      await initLocalNotifications();
+      final db = await DatabaseHelper.instance.database;
+      final libraryRows = await db.query('lib_mapping', columns: ['mangaId']);
+      final libraryIds = libraryRows
+          .map((row) => row['mangaId']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      if (libraryIds.isEmpty) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      final mangas = await DriveService.instance.getMangas();
+      for (final manga in mangas.where((manga) => libraryIds.contains(manga.id))) {
+        final chapterCount = manga.chapterOrder.length;
+        if (chapterCount <= 0) continue;
+
+        final key = 'last_notified_chapter_count_${manga.id}';
+        final lastCount = prefs.getInt(key);
+        await prefs.setInt(key, chapterCount);
+
+        if (lastCount == null || chapterCount <= lastCount) continue;
+
+        await showGeneralNotification(
+          title: 'Có chapter mới',
+          body: '${manga.title} vừa cập nhật ${chapterCount - lastCount} chapter',
+        );
+      }
+    } catch (e) {
+      debugPrint('Local chapter update check failed: $e');
+    }
   }
 
   // ─── STUB METHODS (chưa implement phía client) ─────────────────────────────

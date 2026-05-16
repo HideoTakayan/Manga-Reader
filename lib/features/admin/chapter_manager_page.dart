@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import 'metadata_validator.dart';
 import 'package:path/path.dart' as path;
 
 // Trang quản lý chapter của một bộ truyện: xem, thêm, xóa, sắp xếp bằng kéo thả.
@@ -152,6 +153,15 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                 style: const TextStyle(color: Colors.orange),
               ),
             ),
+          IconButton(
+            tooltip: 'Validate chapter',
+            icon: const Icon(Icons.fact_check_outlined),
+            onPressed: _chapters.isEmpty
+                ? null
+                : () => _showValidationResult(
+                    MetadataValidator.validateChapters(_chapters),
+                  ),
+          ),
         ],
       ),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -189,7 +199,9 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                    border: Border.all(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: ListTile(
                     leading: const Icon(Icons.drag_handle, color: Colors.grey),
@@ -212,6 +224,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                         color: Colors.redAccent,
                       ),
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         final confirm = await showDialog<bool>(
                           context: context,
                           builder: (context) => AlertDialog(
@@ -249,7 +262,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                               chapter.id,
                             );
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              messenger.showSnackBar(
                                 const SnackBar(
                                   content: Text('Đã xóa chapter thành công'),
                                 ),
@@ -265,7 +278,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 
                             if (mounted) {
                               if (isNotFound) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   const SnackBar(
                                     content: Text(
                                       'File không tồn tại trên Drive, đã xóa khỏi danh sách local',
@@ -278,7 +291,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                   ),
                                 );
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   SnackBar(
                                     content: Text('Lỗi xóa chapter: $e'),
                                   ),
@@ -310,6 +323,40 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
       ),
     );
   }
+
+  void _showValidationResult(List<MetadataValidationIssue> issues) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        if (issues.isEmpty) {
+          return const SizedBox(
+            height: 160,
+            child: Center(child: Text('Danh sách chapter hợp lệ')),
+          );
+        }
+
+        return SafeArea(
+          child: ListView.separated(
+            itemCount: issues.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final issue = issues[index];
+              final isError = issue.severity == MetadataIssueSeverity.error;
+              return ListTile(
+                leading: Icon(
+                  isError ? Icons.error_outline : Icons.warning_amber,
+                  color: isError ? Colors.red : Colors.orange,
+                ),
+                title: Text(issue.title),
+                subtitle: Text(issue.message),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
 }
 
 // Dialog thêm chapter mới: nhập tên + chọn file ZIP/CBZ/EPUB → upload lên Drive.
@@ -324,31 +371,41 @@ class _AddChapterDialog extends StatefulWidget {
 
 class _AddChapterDialogState extends State<_AddChapterDialog> {
   final _titleController = TextEditingController();
-  File? _file;
+  final List<File> _files = [];
   bool _isUploading = false;
 
   // Mở file picker giới hạn chỉ file zip/cbz/epub — đây là các định dạng reader hỗ trợ.
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['zip', 'cbz', 'epub'],
+      allowedExtensions: ['zip', 'cbz', 'epub', 'pdf'],
+      allowMultiple: true,
     );
-    if (result != null && result.files.single.path != null) {
-      setState(() => _file = File(result.files.single.path!));
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _files
+          ..clear()
+          ..addAll(
+            result.files
+                .map((file) => file.path)
+                .whereType<String>()
+                .map(File.new),
+          );
+      });
     }
   }
 
   // Validate → upload qua DriveService → ghi thông báo vào Firestore → đóng dialog.
   Future<void> _submit() async {
-    if (_titleController.text.isEmpty) {
+    if (_titleController.text.isEmpty && _files.length == 1) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên chương')));
       return;
     }
-    if (_file == null) {
+    if (_files.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn file zip/epub')),
+        const SnackBar(content: Text('Vui lòng chọn file chapter')),
       );
       return;
     }
@@ -356,18 +413,25 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     setState(() => _isUploading = true);
     try {
       // Upload file lên folder manga trên Drive, đồng thời gửi push notification qua FCM
-      await DriveService.instance.addChapter(
-        mangaId: widget.mangaId,
-        title: _titleController.text,
-        file: _file!,
-      );
+      for (final file in _files) {
+        final fallbackTitle = path.basenameWithoutExtension(file.path);
+        await DriveService.instance.addChapter(
+          mangaId: widget.mangaId,
+          title: _files.length == 1 && _titleController.text.trim().isNotEmpty
+              ? _titleController.text.trim()
+              : fallbackTitle,
+          file: file,
+        );
+      }
 
       // Ghi thêm bản ghi vào Firestore để màn hình thông báo trong app đọc lại được lịch sử
       await FirebaseFirestore.instance.collection('notifications').add({
         'type': 'new_chapter', // Loại thông báo để app phân biệt xử lý
         'mangaId': widget.mangaId,
         'title': 'Truyện có chương mới!',
-        'body': 'Đã cập nhật ${_titleController.text}',
+        'body': _files.length == 1
+            ? 'Đã cập nhật ${_titleController.text.trim().isEmpty ? path.basenameWithoutExtension(_files.first.path) : _titleController.text.trim()}'
+            : 'Đã cập nhật ${_files.length} chương mới',
         'timestamp': FieldValue.serverTimestamp(),
         'sender': 'admin',
       });
@@ -423,7 +487,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: Colors.grey.withOpacity(0.5),
+                    color: Colors.grey.withValues(alpha: 0.5),
                     style: BorderStyle.solid,
                   ),
                   borderRadius: BorderRadius.circular(8),
@@ -431,15 +495,17 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 child: Row(
                   children: [
                     Icon(
-                      _file == null ? Icons.attach_file : Icons.check_circle,
-                      color: _file == null ? Colors.grey : Colors.green,
+                      _files.isEmpty ? Icons.attach_file : Icons.check_circle,
+                      color: _files.isEmpty ? Colors.grey : Colors.green,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        _file == null
-                            ? 'Chọn file (ZIP/EPUB)'
-                            : path.basename(_file!.path),
+                        _files.isEmpty
+                            ? 'Chọn file (ZIP/CBZ/PDF/EPUB)'
+                            : _files.length == 1
+                            ? path.basename(_files.first.path)
+                            : 'Đã chọn ${_files.length} file',
                         style: Theme.of(context).textTheme.bodyMedium,
                         overflow: TextOverflow.ellipsis,
                       ),

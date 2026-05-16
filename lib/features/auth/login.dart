@@ -211,7 +211,7 @@ class _LoginPageState extends State<LoginPage> {
                   color: Colors.orange.shade400,
                   shadows: [
                     Shadow(
-                      color: Colors.orange.shade700.withOpacity(0.6),
+                      color: Colors.orange.shade700.withValues(alpha: 0.6),
                       offset: const Offset(0, 3),
                       blurRadius: 6,
                     ),
@@ -332,7 +332,7 @@ class _LoginPageState extends State<LoginPage> {
                     backgroundColor: Colors.orange.shade400,
                     foregroundColor: Colors.black,
                     elevation: 4,
-                    shadowColor: Colors.orange.withOpacity(0.4),
+                    shadowColor: Colors.orange.withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),

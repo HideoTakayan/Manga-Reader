@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../data/models.dart';
 
 // HistoryService: lưu và đồng bộ lịch sử đọc lên Firestore.
@@ -14,17 +15,18 @@ class HistoryService {
   /// Lưu tiến độ đọc lên Firestore — set() ghi đè toàn document nên không cần merge
   Future<void> saveHistory(ReadingHistory history) async {
     final uid = _auth.currentUser?.uid;
-    if (uid == null) return; 
+    if (uid == null) return;
 
     try {
+      final data = history.toMap()..remove('comicId');
       await _db
           .collection('users')
           .doc(uid)
           .collection('history')
-          .doc(history.mangaId) 
-          .set({...history.toMap(), 'updatedAt': FieldValue.serverTimestamp()});
+          .doc(history.mangaId)
+          .set({...data, 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
-      print('Lỗi khi lưu lịch sử lên cloud: $e');
+      debugPrint('Lỗi khi lưu lịch sử lên cloud: $e');
     }
   }
 
@@ -40,15 +42,10 @@ class HistoryService {
           .doc(mangaId)
           .get();
       if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        if (data['updatedAt'] is Timestamp) {
-          data['updatedAt'] =
-              (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
-        }
-        return ReadingHistory.fromMap(data);
+        return _historyFromFirestore(doc.id, doc.data()!);
       }
     } catch (e) {
-      print('Lỗi khi lấy lịch sử truyện từ cloud: $e');
+      debugPrint('Lỗi khi lấy lịch sử truyện từ cloud: $e');
     }
     return null;
   }
@@ -67,15 +64,10 @@ class HistoryService {
           .get();
 
       return snapshot.docs.map((doc) {
-        final data = doc.data();
-        if (data['updatedAt'] is Timestamp) {
-          data['updatedAt'] =
-              (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
-        }
-        return ReadingHistory.fromMap(data);
+        return _historyFromFirestore(doc.id, doc.data());
       }).toList();
     } catch (e) {
-      print('Lỗi khi tải toàn bộ lịch sử từ cloud: $e');
+      debugPrint('Lỗi khi tải toàn bộ lịch sử từ cloud: $e');
       return [];
     }
   }
@@ -91,7 +83,7 @@ class HistoryService {
           .doc(mangaId)
           .delete();
     } catch (e) {
-      print('Lỗi khi xoá lịch sử truyện: $e');
+      debugPrint('Lỗi khi xoá lịch sử truyện: $e');
     }
   }
 
@@ -108,7 +100,21 @@ class HistoryService {
       }
       await batch.commit();
     } catch (e) {
-      print('Lỗi khi xoá toàn bộ lịch sử: $e');
+      debugPrint('Lỗi khi xoá toàn bộ lịch sử: $e');
     }
+  }
+
+  ReadingHistory _historyFromFirestore(
+    String docId,
+    Map<String, dynamic> rawData,
+  ) {
+    final data = Map<String, dynamic>.from(rawData);
+    data['mangaId'] ??= docId;
+    if (data['updatedAt'] is Timestamp) {
+      data['updatedAt'] =
+          (data['updatedAt'] as Timestamp).millisecondsSinceEpoch;
+    }
+    data['updatedAt'] ??= 0;
+    return ReadingHistory.fromMap(data);
   }
 }

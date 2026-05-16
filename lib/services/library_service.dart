@@ -11,8 +11,7 @@ class LibraryService {
 
   final _dbHelper = DatabaseHelper.instance;
 
-  final _categoriesController =
-      StreamController<List<String>>.broadcast(); 
+  final _categoriesController = StreamController<List<String>>.broadcast();
   final _mappingController = StreamController<void>.broadcast();
   Stream<List<String>> streamCategories() {
     _refreshCategories();
@@ -22,7 +21,10 @@ class LibraryService {
   Future<void> _refreshCategories() async {
     final db = await _dbHelper.database;
     final maps = await db.query('lib_categories', orderBy: 'sortIndex ASC');
-    final cats = maps.map((m) => m['name'] as String).toList();
+    final cats = maps
+        .map((m) => _readString(m, 'name'))
+        .where((name) => name.isNotEmpty)
+        .toList();
     if (cats.isEmpty) {
       // Auto-tạo category "Mặc định" nếu user xóa hết — đảm bảo có ít nhất 1 category
       await addCategory('Mặc định');
@@ -36,12 +38,11 @@ class LibraryService {
     final countMap = await db.rawQuery(
       'SELECT count(*) as count FROM lib_categories',
     );
-    final count = countMap.first['count'] as int;
-    await db.insert(
-      'lib_categories',
-      {'name': name, 'sortIndex': count},
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    ); 
+    final count = _readInt(countMap.first, 'count');
+    await db.insert('lib_categories', {
+      'name': name,
+      'sortIndex': count,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
     _refreshCategories();
   }
 
@@ -77,9 +78,7 @@ class LibraryService {
         whereArgs: [orderedNames[i]],
       );
     }
-    await batch.commit(
-      noResult: true,
-    ); 
+    await batch.commit(noResult: true);
     _refreshCategories();
   }
 
@@ -98,22 +97,47 @@ class LibraryService {
   }
 
   Stream<List<String>> streamMangaCategories(String mangaId) {
-    final controller = StreamController<List<String>>();
+    // Dùng StreamController.broadcast() thay vì single-subscription để nhiều
+    // listener cùng lắng nghe (ví dụ: widget re-mount) mà không bị lỗi.
+    late StreamController<List<String>> controller;
+    StreamSubscription? subscription;
 
     Future<void> fetch() async {
-      final db = await _dbHelper.database;
-      final maps = await db.query(
-        'lib_mapping',
-        where: 'mangaId = ?',
-        whereArgs: [mangaId],
-      );
-      controller.add(maps.map((m) => m['categoryName'] as String).toList());
+      if (controller.isClosed) return;
+      try {
+        final db = await _dbHelper.database;
+        final maps = await db.query(
+          'lib_mapping',
+          where: 'mangaId = ?',
+          whereArgs: [mangaId],
+        );
+        if (!controller.isClosed) {
+          controller.add(
+            maps
+                .map((m) => _readString(m, 'categoryName'))
+                .where((categoryName) => categoryName.isNotEmpty)
+                .toList(),
+          );
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
     }
 
-    fetch();
-    final subscription = _mappingController.stream.listen((_) => fetch());
-    controller.onCancel = () =>
-        subscription.cancel(); 
+    controller = StreamController<List<String>>(
+      onListen: () {
+        fetch();
+        // Lắng nghe sự kiện mapping thay đổi để re-fetch
+        subscription = _mappingController.stream.listen((_) => fetch());
+      },
+      onCancel: () {
+        // Hủy subscription khi không còn listener — tránh leak
+        subscription?.cancel();
+        subscription = null;
+        controller.close();
+      },
+    );
+
     return controller.stream;
   }
 
@@ -147,7 +171,12 @@ class LibraryService {
         where: 'categoryName = ?',
         whereArgs: [category],
       );
-      controller.add(maps.map((m) => m['mangaId'] as String).toList());
+      controller.add(
+        maps
+            .map((m) => _readString(m, 'mangaId'))
+            .where((id) => id.isNotEmpty)
+            .toList(),
+      );
     }
 
     fetch();
@@ -163,7 +192,10 @@ class LibraryService {
       where: 'mangaId = ?',
       whereArgs: [mangaId],
     );
-    return maps.map((m) => m['categoryName'] as String).toList();
+    return maps
+        .map((m) => _readString(m, 'categoryName'))
+        .where((categoryName) => categoryName.isNotEmpty)
+        .toList();
   }
 
   Future<void> addToCategory(String mangaId, String categoryName) async {
@@ -173,5 +205,18 @@ class LibraryService {
       'categoryName': categoryName,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
     _mappingController.add(null);
+  }
+
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
+  }
+
+  int _readInt(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

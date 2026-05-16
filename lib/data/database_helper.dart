@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:manga_reader/data/models.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -24,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 8,
+      version: 11,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -32,24 +33,16 @@ class DatabaseHelper {
 
   // Migration: thêm bảng/cột mới mà không xóa dữ liệu cũ.
   // Mỗi khối if xử lý một lần nâng cấp — tăng version trong _initDB thì phải thêm khối tương ứng ở đây.
-  Future _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute('ALTER TABLE history ADD COLUMN chapterTitle TEXT');
+      if (await _tableExists(db, 'history') &&
+          !await _columnExists(db, 'history', 'chapterTitle')) {
+        await db.execute('ALTER TABLE history ADD COLUMN chapterTitle TEXT');
+      }
     }
     if (oldVersion < 3) {
       // Tạo lại bảng history với PRIMARY KEY kép để mỗi user chỉ có 1 bản ghi cho mỗi truyện.
-      await db.execute('DROP TABLE IF EXISTS history');
-      await db.execute('''
-        CREATE TABLE history (
-          userId TEXT,
-          comicId TEXT,
-          chapterId TEXT,
-          chapterTitle TEXT,
-          lastPageIndex INTEGER,
-          updatedAt INTEGER,
-          PRIMARY KEY (userId, comicId)
-        )
-      ''');
+      await _migrateHistoryToCompositeKey(db);
     }
     if (oldVersion < 4) {
       await _createLibraryTables(db);
@@ -72,15 +65,110 @@ class DatabaseHelper {
     if (oldVersion < 8) {
       // isSynced: cờ đánh dấu bản ghi lịch sử đã được đẩy lên Firestore chưa (0 = chưa, 1 = rồi).
       try {
-        await db.execute(
-          'ALTER TABLE history ADD COLUMN isSynced INTEGER DEFAULT 0',
-        );
+        if (!await _columnExists(db, 'history', 'isSynced')) {
+          await db.execute(
+            'ALTER TABLE history ADD COLUMN isSynced INTEGER DEFAULT 0',
+          );
+        }
       } catch (_) {}
+    }
+    if (oldVersion < 9) {
+      await _createReaderProgressTables(db);
+    }
+    if (oldVersion < 10) {
+      await _createCatalogCacheTable(db);
+    }
+    if (oldVersion < 11) {
+      await _createLibraryStatusTable(db);
     }
   }
 
   // Tạo 2 bảng thư viện cá nhân:
   // lib_categories: danh mục người dùng tự đặt tên. lib_mapping: nối mangaId <-> categoryName (nhiều-nhiều).
+  Future<bool> _tableExists(Database db, String tableName) async {
+    final result = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [tableName],
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<bool> _columnExists(
+    Database db,
+    String tableName,
+    String columnName,
+  ) async {
+    if (!await _tableExists(db, tableName)) return false;
+    final columns = await db.rawQuery('PRAGMA table_info($tableName)');
+    return columns.any((column) => column['name'] == columnName);
+  }
+
+  Future<void> _createHistoryTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS history (
+        userId TEXT,
+        comicId TEXT,
+        chapterId TEXT,
+        chapterTitle TEXT,
+        lastPageIndex INTEGER,
+        updatedAt INTEGER,
+        isSynced INTEGER DEFAULT 0,
+        PRIMARY KEY (userId, comicId)
+      )
+    ''');
+  }
+
+  Future<void> _migrateHistoryToCompositeKey(Database db) async {
+    if (!await _tableExists(db, 'history')) {
+      await _createHistoryTable(db);
+      return;
+    }
+
+    const oldTable = 'history_old_v3_migration';
+    await db.execute('DROP TABLE IF EXISTS $oldTable');
+    await db.execute('ALTER TABLE history RENAME TO $oldTable');
+    await _createHistoryTable(db);
+
+    final hasUserId = await _columnExists(db, oldTable, 'userId');
+    final hasMangaId = await _columnExists(db, oldTable, 'mangaId');
+    final hasComicId = await _columnExists(db, oldTable, 'comicId');
+    final hasChapterId = await _columnExists(db, oldTable, 'chapterId');
+    final hasChapterTitle = await _columnExists(db, oldTable, 'chapterTitle');
+    final hasLastPageIndex = await _columnExists(db, oldTable, 'lastPageIndex');
+    final hasUpdatedAt = await _columnExists(db, oldTable, 'updatedAt');
+    final hasIsSynced = await _columnExists(db, oldTable, 'isSynced');
+
+    final mangaIdExpr = hasMangaId
+        ? 'mangaId'
+        : hasComicId
+        ? 'comicId'
+        : "''";
+
+    await db.execute('''
+      INSERT OR REPLACE INTO history (
+        userId,
+        comicId,
+        chapterId,
+        chapterTitle,
+        lastPageIndex,
+        updatedAt,
+        isSynced
+      )
+      SELECT
+        ${hasUserId ? "COALESCE(userId, 'guest')" : "'guest'"},
+        COALESCE($mangaIdExpr, ''),
+        ${hasChapterId ? "COALESCE(chapterId, '')" : "''"},
+        ${hasChapterTitle ? 'chapterTitle' : 'NULL'},
+        ${hasLastPageIndex ? 'COALESCE(lastPageIndex, 0)' : '0'},
+        ${hasUpdatedAt ? 'COALESCE(updatedAt, 0)' : '0'},
+        ${hasIsSynced ? 'COALESCE(isSynced, 0)' : '0'}
+      FROM $oldTable
+      WHERE COALESCE($mangaIdExpr, '') != ''
+    ''');
+
+    await db.execute('DROP TABLE IF EXISTS $oldTable');
+  }
+
   Future<void> _createLibraryTables(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS lib_categories (
@@ -116,6 +204,85 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _createReaderProgressTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS reader_progress (
+        mangaId TEXT PRIMARY KEY,
+        chapterId TEXT NOT NULL,
+        pageIndex INTEGER DEFAULT 0,
+        scrollOffset REAL DEFAULT 0,
+        epubCfi TEXT,
+        progressPercent REAL DEFAULT 0,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        id TEXT PRIMARY KEY,
+        mangaId TEXT NOT NULL,
+        chapterId TEXT NOT NULL,
+        pageIndex INTEGER DEFAULT 0,
+        scrollOffset REAL DEFAULT 0,
+        epubCfi TEXT,
+        note TEXT,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_bookmarks_manga
+      ON bookmarks (mangaId, updatedAt DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_bookmarks_chapter_page
+      ON bookmarks (chapterId, pageIndex)
+    ''');
+  }
+
+  Future<void> _createCatalogCacheTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS catalog_cache (
+        mangaId TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        normalizedTitle TEXT,
+        aliasesJson TEXT,
+        genresJson TEXT,
+        author TEXT,
+        status TEXT,
+        coverFileId TEXT,
+        updatedAt INTEGER,
+        viewCount INTEGER DEFAULT 0,
+        likeCount INTEGER DEFAULT 0,
+        rawJson TEXT NOT NULL,
+        cachedAt INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_catalog_cache_title
+      ON catalog_cache (normalizedTitle)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_catalog_cache_updated
+      ON catalog_cache (updatedAt DESC)
+    ''');
+  }
+
+  Future<void> _createLibraryStatusTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS library_status (
+        mangaId TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        tagsJson TEXT,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+  }
+
   // Chạy một lần duy nhất khi cài app — tạo toàn bộ bảng với cấu trúc mới nhất.
   Future _createDB(Database db, int version) async {
     // Cache thông tin bộ truyện để dùng offline
@@ -125,7 +292,8 @@ class DatabaseHelper {
         title TEXT,
         author TEXT,
         description TEXT,
-        coverUrl TEXT
+        coverUrl TEXT,
+        genres TEXT
       )
     ''');
 
@@ -166,10 +334,9 @@ class DatabaseHelper {
 
     await _createLibraryTables(db);
     await _createDownloadTable(db);
-
-    try {
-      await db.execute('ALTER TABLE comics ADD COLUMN genres TEXT');
-    } catch (_) {}
+    await _createReaderProgressTables(db);
+    await _createCatalogCacheTable(db);
+    await _createLibraryStatusTable(db);
   }
 
   // ── TRUYỆN CỤC BỘ ──────────────────────────────────────────────────────────
@@ -209,20 +376,8 @@ class DatabaseHelper {
   // Luôn đặt isSynced = 0 để SyncService biết cần push lên Firestore lần sau có mạng.
   Future<void> saveHistory(ReadingHistory history) async {
     final db = await instance.database;
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS history (
-        userId TEXT,
-        comicId TEXT,
-        chapterId TEXT,
-        chapterTitle TEXT,
-        lastPageIndex INTEGER,
-        updatedAt INTEGER,
-        isSynced INTEGER DEFAULT 0,
-        PRIMARY KEY (userId, comicId)
-      )
-    ''');
 
-    // Tạo map sạch đúng với schema — tránh lỗi do ReadingHistory.toMap() trả về key thừa.
+    // Map sạch đúng với schema — tránh lỗi do ReadingHistory.toMap() trả về key thừa.
     final map = history.toMap();
     final dbMap = {
       'userId': map['userId'],
@@ -315,13 +470,106 @@ class DatabaseHelper {
     try {
       await db.delete('history', where: 'userId = ?', whereArgs: [userId]);
     } catch (e) {
-      print('Error clearing history: $e');
+      debugPrint('Error clearing history: $e');
+    }
+  }
+
+  Future<void> deleteHistoryForManga(String userId, String mangaId) async {
+    final db = await instance.database;
+    try {
+      await db.delete(
+        'history',
+        where: 'userId = ? AND comicId = ?',
+        whereArgs: [userId, mangaId],
+      );
+    } catch (e) {
+      debugPrint('Error deleting history for manga: $e');
     }
   }
 
   // ── QUẢN LÝ FILE ĐÃ TẢI ────────────────────────────────────────────────────
 
   // Ghi thông tin chương vừa tải xong. DownloadService gọi sau khi file lưu thành công.
+  Future<void> saveReaderProgress(ReaderProgress progress) async {
+    final db = await instance.database;
+    await db.insert(
+      'reader_progress',
+      progress.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<ReaderProgress?> getReaderProgress(String mangaId) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'reader_progress',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+      limit: 1,
+    );
+    if (result.isEmpty) return null;
+    return ReaderProgress.fromMap(result.first);
+  }
+
+  Future<void> deleteReaderProgress(String mangaId) async {
+    final db = await instance.database;
+    await db.delete(
+      'reader_progress',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+    );
+  }
+
+  Future<void> saveBookmark(ReaderBookmark bookmark) async {
+    final db = await instance.database;
+    await db.insert(
+      'bookmarks',
+      bookmark.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<ReaderBookmark>> getBookmarksForManga(String mangaId) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'bookmarks',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+      orderBy: 'updatedAt DESC',
+    );
+    return result.map((row) => ReaderBookmark.fromMap(row)).toList();
+  }
+
+  Future<ReaderBookmark?> getBookmarkForPage({
+    required String mangaId,
+    required String chapterId,
+    required int pageIndex,
+  }) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'bookmarks',
+      where: 'mangaId = ? AND chapterId = ? AND pageIndex = ?',
+      whereArgs: [mangaId, chapterId, pageIndex],
+      limit: 1,
+    );
+    if (result.isEmpty) return null;
+    return ReaderBookmark.fromMap(result.first);
+  }
+
+  Future<void> deleteBookmark(String id) async {
+    final db = await instance.database;
+    await db.delete('bookmarks', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteBookmarksForManga(String mangaId) async {
+    final db = await instance.database;
+    await db.delete(
+      'bookmarks',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+    );
+  }
+
   Future<void> saveDownload({
     required String chapterId,
     required String mangaId,
@@ -418,7 +666,10 @@ class DatabaseHelper {
     final result = await db.rawQuery(
       'SELECT SUM(fileSize) as total FROM downloaded_chapters',
     );
-    return (result.first['total'] as int?) ?? 0;
+    final value = result.first['total'];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   // Đóng kết nối DB (thường không cần gọi thủ công).

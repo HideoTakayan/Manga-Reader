@@ -19,7 +19,13 @@ import '../features/notification/notification_list_page.dart';
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/chapter_manager_page.dart';
 import '../features/downloads/download_queue_page.dart';
+import '../features/backup/backup_restore_page.dart';
+import '../features/storage/storage_manager_page.dart';
+import '../features/library/reading_analytics_page.dart';
+import '../features/reader/local_novel_reader_page.dart';
 import '../data/models_cloud.dart';
+import '../services/novel_service.dart';
+import '../config/admin_config.dart';
 
 // Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
@@ -63,7 +69,8 @@ final GoRouter appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/admin/control',
-              builder: (_, __) => const AdminDashboardPage(),
+              builder: (context, state) =>
+                  _AdminRouteGuard(child: const AdminDashboardPage()),
             ),
           ],
         ),
@@ -114,6 +121,12 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) =>
           SearchPage(initialGenre: state.uri.queryParameters['genre']),
     ),
+
+    // Route trang thống kê đọc (Analytics)
+    GoRoute(
+      path: '/analytics',
+      builder: (context, state) => const ReadingAnalyticsPage(),
+    ),
     // Route trang danh sách thông báo của người dùng
     GoRoute(
       path: '/notifications',
@@ -125,10 +138,38 @@ final GoRouter appRouter = GoRouter(
       path: '/downloads',
       builder: (context, state) => const DownloadQueuePage(),
     ),
+    GoRoute(
+      path: '/storage',
+      builder: (context, state) => const StorageManagerPage(),
+    ),
+    GoRoute(
+      path: '/backup',
+      builder: (context, state) => const BackupRestorePage(),
+    ),
+    // Route màn hình đọc truyện chữ (EPUB) cục bộ — nhận LocalNovel qua state.extra
+    GoRoute(
+      path: '/novel-reader',
+      builder: (context, state) {
+        if (state.extra is! LocalNovel) {
+          return const _MissingRouteDataPage();
+        }
+        final novel = state.extra as LocalNovel;
+        return LocalNovelReaderPage(novel: novel);
+      },
+    ),
     // Route trang quản lý chương dành cho Admin - nhận object CloudManga qua state.extra
     GoRoute(
       path: '/admin/chapters',
       builder: (context, state) {
+        if (!AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email)) {
+          return const _ForbiddenPage();
+        }
+        if (state.extra is! CloudManga) {
+          return const _NotFoundPage(
+            returnPath: '/admin/control',
+            returnLabel: 'Về trang quản trị',
+          );
+        }
         final manga = state.extra as CloudManga;
         return ChapterManagerPage(manga: manga);
       },
@@ -159,6 +200,75 @@ class _AuthCheckPage extends StatelessWidget {
         WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/'));
         return const SizedBox.shrink();
       },
+    );
+  }
+}
+
+class _AdminRouteGuard extends StatelessWidget {
+  final Widget child;
+  const _AdminRouteGuard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final email = FirebaseAuth.instance.currentUser?.email;
+    if (!AdminConfig.isAdmin(email)) return const _ForbiddenPage();
+    return child;
+  }
+}
+
+class _ForbiddenPage extends StatelessWidget {
+  const _ForbiddenPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Không có quyền truy cập')),
+      body: Center(
+        child: FilledButton(
+          onPressed: () => context.go('/'),
+          child: const Text('Về trang chủ'),
+        ),
+      ),
+    );
+  }
+}
+
+class _MissingRouteDataPage extends StatelessWidget {
+  const _MissingRouteDataPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Không tìm thấy dữ liệu')),
+      body: Center(
+        child: FilledButton(
+          onPressed: () => context.go('/'),
+          child: const Text('Về trang chủ'),
+        ),
+      ),
+    );
+  }
+}
+
+class _NotFoundPage extends StatelessWidget {
+  final String returnPath;
+  final String returnLabel;
+  const _NotFoundPage({
+    this.returnPath = '/',
+    this.returnLabel = 'Về trang chủ',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: ValueKey(returnLabel),
+      appBar: AppBar(title: const Text('Không tìm thấy dữ liệu')),
+      body: Center(
+        child: FilledButton(
+          onPressed: () => context.go(returnPath),
+          child: const Text('Về trang quản trị'),
+        ),
+      ),
     );
   }
 }

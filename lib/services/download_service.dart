@@ -37,6 +37,7 @@ class DownloadTask {
   String? errorMessage;
   int? totalBytes;
   int? downloadedBytes;
+  final bool isSilent;
 
   DownloadTask({
     required this.chapterId,
@@ -49,6 +50,7 @@ class DownloadTask {
     this.errorMessage,
     this.totalBytes,
     this.downloadedBytes,
+    this.isSilent = false,
   });
 
   DownloadTask copyWith({
@@ -69,6 +71,7 @@ class DownloadTask {
       errorMessage: errorMessage ?? this.errorMessage,
       totalBytes: totalBytes ?? this.totalBytes,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      isSilent: isSilent,
     );
   }
 
@@ -84,30 +87,48 @@ class DownloadTask {
       'errorMessage': errorMessage,
       'totalBytes': totalBytes,
       'downloadedBytes': downloadedBytes,
+      'isSilent': isSilent,
     };
   }
 
   factory DownloadTask.fromJson(Map<String, dynamic> map) {
+    final rawStatus = map['status'] is int ? map['status'] as int : 0;
+    final statusIndex = rawStatus
+        .clamp(0, DownloadStatus.values.length - 1)
+        .toInt();
     return DownloadTask(
       chapterId: map['chapterId'] ?? '',
       mangaId: map['mangaId'] ?? '',
       mangaTitle: map['mangaTitle'] ?? '',
       chapterTitle: map['chapterTitle'] ?? '',
       fileType: map['fileType'] ?? 'zip',
-      status: DownloadStatus.values[map['status'] ?? 0],
-      progress: map['progress'] ?? 0.0,
+      status: DownloadStatus.values[statusIndex],
+      progress: _readDouble(map['progress']),
       errorMessage: map['errorMessage'],
-      totalBytes: map['totalBytes'],
-      downloadedBytes: map['downloadedBytes'],
+      totalBytes: _readNullableInt(map['totalBytes']),
+      downloadedBytes: _readNullableInt(map['downloadedBytes']),
+      isSilent: map['isSilent'] == true,
     );
+  }
+
+  static double _readDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  static int? _readNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
   }
 }
 
 class DownloadService {
   static final DownloadService instance = DownloadService._internal();
   DownloadService._internal() {
-    _activeDownloads = 0;
-    restoreQueue(); 
+    restoreQueue();
   }
   // Hàng đợi tải xuống
   final Map<String, DownloadTask> _downloadQueue = {};
@@ -131,10 +152,11 @@ class DownloadService {
     required String chapterTitle,
     String fileType = 'cbz',
     Manga? mangaInfo,
+    bool isSilent = false,
   }) async {
     // Lưu thông tin cho chế độ Ngoại tuyến (Trang Chi tiết)
     if (mangaInfo != null) {
-      DatabaseHelper.instance.saveLocalManga(mangaInfo);
+      await DatabaseHelper.instance.saveLocalManga(mangaInfo);
     }
 
     // Kiểm tra đã tải chưa
@@ -160,6 +182,7 @@ class DownloadService {
       chapterTitle: chapterTitle,
       fileType: fileType,
       status: DownloadStatus.queued,
+      isSilent: isSilent,
     );
 
     _downloadQueue[chapterId] = task;
@@ -180,7 +203,7 @@ class DownloadService {
     }
 
     debugPrint(
-      '🔄 Queue Check: Active=$_activeDownloads/${_maxConcurrentDownloads}, Queue=${_downloadQueue.length}',
+      '🔄 Queue Check: Active=$_activeDownloads/$_maxConcurrentDownloads, Queue=${_downloadQueue.length}',
     );
 
     if (_activeDownloads >= _maxConcurrentDownloads) return;
@@ -211,12 +234,14 @@ class DownloadService {
 
     await NotificationService.instance.initLocalNotifications();
     final notifId = task.chapterId.hashCode;
-    await NotificationService.instance.showDownloadProgress(
-      notifId,
-      0,
-      'Đang chuẩn bị...',
-      task.chapterTitle,
-    );
+    if (!task.isSilent) {
+      await NotificationService.instance.showDownloadProgress(
+          notifId,
+        0,
+        'Đang chuẩn bị...',
+        task.chapterTitle,
+      );
+    }
 
     try {
       debugPrint('📥 Bắt đầu tải: ${task.chapterTitle}');
@@ -264,7 +289,8 @@ class DownloadService {
           task.totalBytes = total;
           _notifyListeners();
 
-          if (DateTime.now().difference(lastNotifTime).inMilliseconds > 800) {
+          if (!task.isSilent &&
+              DateTime.now().difference(lastNotifTime).inMilliseconds > 800) {
             await NotificationService.instance.showDownloadProgress(
               notifId,
               (progress * 100).toInt(),
@@ -281,6 +307,20 @@ class DownloadService {
       }
 
       // 3. Lưu tệp vào máy (Tên chương đã được làm sạch)
+      if (task.status == DownloadStatus.cancelled) {
+        await NotificationService.instance.cancelNotification(notifId);
+        return;
+      }
+
+      if (task.status == DownloadStatus.paused) {
+        task.progress = 0.0;
+        task.downloadedBytes = null;
+        task.totalBytes = null;
+        _notifyListeners();
+        await NotificationService.instance.cancelNotification(notifId);
+        return;
+      }
+
       final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
       String fileName = safeChapterTitle;
       if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
@@ -308,11 +348,13 @@ class DownloadService {
         '✅ Tải xong: ${task.chapterTitle} (${_formatBytes(fileBytes.length)})',
       );
 
-      await NotificationService.instance.showDownloadComplete(
-        notifId,
-        'Tải xong',
-        task.chapterTitle,
-      );
+      if (!task.isSilent) {
+        await NotificationService.instance.showDownloadComplete(
+          notifId,
+          'Tải xong',
+          task.chapterTitle,
+        );
+      }
 
       Future.delayed(const Duration(seconds: 1), () {
         _downloadQueue.remove(task.chapterId);
@@ -324,12 +366,14 @@ class DownloadService {
       task.status = DownloadStatus.failed;
       task.errorMessage = e.toString();
 
-      await NotificationService.instance.showDownloadComplete(
+      if (!task.isSilent) {
+        await NotificationService.instance.showDownloadComplete(
         notifId,
         'Lỗi tải',
-        task.chapterTitle,
-        isError: true,
-      );
+          task.chapterTitle,
+          isError: true,
+        );
+      }
     } finally {
       _activeDownloads--;
       _notifyListeners();
@@ -392,6 +436,24 @@ class DownloadService {
     }
   }
 
+  void retryAllFailed() {
+    var changed = false;
+    for (final task in _downloadQueue.values) {
+      if (task.status == DownloadStatus.failed) {
+        task.status = DownloadStatus.queued;
+        task.progress = 0.0;
+        task.downloadedBytes = null;
+        task.totalBytes = null;
+        task.errorMessage = null;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _notifyListeners();
+    _processQueue();
+    debugPrint('🔄 Thử lại tất cả downloads bị lỗi');
+  }
+
   /// Tạm dừng tất cả tải xuống
   void pauseAll() {
     for (final task in _downloadQueue.values) {
@@ -418,8 +480,10 @@ class DownloadService {
 
   /// Xóa toàn bộ hàng đợi
   void clearQueue() {
+    for (final task in _downloadQueue.values) {
+      task.status = DownloadStatus.cancelled;
+    }
     _downloadQueue.clear();
-    _activeDownloads = 0;
     _notifyListeners();
     debugPrint('🗑️ Đã xóa hàng đợi');
   }
@@ -431,30 +495,38 @@ class DownloadService {
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
       if (downloadInfo == null) return;
 
-      final mangaId = downloadInfo['mangaId'] as String;
+      final mangaId = _readString(downloadInfo, 'mangaId');
 
       // 2. Xóa tệp
-      final filePath = downloadInfo['localPath'] as String;
-      final file = File(filePath);
-      if (await file.exists()) {
-        await file.delete();
+      final filePath = _readString(downloadInfo, 'localPath');
+      if (filePath.isNotEmpty) {
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
       }
 
       // 3. Xóa khỏi cơ sở dữ liệu
       await DatabaseHelper.instance.deleteDownload(chapterId);
 
       // 4. Cập nhật bộ nhớ đệm
-      await DownloadCache.instance.removeChapter(chapterId, mangaId);
+      if (mangaId.isNotEmpty) {
+        await DownloadCache.instance.removeChapter(chapterId, mangaId);
+      }
 
       debugPrint('🗑️ Đã xóa download: $chapterId');
 
       // 5. Kiểm tra xem còn chương nào của truyện này không
-      final remaining = await DatabaseHelper.instance.getDownloadsByManga(
-        mangaId,
-      );
-      if (remaining.isEmpty) {
+      final remaining = mangaId.isEmpty
+          ? const <Map<String, dynamic>>[]
+          : await DatabaseHelper.instance.getDownloadsByManga(mangaId);
+      if (mangaId.isNotEmpty && remaining.isEmpty) {
         debugPrint('🧹 Không còn chương nào, tiến hành xóa folder truyện...');
-        final mangaTitle = downloadInfo['mangaTitle'] as String;
+        final mangaTitle = _readString(downloadInfo, 'mangaTitle');
+        if (mangaTitle.isEmpty) {
+          await DownloadCache.instance.removeManga(mangaId);
+          return;
+        }
         final folderPath = await FolderService.getMangaPathByTitle(mangaTitle);
         final dir = Directory(folderPath);
         if (await dir.exists()) {
@@ -580,7 +652,14 @@ class DownloadService {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
-  /// Xóa toàn bộ tệp tải xuống của một truyện (tệp, thư mục, cơ sở dữ liệu, bộ nhớ đệm)
+  /// Đọc field chuỗi từ dữ liệu SQLite/JSON cũ.
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
+  }
+
+  /// Xóa toàn bộ tệp tải xuống của một truyện.
   Future<void> deleteMangaDownloads(String mangaId, String mangaTitle) async {
     try {
       debugPrint('🗑️ Đang xóa toàn bộ download manga: $mangaTitle');

@@ -315,13 +315,14 @@ class _HelpPageState extends State<HelpPage> {
               if (await canLaunchUrl(emailUri)) {
                 await launchUrl(emailUri);
               } else {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở email'),
                       backgroundColor: Colors.red,
                     ),
                   );
+                }
               }
             },
           ),
@@ -345,13 +346,14 @@ class _HelpPageState extends State<HelpPage> {
               if (await canLaunchUrl(fbUri)) {
                 await launchUrl(fbUri, mode: LaunchMode.externalApplication);
               } else {
-                if (mounted)
+                if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở Facebook'),
                       backgroundColor: Colors.red,
                     ),
                   );
+                }
               }
             },
           ),

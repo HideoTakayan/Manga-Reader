@@ -6,23 +6,22 @@ import 'package:google_sign_in/google_sign_in.dart';
 // Thiết kế này OK vì FirebaseAuth/GoogleSignIn đều là Singleton bên dưới.
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseFirestore _db =
-      FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   /// Đăng ký tài khoản email/password + tạo Firestore profile + gửi email xác thực
   Future<void> register(String email, String password, String name) async {
+    final normalizedEmail = email.trim().toLowerCase();
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
-        email: email,
+        email: normalizedEmail,
         password: password,
       );
       // Tạo document users/{uid} ngay sau khi tạo account
       await _db.collection('users').doc(cred.user!.uid).set({
         'uid': cred.user!.uid,
         'name': name,
-        'email': email,
+        'email': normalizedEmail,
         'avatar': '',
         'bio': '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -30,6 +29,8 @@ class AuthService {
         'followers': [],
         'isOnline': false,
         'lastSeen': null,
+        'authProvider': 'email',
+        'hasPassword': true,
       });
       // Gửi email xác thực — user phải click link trước khi đăng nhập được
       await cred.user!.sendEmailVerification();
@@ -38,13 +39,18 @@ class AuthService {
     }
   }
 
-  /// Đăng nhập email/password 
+  /// Đăng nhập email/password
   Future<void> login(String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim().toLowerCase(),
         password: password.trim(),
       );
+      final user = credential.user;
+      if (user != null && !user.emailVerified) {
+        await _auth.signOut();
+        throw Exception('Vui lòng xác minh email trước khi đăng nhập.');
+      }
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
     }
@@ -65,7 +71,7 @@ class AuthService {
     );
 
     try {
-      await user.reauthenticateWithCredential(cred); 
+      await user.reauthenticateWithCredential(cred);
       await user.updatePassword(newPassword);
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
@@ -142,9 +148,7 @@ class AuthService {
       'followers': [],
       'isOnline': false,
       'lastSeen': null,
-      'authProvider': photoUrl != null
-          ? 'google'
-          : 'email',
+      'authProvider': photoUrl != null ? 'google' : 'email',
     });
   }
 
@@ -166,10 +170,12 @@ class AuthService {
         'hasPassword': true,
       });
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'provider-already-linked')
+      if (e.code == 'provider-already-linked') {
         throw Exception('Tài khoản đã có mật khẩu');
-      if (e.code == 'credential-already-in-use')
+      }
+      if (e.code == 'credential-already-in-use') {
         throw Exception('Email này đã được sử dụng bởi tài khoản khác');
+      }
       throw Exception(_handleAuthError(e));
     }
   }

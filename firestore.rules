@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function onlyMangaStatsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
+    }
+
+    function onlyMangaStatsCreated() {
+      return request.resource.data.keys()
+        .hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
+    }
+
+    function onlyChapterStatsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['viewCount']);
+    }
+
+    function onlyChapterStatsCreated() {
+      return request.resource.data.keys().hasOnly(['viewCount']);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+
+      match /history/{mangaId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /following/{mangaId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /comics/{mangaId} {
+      allow read: if true;
+      allow create: if isAdmin() || (signedIn() && onlyMangaStatsCreated());
+      allow update: if isAdmin() || (signedIn() && onlyMangaStatsChanged());
+      allow delete: if isAdmin();
+
+      match /chapters/{chapterId} {
+        allow read: if true;
+        allow create: if isAdmin() || (signedIn() && onlyChapterStatsCreated());
+        allow update: if isAdmin() || (signedIn() && onlyChapterStatsChanged());
+        allow delete: if isAdmin();
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

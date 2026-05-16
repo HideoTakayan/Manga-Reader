@@ -26,12 +26,7 @@ class LibraryPage extends StatelessWidget {
             ],
           ),
         ),
-        body: const TabBarView(
-          children: [
-            FollowingPage(), 
-            HistoryPage(),
-          ],
-        ),
+        body: const TabBarView(children: [FollowingPage(), HistoryPage()]),
       ),
     );
   }

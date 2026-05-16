@@ -37,9 +37,13 @@ class AccountPage extends StatelessWidget {
           final data = doc.data()! as Map<String, dynamic>;
 
           ImageProvider? avatarImage;
-          if (data['avatarBase64'] != null) {
+          final avatarUrl = data['avatarUrl']?.toString().trim() ?? '';
+          final avatarBase64 = data['avatarBase64']?.toString().trim() ?? '';
+          if (avatarUrl.isNotEmpty) {
+            avatarImage = NetworkImage(avatarUrl);
+          } else if (avatarBase64.isNotEmpty) {
             try {
-              avatarImage = MemoryImage(base64Decode(data['avatarBase64']));
+              avatarImage = MemoryImage(base64Decode(avatarBase64));
             } catch (_) {}
           } else if (user.photoURL != null) {
             avatarImage = NetworkImage(user.photoURL!);
@@ -192,8 +196,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   ),
                 ),
                 validator: (val) {
-                  if (val == null || val.isEmpty)
+                  if (val == null || val.isEmpty) {
                     return 'Vui lòng nhập mật khẩu mới';
+                  }
                   if (val.length < 6) return 'Mật khẩu phải từ 6 ký tự trở lên';
                   return null;
                 },

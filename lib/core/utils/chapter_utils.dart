@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../../data/models_cloud.dart';
 import '../../services/download_cache.dart';
 import 'chapter_sort_helper.dart';
@@ -28,8 +29,8 @@ class ChapterUtils {
     }
 
     // Ghi log lỗi để kiểm tra quá trình gộp
-    print(
-      '🔄 BẮT ĐẦU GỘP: Offline=${offline.length}, Online=${online.length} cho MangaID: $mangaId',
+    debugPrint(
+      '🔄 BẮT ĐẦU GỘP: Offline=${offline.length}, Online=${online.length} cho mangaId: $mangaId',
     );
 
     // Tạo map tên chuẩn hóa -> chapter online để tra cứu nhanh khi xóa trùng
@@ -50,7 +51,7 @@ class ChapterUtils {
 
       // Kiểm tra tên (nếu trùng lặp chính xác về tên)
       if (processedTitles.contains(normTitle)) {
-        print(
+        debugPrint(
           '⚠️ Trùng lặp Tiêu đề (Ngoại tuyến): "$normTitle" - ID: ${localCh.id}',
         );
         continue;
@@ -64,7 +65,7 @@ class ChapterUtils {
           mangaId,
         );
       } catch (e) {
-        print('❌ Lỗi kiểm tra cache tại id ${localCh.id}: $e');
+        debugPrint('❌ Lỗi kiểm tra cache tại id ${localCh.id}: $e');
       }
 
       if (isDownloaded) {
@@ -113,7 +114,9 @@ class ChapterUtils {
       final num = _parseChapterNumber(ch.title);
 
       // Log kiểm tra
-      print('🔍 Kiểm tra Trùng lặp: "${ch.title}" -> Số: $num (ID: ${ch.id})');
+      debugPrint(
+        '🔍 Kiểm tra Trùng lặp: "${ch.title}" -> Số: $num (ID: ${ch.id})',
+      );
 
       if (num == -1) {
         // Không thể parse -> Giữ nguyên (VD "Oneshot")
@@ -130,12 +133,12 @@ class ChapterUtils {
           // Cho nên bản đã tải về được xếp vào danh sách ưu tiên trước đó.
           // `uniqueByNumber` giữ mục chạm đầu tiên nằm trong danh sách.
 
-          print('⚠️ Bỏ Số Trùng lặp: $num ("${ch.title}" - ${ch.id})');
+          debugPrint('⚠️ Bỏ Số Trùng lặp: $num ("${ch.title}" - ${ch.id})');
         }
       }
     }
 
-    print('✅ HOÀN TẤT GỘP: Kết quả=${finalResult.length} chương');
+    debugPrint('✅ HOÀN TẤT GỘP: Kết quả=${finalResult.length} chương');
     return finalResult;
   }
 

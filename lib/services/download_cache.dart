@@ -115,12 +115,12 @@ class DownloadCache {
       final invalidChapterIds = <String>[];
 
       for (final download in downloads) {
-        final chapterId = download['chapterId'] as String;
-        final mangaId = download['mangaId'] as String;
-        final localPath = download['localPath'] as String?;
+        final chapterId = _readString(download, 'chapterId');
+        final mangaId = _readString(download, 'mangaId');
+        final localPath = _readString(download, 'localPath');
 
-        if (localPath == null || localPath.isEmpty) {
-          invalidChapterIds.add(chapterId);
+        if (chapterId.isEmpty || mangaId.isEmpty || localPath.isEmpty) {
+          _markInvalid(invalidChapterIds, chapterId);
           continue;
         }
 
@@ -133,7 +133,7 @@ class DownloadCache {
           _cache[mangaId]!.add(chapterId);
         } else {
           // Tệp không tồn tại -> không hợp lệ
-          invalidChapterIds.add(chapterId);
+          _markInvalid(invalidChapterIds, chapterId);
         }
       }
 
@@ -165,8 +165,8 @@ class DownloadCache {
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
       if (downloadInfo == null) return false;
 
-      final localPath = downloadInfo['localPath'] as String?;
-      if (localPath == null || localPath.isEmpty) return false;
+      final localPath = _readString(downloadInfo, 'localPath');
+      if (localPath.isEmpty) return false;
 
       final file = File(localPath);
       final exists = await file.exists();
@@ -202,17 +202,17 @@ class DownloadCache {
       // 2. Xác thực từng mục
       final invalidChapterIds = <String>[];
       for (final download in dbDownloads) {
-        final chapterId = download['chapterId'] as String;
-        final localPath = download['localPath'] as String?;
+        final chapterId = _readString(download, 'chapterId');
+        final localPath = _readString(download, 'localPath');
 
-        if (localPath == null || localPath.isEmpty) {
-          invalidChapterIds.add(chapterId);
+        if (chapterId.isEmpty || localPath.isEmpty) {
+          _markInvalid(invalidChapterIds, chapterId);
           continue;
         }
 
         final file = File(localPath);
         if (!await file.exists()) {
-          invalidChapterIds.add(chapterId);
+          _markInvalid(invalidChapterIds, chapterId);
         }
       }
 
@@ -242,6 +242,18 @@ class DownloadCache {
 
   void _notifyChanges() {
     _changesController.add(null);
+  }
+
+  String _readString(Map<String, dynamic> data, String key) {
+    final value = data[key];
+    if (value == null) return '';
+    return value.toString().trim();
+  }
+
+  void _markInvalid(List<String> invalidChapterIds, String chapterId) {
+    if (chapterId.isNotEmpty) {
+      invalidChapterIds.add(chapterId);
+    }
   }
 
   void dispose() {

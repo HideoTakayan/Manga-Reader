@@ -166,6 +166,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return '';
   }
 
+  String _fileTypeFromName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.epub')) return 'epub';
+    if (lower.endsWith('.pdf')) return 'pdf';
+    if (lower.endsWith('.cbz')) return 'cbz';
+    return 'zip';
+  }
+
   Future<ReaderProgress?> _loadSavedProgress(
     String mangaId,
     String chapterId,
@@ -196,8 +204,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(isCurrentPageBookmarked: bookmark != null);
   }
 
-  Future<void> init(String chapterId) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+  Future<void> init(String chapterId, {String? mangaId}) async {
+    state = ReaderState(
+      isLoading: true,
+      readingMode: state.readingMode,
+      imageFit: state.imageFit,
+      direction: state.direction,
+      background: state.background,
+    );
 
     // Load chế độ đọc đã lưu từ SharedPreferences
     final prefs = await SharedPreferences.getInstance();
@@ -240,7 +254,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       if (isDownloaded) {
         debugPrint('📂 CHẾ ĐỘ NGOẠI TUYẾN: Đọc từ tệp cục bộ');
-        await _loadOfflineChapter(chapterId);
+        await _loadOfflineChapter(chapterId, preferredMangaId: mangaId);
         return;
       }
 
@@ -248,7 +262,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       // CHẾ ĐỘ TRỰC TUYẾN: Lấy từ Drive
       // ========================================
       debugPrint('🌐 CHẾ ĐỘ TRỰC TUYẾN: Tải từ Google Drive');
-      await _loadOnlineChapter(chapterId);
+      await _loadOnlineChapter(chapterId, mangaId: mangaId);
     } catch (e) {
       debugPrint('Error loading reader: $e');
       state = state.copyWith(
@@ -259,7 +273,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   }
 
   /// CHẾ ĐỘ NGOẠI TUYẾN: Đọc tệp cục bộ (NHANH!)
-  Future<void> _loadOfflineChapter(String chapterId) async {
+  Future<void> _loadOfflineChapter(
+    String chapterId, {
+    String? preferredMangaId,
+  }) async {
     try {
       // 1. Lấy thông tin tải xuống từ cơ sở dữ liệu
       final downloadInfo = await DatabaseHelper.instance.getDownload(chapterId);
@@ -268,7 +285,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         debugPrint(
           '⚠️ Không tìm thấy thông tin tải xuống, dự phòng sang trực tuyến',
         );
-        await _loadOnlineChapter(chapterId);
+        await _loadOnlineChapter(chapterId, mangaId: preferredMangaId);
         return;
       }
 
@@ -278,7 +295,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       if (localPath.isEmpty || mangaId.isEmpty) {
         await DatabaseHelper.instance.deleteDownload(chapterId);
-        await _loadOnlineChapter(chapterId);
+        await _loadOnlineChapter(chapterId, mangaId: preferredMangaId);
         return;
       }
 
@@ -290,7 +307,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         debugPrint('⚠️ Không tìm thấy tệp, dự phòng sang trực tuyến');
         // Xóa bản ghi lỗi
         await DatabaseHelper.instance.deleteDownload(chapterId);
-        await _loadOnlineChapter(chapterId);
+        await _loadOnlineChapter(chapterId, mangaId: preferredMangaId);
         return;
       }
 
@@ -524,7 +541,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     } catch (e) {
       debugPrint('Error in offline mode: $e');
       // Fallback to online
-      await _loadOnlineChapter(chapterId);
+      await _loadOnlineChapter(chapterId, mangaId: preferredMangaId);
     }
   }
 
@@ -578,7 +595,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   }
 
   /// CHẾ ĐỘ TRỰC TUYẾN: Lấy từ Drive
-  Future<void> _loadOnlineChapter(String chapterId) async {
+  Future<void> _loadOnlineChapter(String chapterId, {String? mangaId}) async {
     // ========================================
     // TỐI ƯU HÓA: Gọi API song song (Parallel API Calls)
     // Chạy song song các tác vụ độc lập (~2s)
@@ -587,13 +604,18 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
     // Hai tác vụ này độc lập nên có thể chạy song song
     final downloadFuture = DriveService.instance.downloadFile(chapterId);
-    final metaFuture = DriveService.instance.getFile(chapterId);
+    final metaFuture = mangaId == null || mangaId.isEmpty
+        ? DriveService.instance.getFile(chapterId)
+        : Future<Map<String, dynamic>?>.value(null);
 
     // Chờ metadata trước (cần để lấy mangaId)
     final fileMeta = await metaFuture;
-    if (fileMeta == null ||
-        fileMeta['parents'] == null ||
-        _readFirstString(fileMeta, 'parents').isEmpty) {
+    final resolvedMangaId = mangaId != null && mangaId.isNotEmpty
+        ? mangaId
+        : fileMeta == null
+        ? ''
+        : _readFirstString(fileMeta, 'parents');
+    if (resolvedMangaId.isEmpty) {
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Không tìm thấy thông tin chương truyện',
@@ -601,7 +623,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       return;
     }
 
-    final mangaId = _readFirstString(fileMeta, 'parents');
+    mangaId = resolvedMangaId;
 
     // Giai đoạn 2: Sau khi có mangaId, tải danh sách chương và thông tin truyện song song
     // trong khi việc tải file vẫn đang chạy ngầm
@@ -622,7 +644,17 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     final followed = await followFuture;
 
     // Tìm chương hiện tại trong danh sách
-    final currentChapter = chapters.firstWhereOrNull((c) => c.id == chapterId);
+    final fileName = fileMeta == null ? '' : _readString(fileMeta, 'name');
+    final currentChapter =
+        chapters.firstWhereOrNull((c) => c.id == chapterId) ??
+        CloudChapter(
+          id: chapterId,
+          title: fileName.isEmpty ? 'Chương hiện tại' : fileName,
+          fileId: chapterId,
+          fileType: _fileTypeFromName(fileName),
+          sizeBytes: fileMeta == null ? 0 : _readInt(fileMeta, 'size'),
+          uploadedAt: DateTime.now(),
+        );
 
     // Kiểm tra file tải về
     if (fileBytes == null) {
@@ -634,7 +666,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
 
     // Giai đoạn 3: Xử lý nội dung theo loại file
-    final fileType = currentChapter?.fileType ?? 'zip';
+    final fileType = currentChapter.fileType;
     final fetchedManga = comics.firstWhereOrNull((c) => c.id == mangaId);
     final savedProgress = await _loadSavedProgress(mangaId, chapterId);
     final baseState = state.copyWith(

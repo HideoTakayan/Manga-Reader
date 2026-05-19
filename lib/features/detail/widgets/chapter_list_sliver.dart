@@ -38,7 +38,9 @@ class ChapterListSliver extends StatelessWidget {
         final ch = displayChapters[index];
         return InkWell(
           onTap: () async {
-            await context.push('/reader/${ch.id}');
+            await context.push(
+              '/reader/${ch.id}?mangaId=${Uri.encodeComponent(mangaId)}',
+            );
             // Khi quay lại, làm mới toàn bộ dữ liệu để cập nhật views/history
             onChapterRead();
           },

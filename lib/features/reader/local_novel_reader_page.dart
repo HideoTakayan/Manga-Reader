@@ -40,7 +40,11 @@ class LocalNovelReaderPage extends StatelessWidget {
           );
         }
 
-        return NovelReaderWidget(title: novel.title, epubBytes: snapshot.data!);
+        return NovelReaderWidget(
+          title: novel.title,
+          epubBytes: snapshot.data!,
+          storageKey: novel.path,
+        );
       },
     );
   }

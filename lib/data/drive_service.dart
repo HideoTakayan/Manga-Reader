@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -77,7 +79,6 @@ class DriveService {
 
   // ID folder gốc trên Drive chứa toàn bộ dữ liệu app.
   String? _rootFolderId;
-  static const String _rootFolderName = 'MangaReader_Data';
   static const String _catalogFileName = 'catalog.json'; // File danh mục tổng
 
   // ── XÁC THỰC NGƯỜI DÙNG (ADMIN) ────────────────────────────────────────────
@@ -170,12 +171,15 @@ class DriveService {
       while (retryCount < 3 && !success) {
         try {
           // Tìm catalog.json bằng API Key (không cần đăng nhập)
-          final q = "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
+          final q =
+              "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
           final listUrl = Uri.parse(
             'https://www.googleapis.com/drive/v3/files'
             '?q=${Uri.encodeComponent(q)}&key=${DriveConfig.apiKey}',
           );
-          final listRes = await http.get(listUrl).timeout(const Duration(seconds: 10));
+          final listRes = await http
+              .get(listUrl)
+              .timeout(const Duration(seconds: 10));
 
           if (listRes.statusCode == 200) {
             final listData = jsonDecode(listRes.body) as Map<String, dynamic>;
@@ -186,7 +190,9 @@ class DriveService {
               final dlUrl = Uri.parse(
                 'https://drive.google.com/uc?export=download&id=$fileId',
               );
-              final dlRes = await http.get(dlUrl).timeout(const Duration(seconds: 15));
+              final dlRes = await http
+                  .get(dlUrl)
+                  .timeout(const Duration(seconds: 15));
               if (dlRes.statusCode == 200) {
                 final content = utf8.decode(dlRes.bodyBytes);
                 final List<dynamic> jsonList = jsonDecode(content);
@@ -432,7 +438,9 @@ class DriveService {
                     as drive.Media;
 
             final List<int> bytes = [];
-            await for (final chunk in media.stream) bytes.addAll(chunk);
+            await for (final chunk in media.stream) {
+              bytes.addAll(chunk);
+            }
             final content = utf8.decode(bytes);
             mangas.add(CloudManga.fromMap(jsonDecode(content)));
           } else {
@@ -618,14 +626,17 @@ class DriveService {
   // Ghép thêm lượt xem từ Firestore, rồi sắp xếp bằng ChapterSortHelper.
   Future<List<CloudChapter>> getChapters(String mangaId) async {
     try {
-      final q = "'$mangaId' in parents and trashed = false and name != 'info.json' and not name contains 'cover.'";
+      final q =
+          "'$mangaId' in parents and trashed = false and name != 'info.json' and not name contains 'cover.'";
       final listUrl = Uri.parse(
         'https://www.googleapis.com/drive/v3/files'
         '?q=${Uri.encodeComponent(q)}'
         '&fields=files(id,name,mimeType,size,createdTime)'
         '&pageSize=1000&key=${DriveConfig.apiKey}',
       );
-      final listRes = await http.get(listUrl).timeout(const Duration(seconds: 10));
+      final listRes = await http
+          .get(listUrl)
+          .timeout(const Duration(seconds: 10));
 
       if (listRes.statusCode != 200) {
         throw Exception('HTTP ${listRes.statusCode} khi lấy chapters');
@@ -780,21 +791,24 @@ class DriveService {
 
   // Tạo URL thumbnail public của ảnh trên Drive (dùng API key tĩnh).
   // (Phương thức này được giữ cho Admin, user thường dùng mediaUrl hoặc getThumbnailLink bên class)
-  String _adminThumbnailLink(String fileId) {
-    return 'https://drive.google.com/uc?export=view&id=$fileId&key=${DriveConfig.apiKey}';
-  }
-
   // Lấy thông tin cơ bản của file Drive (id, name, parents).
   Future<Map<String, dynamic>?> getFile(String fileId) async {
     try {
       final url = Uri.parse(
         'https://www.googleapis.com/drive/v3/files/$fileId'
-        '?fields=id,name,parents&key=${DriveConfig.apiKey}',
+        '?fields=id,name,parents,mimeType,size'
+        '&supportsAllDrives=true&key=${DriveConfig.apiKey}',
       );
       final res = await http.get(url);
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
-        return {'id': data['id'], 'name': data['name'], 'parents': data['parents']};
+        return {
+          'id': data['id'],
+          'name': data['name'],
+          'parents': data['parents'],
+          'mimeType': data['mimeType'],
+          'size': data['size'],
+        };
       }
       return null;
     } catch (e) {
@@ -832,34 +846,25 @@ class DriveService {
           print('📥 Đang tải file: $fileId');
         }
 
-        final dlUrl = Uri.parse(
-          'https://drive.google.com/uc?export=download&id=$fileId',
-        );
-        final request = http.Request('GET', dlUrl);
-        final streamedRes = await http.Client().send(request);
+        final response = await _downloadDriveMedia(fileId);
 
-        if (streamedRes.statusCode == 404) {
-          print('❌ File not found on Drive.');
+        if (response.statusCode == 404) {
+          print('❌ File not found on Drive: $fileId');
           return null;
         }
-        if (streamedRes.statusCode != 200) {
-          throw Exception('HTTP ${streamedRes.statusCode}');
+
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
         }
 
-        final List<int> bytes = [];
-        int received = 0;
-        final total = streamedRes.contentLength ?? 0;
-
-        // Đọc file theo từng chunk, gọi callback tiến độ sau mỗi chunk
-        await for (final chunk in streamedRes.stream) {
-          bytes.addAll(chunk);
-          received += chunk.length;
-          if (onProgress != null && total > 0) {
-            onProgress(received, total);
-          }
+        final result = response.bodyBytes;
+        if (_looksLikeHtml(result, response.headers['content-type'])) {
+          throw Exception(
+            'Drive returned an HTML page instead of chapter bytes',
+          );
         }
-
-        final result = Uint8List.fromList(bytes);
+        print('✅ Tải file hoàn tất: $fileId (${result.length} bytes)');
+        if (onProgress != null) onProgress(100, 100);
 
         // Lưu vào cache và xóa bớt nếu đã đầy
         _fileCache[fileId] = result;
@@ -888,5 +893,43 @@ class DriveService {
       }
     }
     return null;
+  }
+
+  Future<http.Response> _downloadDriveMedia(String fileId) async {
+    final apiMediaUrl = Uri.parse(
+      'https://www.googleapis.com/drive/v3/files/$fileId'
+      '?alt=media&key=${DriveConfig.apiKey}',
+    );
+    final apiResponse = await http
+        .get(apiMediaUrl)
+        .timeout(const Duration(seconds: 60));
+
+    if (apiResponse.statusCode == 200 &&
+        !_looksLikeHtml(
+          apiResponse.bodyBytes,
+          apiResponse.headers['content-type'],
+        )) {
+      return apiResponse;
+    }
+
+    final publicUrl = Uri.parse(
+      'https://drive.google.com/uc?export=download&id=$fileId',
+    );
+    return http.get(publicUrl).timeout(const Duration(seconds: 60));
+  }
+
+  bool _looksLikeHtml(Uint8List bytes, String? contentType) {
+    final type = contentType?.toLowerCase() ?? '';
+    if (type.contains('text/html')) return true;
+    if (bytes.length < 16) return false;
+
+    final prefixLength = bytes.length < 256 ? bytes.length : 256;
+    final prefix = utf8
+        .decode(bytes.take(prefixLength).toList(), allowMalformed: true)
+        .trimLeft()
+        .toLowerCase();
+    return prefix.startsWith('<!doctype html') ||
+        prefix.startsWith('<html') ||
+        prefix.contains('<title>google drive');
   }
 }

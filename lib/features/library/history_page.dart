@@ -305,7 +305,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
                 onTap: () async {
                   await context.push(
-                    '/reader/${item.chapterId}',
+                    '/reader/${item.chapterId}?mangaId=${Uri.encodeComponent(item.mangaId)}',
                   ); // Chờ user đọc xong
                   _initData(); // Reload để cập nhật lastPageIndex mới
                 },

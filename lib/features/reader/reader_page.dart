@@ -10,11 +10,13 @@ import '../../data/database_helper.dart';
 import '../../data/models_cloud.dart';
 import '../../features/shared/drive_image.dart';
 import '../../services/history_service.dart';
+import 'novel_reader_widget.dart';
 import 'reader_provider.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
   final String chapterId;
-  const ReaderPage({super.key, required this.chapterId});
+  final String? mangaId;
+  const ReaderPage({super.key, required this.chapterId, this.mangaId});
 
   @override
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
@@ -70,7 +72,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(readerProvider.notifier).init(widget.chapterId);
+      ref.read(readerProvider.notifier).init(
+        widget.chapterId,
+        mangaId: widget.mangaId,
+      );
     });
   }
 
@@ -400,6 +405,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
+  String _readerRoute(String chapterId, String? mangaId) {
+    if (mangaId == null || mangaId.isEmpty) return '/reader/$chapterId';
+    return '/reader/$chapterId?mangaId=${Uri.encodeComponent(mangaId)}';
+  }
+
   void _precacheNearbyPages(ReaderState state) {
     if (!mounted || state.pages.isEmpty) return;
     final start = (state.currentPageIndex - 2).clamp(0, state.pages.length - 1);
@@ -413,6 +423,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   Widget build(BuildContext context) {
     final state = ref.watch(readerProvider);
     final notifier = ref.read(readerProvider.notifier);
+
+    if (!state.isLoading && state.isNovel && state.epubBytes != null) {
+      return NovelReaderWidget(
+        epubBytes: state.epubBytes!,
+        storageKey: [
+          state.mangaId,
+          state.currentChapter?.id,
+        ].whereType<String>().where((value) => value.isNotEmpty).join('_'),
+        title:
+            state.currentChapter?.title ??
+            state.manga?.title ??
+            'Truyện chữ',
+      );
+    }
 
     ref.listen<ReaderState>(readerProvider, (prev, next) {
       if (_isAutoScrolling &&
@@ -458,6 +482,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         drawer: _buildDrawer(state, notifier),
         body: state.isLoading
             ? const Center(child: CircularProgressIndicator())
+            : state.errorMessage != null
+            ? _buildReaderError(state.errorMessage!, notifier)
             : Stack(
                 children: [
                   // Nội dung
@@ -607,6 +633,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       context,
                                       state.chapters,
                                       state.currentChapter,
+                                      state.mangaId,
                                     ),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
@@ -734,7 +761,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               ),
                               onPressed: notifier.getPrevChapterId() != null
                                   ? () => context.pushReplacement(
-                                      '/reader/${notifier.getPrevChapterId()}',
+                                      _readerRoute(
+                                        notifier.getPrevChapterId()!,
+                                        state.mangaId,
+                                      ),
                                     )
                                   : null,
                             ),
@@ -867,7 +897,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               ),
                               onPressed: notifier.getNextChapterId() != null
                                   ? () => context.pushReplacement(
-                                      '/reader/${notifier.getNextChapterId()}',
+                                      _readerRoute(
+                                        notifier.getNextChapterId()!,
+                                        state.mangaId,
+                                      ),
                                     )
                                   : null,
                             ),
@@ -936,6 +969,44 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     ? (value) => _jumpToPage(value.round())
                     : null,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReaderError(String message, ReaderNotifier notifier) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+            const SizedBox(height: 16),
+            const Text(
+              'Không mở được chương',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => notifier.init(
+                widget.chapterId,
+                mangaId: widget.mangaId,
+              ),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Thử lại'),
             ),
           ],
         ),
@@ -1575,6 +1646,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     BuildContext context,
     List<CloudChapter> chapters,
     CloudChapter? currentChapter,
+    String? mangaId,
   ) {
     showModalBottomSheet(
       context: context,
@@ -1586,6 +1658,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         return _ChapterListModalContent(
           chapters: chapters,
           currentChapter: currentChapter,
+          mangaId: mangaId,
         );
       },
     );
@@ -1647,7 +1720,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 onTap: () {
                   Navigator.pop(context);
                   if (bookmark.chapterId != state.currentChapter?.id) {
-                    context.pushReplacement('/reader/${bookmark.chapterId}');
+                    context.pushReplacement(
+                      _readerRoute(bookmark.chapterId, state.mangaId),
+                    );
                     return;
                   }
 
@@ -1694,7 +1769,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           ListTile(
             leading: const Icon(Icons.refresh, color: Colors.white),
             title: const Text('Tải lại', style: TextStyle(color: Colors.white)),
-            onTap: () => notifier.init(widget.chapterId),
+            onTap: () => notifier.init(
+              widget.chapterId,
+              mangaId: widget.mangaId,
+            ),
           ),
           ListTile(
             leading: Icon(
@@ -1792,10 +1870,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 class _ChapterListModalContent extends StatefulWidget {
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
+  final String? mangaId;
 
   const _ChapterListModalContent({
     required this.chapters,
     required this.currentChapter,
+    required this.mangaId,
   });
 
   @override
@@ -1938,7 +2018,11 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                         Navigator.pop(context); // Đóng cửa sổ
                         if (!isSelected) {
                           // Điều hướng đến chương đã chọn
-                          context.pushReplacement('/reader/${chapter.id}');
+                          final mangaQuery =
+                              widget.mangaId == null || widget.mangaId!.isEmpty
+                              ? ''
+                              : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
+                          context.pushReplacement('/reader/${chapter.id}$mangaQuery');
                         }
                       },
                       child: Container(

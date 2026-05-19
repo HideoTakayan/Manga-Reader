@@ -79,3 +79,6 @@ ios/Runner/GoogleService-Info.plist
 # Personal backup folder (if you create one)
 /credentials_backup/
 *.backup
+
+# Local scratch scripts and one-off API tests
+/scratch/

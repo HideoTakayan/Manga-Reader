@@ -57,7 +57,9 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
         children: [
           // NETFLIX STYLE HERO BANNER
           GestureDetector(
-            onTap: () => context.push('/reader/${topItem.chapterId}'),
+            onTap: () => context.push(
+              '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}',
+            ),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               height: 200,
@@ -261,7 +263,9 @@ class _SmallHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/reader/${history.chapterId}'),
+      onTap: () => context.push(
+        '/reader/${history.chapterId}?mangaId=${Uri.encodeComponent(history.mangaId)}',
+      ),
       child: Container(
         width: 200,
         decoration: BoxDecoration(

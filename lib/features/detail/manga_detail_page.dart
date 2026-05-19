@@ -765,7 +765,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           }
 
                           if (chapterIdToOpen != null) {
-                            await context.push('/reader/$chapterIdToOpen');
+                            await context.push(
+                              '/reader/$chapterIdToOpen?mangaId=${Uri.encodeComponent(widget.mangaId)}',
+                            );
                             await _fetchLocalReaderData();
                           }
                         },
@@ -899,7 +901,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 ),
                 onTap: () async {
                   Navigator.pop(context);
-                  await context.push('/reader/${bookmark.chapterId}');
+                  await context.push(
+                    '/reader/${bookmark.chapterId}?mangaId=${Uri.encodeComponent(widget.mangaId)}',
+                  );
                   await _fetchLocalReaderData();
                 },
               );

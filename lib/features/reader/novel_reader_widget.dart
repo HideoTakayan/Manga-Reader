@@ -1,46 +1,66 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:math';
+
+import 'package:archive/archive.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_epub_viewer/flutter_epub_viewer.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:xml/xml.dart';
+
 import '../../data/database_helper.dart';
 import '../../data/models.dart';
 
-/// Widget đọc truyện chữ (EPUB) với TTS tích hợp.
-/// Nhận [epubBytes] từ ReaderProvider và render bằng flutter_epub_viewer.
 class NovelReaderWidget extends StatefulWidget {
   final Uint8List epubBytes;
   final String title;
+  final String storageKey;
 
   const NovelReaderWidget({
     super.key,
     required this.epubBytes,
     required this.title,
-  });
+    String? storageKey,
+  }) : storageKey = storageKey ?? title;
 
   @override
   State<NovelReaderWidget> createState() => _NovelReaderWidgetState();
 }
 
 class _NovelReaderWidgetState extends State<NovelReaderWidget> {
-  final _epubController = EpubController();
   final _tts = FlutterTts();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _verticalController = ScrollController();
+  final _pageController = PageController();
 
-  bool _isTtsPlaying = false;
-  bool _isEpubReady = false;
-  bool _showTtsPanel = false;
-  String? _epubPath;
+  _ParsedEpub? _book;
+  bool _isLoading = true;
+  String? _errorMessage;
+  int _chapterIndex = 0;
+  int _horizontalPageIndex = 0;
   int _fontSize = 18;
-  int _viewerRevision = 0;
+  int _bgColor = 0xFF1C1C1E;
+  int _textColor = 0xFFFFFFFF;
+  int _flowType = 0; // 0: horizontal pages, 1: vertical scroll
 
-  // Cài đặt TTS
+  bool _showTtsPanel = false;
+  bool _isTtsPlaying = false;
   double _ttsRate = 0.5;
   double _ttsPitch = 1.0;
-  String _ttsLang = 'vi-VN'; // Ngôn ngữ mặc định
+  String _ttsLang = 'vi-VN';
+  List<Map<String, String>> _availableVoices = [];
+  Map<String, String>? _selectedVoice;
+  String? _lastTtsText;
+  List<String> _ttsChunks = [];
+  int _ttsChunkIndex = 0;
+
+  Timer? _progressTimer;
+  Timer? _ttsSettingsTimer;
+  Timer? _sleepTimer;
+  int _sleepTimeMinutes = 0;
+  bool _isCurrentBookmark = false;
 
   static const _supportedLangs = [
     ('vi-VN', 'Tiếng Việt'),
@@ -50,262 +70,434 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     ('ko-KR', 'Hàn'),
   ];
 
-  // Các tính năng VIP PRO
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  List<EpubChapter> _chapters = [];
+  String get _rawStorageKey =>
+      widget.storageKey.isEmpty ? widget.title : widget.storageKey;
 
-  List<Map<String, String>> _availableVoices = [];
-  Map<String, String>? _selectedVoice;
-
-  Timer? _sleepTimer;
-  int _sleepTimeMinutes = 0;
-
-  int _bgColor = 0xFF1C1C1E;
-  int _textColor = 0xFFFFFFFF;
-  int _flowType = 0; // 0: Paginated, 1: Scrolled
-  String? _initialCfi;
-  String? _currentCfi;
-  bool _isCurrentCfiBookmarked = false;
-
-  String get _bookKey => widget.title
+  String get _bookKey => _rawStorageKey
       .trim()
       .toLowerCase()
       .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
       .replaceAll(RegExp(r'^_+|_+$'), '');
 
-  int get _stableTitleHash => widget.title.codeUnits.fold<int>(
+  int get _stableKeyHash => _rawStorageKey.codeUnits.fold<int>(
     0,
     (hash, codeUnit) => (hash * 31 + codeUnit) & 0x7fffffff,
   );
 
   String get _resolvedBookKey =>
-      _bookKey.isEmpty ? _stableTitleHash.toString() : _bookKey;
+      _bookKey.isEmpty ? _stableKeyHash.toString() : _bookKey;
 
   String get _mangaId => 'epub_$_resolvedBookKey';
 
-  String get _chapterId => 'epub_${_resolvedBookKey}_chapter';
+  String get _chapterId => 'epub_${_resolvedBookKey}_chapter_$_chapterIndex';
+
+  String get _progressPrefsKey => 'epub_flutter_progress_$_mangaId';
+
+  _EpubChapter get _currentChapter =>
+      _book!.chapters[_chapterIndex.clamp(0, _book!.chapters.length - 1)];
+
+  List<int> get _chapterStartChars {
+    var offset = 0;
+    final starts = <int>[];
+    for (final chapter in _book?.chapters ?? const <_EpubChapter>[]) {
+      starts.add(offset);
+      offset += _formatChapterText(chapter).length + 3;
+    }
+    return starts;
+  }
+
+  String get _fullBookText => (_book?.chapters ?? const <_EpubChapter>[])
+      .map(_formatChapterText)
+      .join('\n\n\n');
+
+  int get _fullBookLength => max(1, _fullBookText.length);
+
+  List<String> get _horizontalPages =>
+      _splitIntoPages(_fullBookText, max(900, _fontSize * 55));
 
   @override
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _loadInitialData();
+    _init();
   }
 
-  Future<void> _loadInitialData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final progress = await DatabaseHelper.instance.getReaderProgress(_mangaId);
-    if (!mounted) return;
-    _initialCfi =
-        progress?.epubCfi ?? prefs.getString('epub_cfi_${widget.title}');
-    _currentCfi = _initialCfi;
-    await _refreshCurrentCfiBookmark();
-    await _saveEpubToTemp();
-    await _loadTtsSettings();
-  }
-
-  /// Ghi EPUB bytes ra file tạm để EpubViewer đọc theo đường dẫn.
-  Future<void> _saveEpubToTemp() async {
-    try {
-      final dir = await getTemporaryDirectory();
-      final safeTitle = widget.title.replaceAll(RegExp(r'[^\w\s]'), '_');
-      final file = File('${dir.path}/$safeTitle.epub');
-      await file.writeAsBytes(widget.epubBytes);
-      if (mounted) {
-        setState(() {
-          _epubPath = file.path;
-          _isEpubReady = true;
-        });
-      }
-    } catch (e) {
-      debugPrint('⚠️ Lỗi ghi EPUB tạm: $e');
+  @override
+  void didUpdateWidget(covariant NovelReaderWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.epubBytes != widget.epubBytes ||
+        oldWidget.storageKey != widget.storageKey ||
+        oldWidget.title != widget.title) {
+      _resetForNewBook();
+      _init();
     }
   }
 
-  Future<void> _loadTtsSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final prefix = 'tts_book_$_resolvedBookKey';
-    if (!mounted) return;
+  Future<void> _init() async {
     setState(() {
-      _ttsRate =
-          prefs.getDouble('${prefix}_rate') ?? prefs.getDouble('tts_rate') ?? 0.5;
-      _ttsPitch =
-          prefs.getDouble('${prefix}_pitch') ??
-          prefs.getDouble('tts_pitch') ??
-          1.0;
-      _ttsLang =
-          prefs.getString('${prefix}_lang') ??
-          prefs.getString('tts_lang') ??
-          'vi-VN';
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
       _fontSize = prefs.getInt('epub_font_size') ?? 18;
       _bgColor = prefs.getInt('epub_bg_color') ?? 0xFF1C1C1E;
       _textColor = prefs.getInt('epub_text_color') ?? 0xFFFFFFFF;
-      _flowType = prefs.getInt('epub_flow_type') ?? 0;
-    });
-    await _initTts();
-  }
+      _flowType = prefs.getInt('epub_flow_type') ?? 1;
+      await _loadTtsSettings(prefs);
 
-  Future<void> _initTts() async {
-    await _tts.setLanguage(_ttsLang);
-    await _tts.setSpeechRate(_ttsRate);
-    await _tts.setPitch(_ttsPitch);
-
-    _tts.setCompletionHandler(() {
-      if (mounted) setState(() => _isTtsPlaying = false);
-    });
-
-    _tts.setErrorHandler((msg) {
-      debugPrint('TTS Error: $msg');
-      if (mounted) setState(() => _isTtsPlaying = false);
-    });
-
-    _loadVoicesForLang(_ttsLang);
-  }
-
-  Future<void> _loadVoicesForLang(String lang) async {
-    try {
-      final voices = await _tts.getVoices;
-      if (voices != null && mounted) {
-        final List<Map<String, String>> parsed = [];
-        for (final v in voices) {
-          if (v is Map) {
-            final locale = v['locale']?.toString() ?? '';
-            final name = v['name']?.toString() ?? '';
-            if (locale.toLowerCase().contains(lang.toLowerCase()) ||
-                lang.toLowerCase().contains(locale.toLowerCase())) {
-              parsed.add({'name': name, 'locale': locale});
-            }
+      final book = _parseEpub(widget.epubBytes);
+      final saved = await _loadSavedPosition(prefs, book.chapters.length);
+      if (!mounted) return;
+      setState(() {
+        _book = book;
+        _chapterIndex = saved.$1;
+        _horizontalPageIndex = saved.$2;
+        _isLoading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_flowType == 1) {
+          if (_verticalController.hasClients && saved.$3 > 0) {
+            _verticalController.jumpTo(saved.$3);
+          } else {
+            _jumpVerticalToChapter(saved.$1);
           }
+        } else {
+          final page = saved.$2 > 0 ? saved.$2 : _pageIndexForChapter(saved.$1);
+          setState(() => _horizontalPageIndex = page);
+          _jumpHorizontalToPage(page);
         }
-        setState(() {
-          _availableVoices = parsed;
-          _selectedVoice = null;
-        });
-
-        if (parsed.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          if (!mounted) return;
-          final savedName =
-              prefs.getString('tts_book_${_resolvedBookKey}_voice_name_$lang') ??
-              prefs.getString('tts_voice_name_$lang');
-          if (savedName != null) {
-            _selectedVoice = parsed
-                .where((v) => v['name'] == savedName)
-                .firstOrNull;
-          }
-          _selectedVoice ??= parsed.first;
-          await _tts.setVoice({
-            "name": _selectedVoice!['name']!,
-            "locale": _selectedVoice!['locale']!,
-          });
-          if (mounted) setState(() {});
-        }
-      }
+      });
+      await _refreshBookmarkState();
     } catch (e) {
-      debugPrint('TTS getVoices error: $e');
-    }
-  }
-
-  Future<void> _setTtsVoice(Map<String, String> voice) async {
-    if (!mounted) return;
-    setState(() => _selectedVoice = voice);
-    await _tts.setVoice({"name": voice['name']!, "locale": voice['locale']!});
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'tts_book_${_resolvedBookKey}_voice_name_$_ttsLang',
-      voice['name']!,
-    );
-  }
-
-  void _setSleepTimer(int minutes) {
-    _sleepTimer?.cancel();
-    setState(() => _sleepTimeMinutes = minutes);
-    if (minutes > 0) {
-      _sleepTimer = Timer(Duration(minutes: minutes), () {
-        _tts.stop();
-        if (mounted) {
-          setState(() {
-            _isTtsPlaying = false;
-            _sleepTimeMinutes = 0;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Đã tắt đọc truyện theo hẹn giờ ngủ.'),
-            ),
-          );
-        }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Không đọc được EPUB: $e';
       });
     }
   }
 
-  Future<void> _setBgColor(int color) async {
-    if (!mounted) return;
-    setState(() => _bgColor = color);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('epub_bg_color', color);
-    await _applyEpubTheme();
+  void _resetForNewBook() {
+    _progressTimer?.cancel();
+    _ttsSettingsTimer?.cancel();
+    _sleepTimer?.cancel();
+    _tts.stop();
+    _verticalController.jumpTo(0);
+    _lastTtsText = null;
+    _ttsChunks = [];
+    _ttsChunkIndex = 0;
+    _book = null;
+    _chapterIndex = 0;
+    _horizontalPageIndex = 0;
+    _isCurrentBookmark = false;
+    _isTtsPlaying = false;
   }
 
-  Future<void> _setTextColor(int color) async {
-    if (!mounted) return;
-    setState(() => _textColor = color);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('epub_text_color', color);
-    await _applyEpubTheme();
+  Future<void> _loadTtsSettings(SharedPreferences prefs) async {
+    final prefix = 'tts_book_$_resolvedBookKey';
+    _ttsRate =
+        prefs.getDouble('${prefix}_rate') ?? prefs.getDouble('tts_rate') ?? 0.5;
+    _ttsPitch =
+        prefs.getDouble('${prefix}_pitch') ??
+        prefs.getDouble('tts_pitch') ??
+        1.0;
+    _ttsLang =
+        prefs.getString('${prefix}_lang') ??
+        prefs.getString('tts_lang') ??
+        'vi-VN';
+    await _applyTtsSettings(restartIfPlaying: false);
+
+    _tts.setCompletionHandler(() => unawaited(_playNextTtsChunk()));
+    _tts.setErrorHandler((msg) {
+      debugPrint('TTS Error: $msg');
+      _ttsChunks = [];
+      _ttsChunkIndex = 0;
+      if (mounted) {
+        setState(() => _isTtsPlaying = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('TTS lỗi: $msg')));
+      }
+    });
+    await _loadVoicesForLang(_ttsLang);
   }
 
-  String _cssColor(int color) =>
-      '#${(color & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-
-  EpubTheme? _cachedEpubTheme;
-  int _lastThemeBg = 0;
-  int _lastThemeFg = 0;
-
-  EpubTheme _buildEpubTheme() {
-    if (_cachedEpubTheme != null && _lastThemeBg == _bgColor && _lastThemeFg == _textColor) {
-      return _cachedEpubTheme!;
+  Future<(int, int, double)> _loadSavedPosition(
+    SharedPreferences prefs,
+    int chapterCount,
+  ) async {
+    final raw = prefs.getString(_progressPrefsKey);
+    if (raw != null) {
+      try {
+        final map = jsonDecode(raw) as Map<String, dynamic>;
+        return (
+          (map['chapter'] as num? ?? 0).toInt().clamp(0, chapterCount - 1),
+          max(0, (map['page'] as num? ?? 0).toInt()),
+          max<double>(0, (map['offset'] as num? ?? 0).toDouble()),
+        );
+      } catch (_) {}
     }
-    
-    final bg = _cssColor(_bgColor);
-    final fg = _cssColor(_textColor);
-    _lastThemeBg = _bgColor;
-    _lastThemeFg = _textColor;
-    
-    _cachedEpubTheme = EpubTheme.custom(
-      backgroundDecoration: BoxDecoration(color: Color(_bgColor)),
-      foregroundColor: Color(_textColor),
-      customCss: {
-        'html': {
-          'background': '$bg !important',
-          'color': '$fg !important',
-        },
-        'body': {
-          'background': '$bg !important',
-          'color': '$fg !important',
-          '-webkit-text-fill-color': '$fg !important',
-        },
-        'p, div, span, li, h1, h2, h3, h4, h5, h6': {
-          'color': '$fg !important',
-          '-webkit-text-fill-color': '$fg !important',
-        },
-      },
+
+    final progress = await DatabaseHelper.instance.getReaderProgress(_mangaId);
+    final cfi = progress?.epubCfi ?? prefs.getString('epub_cfi_$_mangaId');
+    final parsed = _decodePosition(cfi);
+    if (parsed != null) {
+      return (
+        parsed.$1.clamp(0, chapterCount - 1),
+        max(0, parsed.$2),
+        max<double>(0, parsed.$3),
+      );
+    }
+    return (0, 0, 0.0);
+  }
+
+  (int, int, double)? _decodePosition(String? value) {
+    if (value == null || !value.startsWith('flutter:')) return null;
+    final parts = value.substring('flutter:'.length).split(':');
+    if (parts.length != 3) return null;
+    return (
+      int.tryParse(parts[0]) ?? 0,
+      int.tryParse(parts[1]) ?? 0,
+      double.tryParse(parts[2]) ?? 0,
     );
-    return _cachedEpubTheme!;
   }
 
-  Future<void> _applyEpubTheme() async {
+  String _encodePosition() {
+    final offset = _verticalController.hasClients
+        ? _verticalController.offset
+        : 0.0;
+    return 'flutter:$_chapterIndex:$_horizontalPageIndex:${offset.toStringAsFixed(0)}';
+  }
+
+  void _scheduleProgressSave() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(milliseconds: 500), _saveProgress);
+  }
+
+  Future<void> _saveProgress() async {
+    final position = _encodePosition();
+    final offset = _verticalController.hasClients
+        ? _verticalController.offset
+        : 0.0;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _progressPrefsKey,
+      jsonEncode({
+        'chapter': _chapterIndex,
+        'page': _horizontalPageIndex,
+        'offset': offset,
+      }),
+    );
+    await DatabaseHelper.instance.saveReaderProgress(
+      ReaderProgress(
+        mangaId: _mangaId,
+        chapterId: _chapterId,
+        pageIndex: _flowType == 0 ? _horizontalPageIndex : _chapterIndex,
+        scrollOffset: offset,
+        progressPercent: _book == null || _book!.chapters.isEmpty
+            ? 0
+            : _chapterIndex /
+                  max<double>(1, (_book!.chapters.length - 1).toDouble()),
+        epubCfi: position,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await _refreshBookmarkState();
+  }
+
+  _ParsedEpub _parseEpub(Uint8List bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final files = {
+      for (final file in archive.files) file.name.replaceAll('\\', '/'): file,
+    };
+
+    final container = _readArchiveText(files, 'META-INF/container.xml');
+    final containerXml = XmlDocument.parse(container);
+    final opfPath = containerXml
+        .findAllElements('rootfile')
+        .first
+        .getAttribute('full-path');
+    if (opfPath == null || opfPath.isEmpty) {
+      throw const FormatException('EPUB thiếu rootfile OPF.');
+    }
+
+    final opf = _readArchiveText(files, opfPath);
+    final opfXml = XmlDocument.parse(opf);
+    final opfDir = _dirname(opfPath);
+
+    final manifest = <String, _ManifestItem>{};
+    for (final item in opfXml.findAllElements('item')) {
+      final id = item.getAttribute('id');
+      final href = item.getAttribute('href');
+      if (id == null || href == null) continue;
+      manifest[id] = _ManifestItem(
+        id: id,
+        href: _normalizePath(_joinPath(opfDir, href)),
+        mediaType: item.getAttribute('media-type') ?? '',
+      );
+    }
+
+    final navTitles = _readNavTitles(files, manifest);
+    final chapters = <_EpubChapter>[];
+    var index = 1;
+    for (final itemref in opfXml.findAllElements('itemref')) {
+      final idref = itemref.getAttribute('idref');
+      final item = idref == null ? null : manifest[idref];
+      if (item == null || !_isHtmlItem(item)) continue;
+
+      final html = _readArchiveText(files, item.href);
+      final title =
+          navTitles[item.href] ?? _extractTitle(html) ?? 'Chương $index';
+      final text = _htmlToText(html);
+      if (text.trim().isEmpty) continue;
+      chapters.add(_EpubChapter(title: title, text: text));
+      index++;
+    }
+
+    if (chapters.isEmpty) {
+      throw const FormatException('Không tìm thấy nội dung text trong EPUB.');
+    }
+    return _ParsedEpub(title: widget.title, chapters: chapters);
+  }
+
+  Map<String, String> _readNavTitles(
+    Map<String, ArchiveFile> files,
+    Map<String, _ManifestItem> manifest,
+  ) {
+    final navItem = manifest.values.firstWhereOrNull(
+      (item) =>
+          item.mediaType.contains('nav') ||
+          item.href.toLowerCase().endsWith('toc.xhtml') ||
+          item.href.toLowerCase().endsWith('nav.xhtml'),
+    );
+    if (navItem == null || !files.containsKey(navItem.href)) return {};
     try {
-      await _epubController.updateTheme(theme: _buildEpubTheme());
+      final doc = XmlDocument.parse(_readArchiveText(files, navItem.href));
+      final navDir = _dirname(navItem.href);
+      final result = <String, String>{};
+      for (final a in doc.findAllElements('a')) {
+        final href = a.getAttribute('href');
+        final title = a.innerText.trim();
+        if (href == null || title.isEmpty) continue;
+        final cleanHref = href.split('#').first;
+        result[_normalizePath(_joinPath(navDir, cleanHref))] = title;
+      }
+      return result;
     } catch (_) {
-      // Controller có thể chưa sẵn sàng trong vài frame đầu. Bỏ qua ở đây để
-      // tránh vòng reload liên tục; theme vẫn được truyền qua displaySettings.
+      return {};
     }
   }
 
-  Future<void> _applyEpubFlow() async {
-    // flutter_epub_viewer handles flow via EpubDisplaySettings now.
-    // Manual css hacks break native epub.js scrolling.
-    return;
+  bool _isHtmlItem(_ManifestItem item) {
+    final lower = item.href.toLowerCase();
+    return item.mediaType.contains('html') ||
+        lower.endsWith('.xhtml') ||
+        lower.endsWith('.html') ||
+        lower.endsWith('.htm');
+  }
+
+  String _readArchiveText(Map<String, ArchiveFile> files, String path) {
+    final normalized = _normalizePath(path);
+    final file = files[normalized];
+    if (file == null || !file.isFile) {
+      throw FormatException('Không tìm thấy file EPUB: $normalized');
+    }
+    final content = file.content;
+    final bytes = content is Uint8List
+        ? content
+        : content is List<int>
+        ? Uint8List.fromList(content)
+        : Uint8List(0);
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
+  String? _extractTitle(String html) {
+    try {
+      final doc = XmlDocument.parse(html);
+      return doc.findAllElements('title').firstOrNull?.innerText.trim();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _htmlToText(String html) {
+    final normalized = html
+        .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+        .replaceAll(
+          RegExp(
+            r'</\s*(p|div|h[1-6]|li|section|article|tr)\s*>',
+            caseSensitive: false,
+          ),
+          '\n\n',
+        );
+    try {
+      final doc = XmlDocument.parse(normalized);
+      return _cleanText(doc.rootElement.innerText);
+    } catch (_) {
+      final stripped = normalized.replaceAll(RegExp(r'<[^>]+>'), ' ');
+      return _cleanText(stripped);
+    }
+  }
+
+  String _cleanText(String value) {
+    return value
+        .replaceAll('\u00a0', ' ')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n\s*\n\s*\n+'), '\n\n')
+        .trim();
+  }
+
+  String _formatChapterText(_EpubChapter chapter) {
+    final title = chapter.title.trim();
+    final text = chapter.text.trim();
+    if (title.isEmpty) return text;
+    if (text.startsWith(title)) return text;
+    return '$title\n\n$text';
+  }
+
+  List<String> _splitIntoPages(String text, int targetChars) {
+    final paragraphs = text.split(RegExp(r'\n\s*\n'));
+    final pages = <String>[];
+    final buffer = StringBuffer();
+    for (final paragraph in paragraphs) {
+      if (buffer.length + paragraph.length > targetChars && buffer.isNotEmpty) {
+        pages.add(buffer.toString().trim());
+        buffer.clear();
+      }
+      buffer.writeln(paragraph.trim());
+      buffer.writeln();
+    }
+    if (buffer.toString().trim().isNotEmpty) {
+      pages.add(buffer.toString().trim());
+    }
+    return pages.isEmpty ? [text] : pages;
+  }
+
+  String _dirname(String path) {
+    final normalized = _normalizePath(path);
+    final index = normalized.lastIndexOf('/');
+    return index == -1 ? '' : normalized.substring(0, index);
+  }
+
+  String _joinPath(String base, String child) {
+    if (base.isEmpty) return child;
+    return '$base/$child';
+  }
+
+  String _normalizePath(String path) {
+    final parts = <String>[];
+    for (final part in Uri.decodeFull(path).replaceAll('\\', '/').split('/')) {
+      if (part.isEmpty || part == '.') continue;
+      if (part == '..') {
+        if (parts.isNotEmpty) parts.removeLast();
+      } else {
+        parts.add(part);
+      }
+    }
+    return parts.join('/');
   }
 
   Future<void> _setFontSize(int value) async {
@@ -314,42 +506,394 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     setState(() => _fontSize = next);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('epub_font_size', next);
-    try {
-      await _epubController.setFontSize(fontSize: next.toDouble());
-    } catch (_) {
-      if (mounted) setState(() => _viewerRevision++);
-    }
+    _scheduleProgressSave();
   }
 
   Future<void> _setFlowType(int value) async {
     final next = value == 1 ? 1 : 0;
-    final cfiBeforeReload = _currentCfi ?? _initialCfi;
     if (!mounted) return;
+    final targetChapter = _chapterIndex;
     setState(() {
       _flowType = next;
-      _initialCfi = cfiBeforeReload;
-      _viewerRevision++;
+      _horizontalPageIndex = _pageIndexForChapter(targetChapter);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_flowType == 1) {
+        _jumpVerticalToChapter(targetChapter);
+      } else {
+        _jumpHorizontalToPage(_horizontalPageIndex);
+      }
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('epub_flow_type', next);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    await _applyEpubFlow();
+    _scheduleProgressSave();
+  }
+
+  Future<void> _setBgColor(int color) async {
+    if (!mounted) return;
+    setState(() => _bgColor = color);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('epub_bg_color', color);
+  }
+
+  Future<void> _setTextColor(int color) async {
+    if (!mounted) return;
+    setState(() => _textColor = color);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('epub_text_color', color);
+  }
+
+  Future<void> _jumpToChapter(int index) async {
+    Navigator.pop(context);
+    await _jumpChapterWithoutDrawer(index);
+  }
+
+  int _chapterIndexForCharOffset(int charOffset) {
+    if (_book == null) return 0;
+    final starts = _chapterStartChars;
+    if (starts.isEmpty) return 0;
+    final clamped = charOffset.clamp(0, _fullBookLength);
+    var selected = 0;
+    for (var i = 0; i < starts.length; i++) {
+      if (starts[i] <= clamped) {
+        selected = i;
+      } else {
+        break;
+      }
+    }
+    return selected;
+  }
+
+  int _chapterIndexForPage(int pageIndex) {
+    final pages = _horizontalPages;
+    if (pages.isEmpty) return 0;
+    final targetChars = max(900, _fontSize * 55);
+    final page = pageIndex.clamp(0, pages.length - 1).toInt();
+    final offset = page * targetChars;
+    return _chapterIndexForCharOffset(offset);
+  }
+
+  int _chapterIndexForVerticalOffset(double offset) {
+    if (!_verticalController.hasClients) return _chapterIndex;
+    final maxOffset = max(1.0, _verticalController.position.maxScrollExtent);
+    final ratio = (offset / maxOffset).clamp(0.0, 1.0);
+    return _chapterIndexForCharOffset((ratio * _fullBookLength).round());
+  }
+
+  int _pageIndexForChapter(int index) {
+    final pages = _horizontalPages;
+    if (pages.isEmpty) return 0;
+    final starts = _chapterStartChars;
+    if (starts.isEmpty) return 0;
+    final chapter = index.clamp(0, max(0, starts.length - 1)).toInt();
+    final targetChars = max(900, _fontSize * 55);
+    return (starts[chapter] / targetChars)
+        .floor()
+        .clamp(0, pages.length - 1)
+        .toInt();
+  }
+
+  void _jumpVerticalToChapter(int index) {
+    if (!_verticalController.hasClients) return;
+    final starts = _chapterStartChars;
+    if (starts.isEmpty) return;
+    final chapter = index.clamp(0, starts.length - 1).toInt();
+    final ratio = starts[chapter] / _fullBookLength;
+    final target = ratio * _verticalController.position.maxScrollExtent;
+    _verticalController.jumpTo(
+      target.clamp(0.0, _verticalController.position.maxScrollExtent),
+    );
+  }
+
+  void _jumpHorizontalToPage(int pageIndex) {
+    if (!_pageController.hasClients) return;
+    final pages = _horizontalPages;
+    if (pages.isEmpty) return;
+    _pageController.jumpToPage(pageIndex.clamp(0, pages.length - 1));
+  }
+
+  void _syncChapterFromVerticalOffset(double offset) {
+    final next = _chapterIndexForVerticalOffset(offset);
+    if (next != _chapterIndex && mounted) {
+      setState(() => _chapterIndex = next);
+    }
+  }
+
+  void _syncChapterFromPage(int pageIndex) {
+    final next = _chapterIndexForPage(pageIndex);
+    if (next != _chapterIndex && mounted) {
+      setState(() => _chapterIndex = next);
+    }
+  }
+
+  Future<void> _jumpChapterWithoutDrawer(int index) async {
+    if (_book == null) return;
+    final next = index.clamp(0, _book!.chapters.length - 1);
+    final pageIndex = _pageIndexForChapter(next);
+    setState(() {
+      _chapterIndex = next;
+      _horizontalPageIndex = pageIndex;
+    });
+    _jumpVerticalToChapter(next);
+    _jumpHorizontalToPage(pageIndex);
+    await _saveProgress();
+  }
+
+  Future<void> _nextChapter() async {
+    if (_book == null || _chapterIndex >= _book!.chapters.length - 1) return;
+    await _jumpChapterWithoutDrawer(_chapterIndex + 1);
+  }
+
+  Future<void> _prevChapter() async {
+    if (_book == null || _chapterIndex <= 0) return;
+    await _jumpChapterWithoutDrawer(_chapterIndex - 1);
+  }
+
+  Future<void> _refreshBookmarkState() async {
+    final position = _encodePosition();
+    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
+      _mangaId,
+    );
+    final bookmarked = bookmarks.any(
+      (bookmark) => bookmark.epubCfi == position,
+    );
+    if (mounted) setState(() => _isCurrentBookmark = bookmarked);
+  }
+
+  Future<void> _toggleBookmark() async {
+    final position = _encodePosition();
+    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
+      _mangaId,
+    );
+    final existing = bookmarks.firstWhereOrNull(
+      (bookmark) => bookmark.epubCfi == position,
+    );
+    if (existing != null) {
+      await DatabaseHelper.instance.deleteBookmark(existing.id);
+      if (mounted) setState(() => _isCurrentBookmark = false);
+      return;
+    }
+
+    final now = DateTime.now();
+    await DatabaseHelper.instance.saveBookmark(
+      ReaderBookmark(
+        id: '$_mangaId-$_chapterId-${position.hashCode}',
+        mangaId: _mangaId,
+        chapterId: _chapterId,
+        pageIndex: _flowType == 0 ? _horizontalPageIndex : _chapterIndex,
+        scrollOffset: _verticalController.hasClients
+            ? _verticalController.offset
+            : 0,
+        epubCfi: position,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (mounted) setState(() => _isCurrentBookmark = true);
+  }
+
+  Future<void> _loadVoicesForLang(String lang) async {
+    try {
+      final voices = await _tts.getVoices;
+      if (voices == null || !mounted) return;
+      final parsed = <Map<String, String>>[];
+      for (final voice in voices) {
+        if (voice is! Map) continue;
+        final locale = voice['locale']?.toString() ?? '';
+        final name = voice['name']?.toString() ?? '';
+        if (locale.toLowerCase().contains(lang.toLowerCase()) ||
+            lang.toLowerCase().contains(locale.toLowerCase())) {
+          parsed.add({'name': name, 'locale': locale});
+        }
+      }
+      setState(() {
+        _availableVoices = parsed;
+        _selectedVoice = parsed.firstOrNull;
+      });
+      if (_selectedVoice != null) {
+        await _tts.setVoice({
+          'name': _selectedVoice!['name']!,
+          'locale': _selectedVoice!['locale']!,
+        });
+      }
+    } catch (e) {
+      debugPrint('TTS getVoices error: $e');
+    }
+  }
+
+  Future<void> _setTtsVoice(Map<String, String> voice) async {
+    setState(() => _selectedVoice = voice);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'tts_book_${_resolvedBookKey}_voice_name_$_ttsLang',
+      voice['name']!,
+    );
+    _scheduleTtsSettingsApply(restartIfPlaying: true);
   }
 
   Future<void> _setTtsRate(double value) async {
     if (!mounted) return;
     setState(() => _ttsRate = value);
-    await _tts.setSpeechRate(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('tts_book_${_resolvedBookKey}_rate', value);
+    _scheduleTtsSettingsApply(restartIfPlaying: true);
   }
 
   Future<void> _setTtsPitch(double value) async {
     if (!mounted) return;
     setState(() => _ttsPitch = value);
-    await _tts.setPitch(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('tts_book_${_resolvedBookKey}_pitch', value);
+    _scheduleTtsSettingsApply(restartIfPlaying: true);
+  }
+
+  Future<void> _setTtsLang(String lang) async {
+    if (!mounted) return;
+    setState(() => _ttsLang = lang);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tts_book_${_resolvedBookKey}_lang', lang);
+    await _loadVoicesForLang(lang);
+    _scheduleTtsSettingsApply(restartIfPlaying: true);
+  }
+
+  void _scheduleTtsSettingsApply({required bool restartIfPlaying}) {
+    _ttsSettingsTimer?.cancel();
+    _ttsSettingsTimer = Timer(const Duration(milliseconds: 250), () {
+      _applyTtsSettings(restartIfPlaying: restartIfPlaying);
+    });
+  }
+
+  Future<void> _applyTtsSettings({required bool restartIfPlaying}) async {
+    final text = _lastTtsText;
+    final shouldRestart = restartIfPlaying && _isTtsPlaying && text != null;
+    final restartChunkIndex = _ttsChunkIndex;
+    if (shouldRestart) {
+      _isTtsPlaying = false;
+      await _tts.stop();
+    }
+    await _tts.setLanguage(_ttsLang);
+    await _tts.setSpeechRate(_ttsRate);
+    await _tts.setPitch(_ttsPitch);
+    if (_selectedVoice != null) {
+      await _tts.setVoice({
+        'name': _selectedVoice!['name']!,
+        'locale': _selectedVoice!['locale']!,
+      });
+    }
+    if (shouldRestart && mounted) {
+      await _startTts(text, startChunkIndex: restartChunkIndex);
+    }
+  }
+
+  Future<void> _toggleTts() async {
+    if (_isTtsPlaying) {
+      await _tts.stop();
+      _ttsChunks = [];
+      _ttsChunkIndex = 0;
+      if (mounted) {
+        setState(() => _isTtsPlaying = false);
+      }
+      return;
+    }
+
+    final text = _flowType == 0
+        ? _horizontalPages[_horizontalPageIndex.clamp(
+            0,
+            _horizontalPages.length - 1,
+          )]
+        : _formatChapterText(_currentChapter);
+    if (text.trim().isEmpty) return;
+    await _startTts(text);
+  }
+
+  Future<void> _startTts(String text, {int startChunkIndex = 0}) async {
+    final chunks = _splitTtsChunks(text);
+    if (chunks.isEmpty) return;
+    _lastTtsText = text;
+    _ttsChunks = chunks;
+    _ttsChunkIndex = startChunkIndex.clamp(0, chunks.length - 1).toInt();
+    await _applyTtsSettings(restartIfPlaying: false);
+    if (!mounted) return;
+    setState(() => _isTtsPlaying = true);
+    await _speakCurrentTtsChunk();
+  }
+
+  Future<void> _speakCurrentTtsChunk() async {
+    if (!_isTtsPlaying || _ttsChunks.isEmpty) return;
+    final chunk = _ttsChunks[_ttsChunkIndex].trim();
+    if (chunk.isEmpty) {
+      await _playNextTtsChunk();
+      return;
+    }
+    await _tts.speak(chunk);
+  }
+
+  Future<void> _playNextTtsChunk() async {
+    if (!_isTtsPlaying || _ttsChunks.isEmpty) return;
+    _ttsChunkIndex++;
+    if (_ttsChunkIndex >= _ttsChunks.length) {
+      _ttsChunks = [];
+      _ttsChunkIndex = 0;
+      if (mounted) {
+        setState(() => _isTtsPlaying = false);
+      }
+      return;
+    }
+    await _speakCurrentTtsChunk();
+  }
+
+  List<String> _splitTtsChunks(String text) {
+    const maxChars = 2800;
+    final source = text
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    if (source.isEmpty) return const [];
+
+    final chunks = <String>[];
+    final buffer = StringBuffer();
+    final pieces = source.split(RegExp(r'(?<=[.!?。！？…])\s+|\n\s*\n'));
+    for (final rawPiece in pieces) {
+      final piece = rawPiece.trim();
+      if (piece.isEmpty) continue;
+      if (piece.length > maxChars) {
+        if (buffer.isNotEmpty) {
+          chunks.add(buffer.toString().trim());
+          buffer.clear();
+        }
+        for (var i = 0; i < piece.length; i += maxChars) {
+          chunks.add(piece.substring(i, min(i + maxChars, piece.length)));
+        }
+        continue;
+      }
+      if (buffer.length + piece.length + 1 > maxChars && buffer.isNotEmpty) {
+        chunks.add(buffer.toString().trim());
+        buffer.clear();
+      }
+      buffer.writeln(piece);
+    }
+    if (buffer.toString().trim().isNotEmpty) {
+      chunks.add(buffer.toString().trim());
+    }
+    return chunks;
+  }
+
+  void _setSleepTimer(int minutes) {
+    _sleepTimer?.cancel();
+    setState(() => _sleepTimeMinutes = minutes);
+    if (minutes <= 0) return;
+    _sleepTimer = Timer(Duration(minutes: minutes), () {
+      _tts.stop();
+      _ttsChunks = [];
+      _ttsChunkIndex = 0;
+      if (mounted) {
+        setState(() {
+          _isTtsPlaying = false;
+          _sleepTimeMinutes = 0;
+        });
+      }
+    });
   }
 
   void _showColorSettings() {
@@ -367,227 +911,57 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       0xFFDDDDDD,
       0xFFFFD700,
     ];
-
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF2C2C2E),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Màu nền',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Màu nền', style: TextStyle(color: Colors.white)),
+            const SizedBox(height: 12),
+            _buildColorRow(bgColors, _bgColor, _setBgColor),
+            const SizedBox(height: 24),
+            const Text('Màu chữ', style: TextStyle(color: Colors.white)),
+            const SizedBox(height: 12),
+            _buildColorRow(textColors, _textColor, _setTextColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorRow(
+    List<int> colors,
+    int selected,
+    Future<void> Function(int) onSelected,
+  ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: colors
+          .map(
+            (color) => GestureDetector(
+              onTap: () => onSelected(color),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Color(color),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected == color
+                        ? Colors.blueAccent
+                        : Colors.white24,
+                    width: selected == color ? 3 : 1,
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: bgColors
-                        .map(
-                          (color) => GestureDetector(
-                            onTap: () {
-                              _setBgColor(color);
-                              setModalState(() {});
-                            },
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Color(color),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _bgColor == color
-                                      ? Colors.blueAccent
-                                      : Colors.white24,
-                                  width: _bgColor == color ? 3 : 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Màu chữ',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: textColors
-                        .map(
-                          (color) => GestureDetector(
-                            onTap: () {
-                              _setTextColor(color);
-                              setModalState(() {});
-                            },
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Color(color),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _textColor == color
-                                      ? Colors.blueAccent
-                                      : Colors.white24,
-                                  width: _textColor == color ? 3 : 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                  const SizedBox(height: 20),
-                ],
+                ),
               ),
-            );
-          },
-        );
-      },
+            ),
+          )
+          .toList(),
     );
-  }
-
-  Future<void> _setTtsLang(String lang) async {
-    if (!mounted) return;
-    setState(() => _ttsLang = lang);
-    await _tts.setLanguage(lang);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('tts_book_${_resolvedBookKey}_lang', lang);
-    await _loadVoicesForLang(lang);
-  }
-
-  Future<void> _saveEpubProgress(String cfi) async {
-    final now = DateTime.now();
-    await DatabaseHelper.instance.saveReaderProgress(
-      ReaderProgress(
-        mangaId: _mangaId,
-        chapterId: _chapterId,
-        pageIndex: 0,
-        scrollOffset: 0,
-        progressPercent: 0,
-        epubCfi: cfi,
-        updatedAt: now,
-      ),
-    );
-  }
-
-  Future<void> _jumpToChapter(EpubChapter chapter) async {
-    Navigator.pop(context);
-    final target = chapter.href.isNotEmpty ? chapter.href : chapter.id;
-    if (target.isEmpty) return;
-
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return;
-
-    try {
-      _epubController.display(cfi: target);
-      setState(() {
-        _currentCfi = target;
-        _initialCfi = target;
-      });
-    } catch (e) {
-      debugPrint('EPUB chapter jump error: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không mở được mục này trong EPUB')),
-      );
-    }
-  }
-
-  Future<void> _refreshCurrentCfiBookmark() async {
-    final cfi = _currentCfi;
-    if (cfi == null || cfi.isEmpty) {
-      if (mounted) setState(() => _isCurrentCfiBookmarked = false);
-      return;
-    }
-
-    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
-      _mangaId,
-    );
-    final isBookmarked = bookmarks.any(
-      (bookmark) => bookmark.chapterId == _chapterId && bookmark.epubCfi == cfi,
-    );
-    if (mounted) setState(() => _isCurrentCfiBookmarked = isBookmarked);
-  }
-
-  Future<void> _toggleEpubBookmark() async {
-    final cfi = _currentCfi ?? _initialCfi;
-    if (cfi == null || cfi.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chua co vi tri EPUB de bookmark')),
-      );
-      return;
-    }
-
-    final bookmarks = await DatabaseHelper.instance.getBookmarksForManga(
-      _mangaId,
-    );
-    final existing = bookmarks
-        .where(
-          (bookmark) =>
-              bookmark.chapterId == _chapterId && bookmark.epubCfi == cfi,
-        )
-        .firstOrNull;
-
-    if (existing != null) {
-      await DatabaseHelper.instance.deleteBookmark(existing.id);
-      if (!mounted) return;
-      setState(() => _isCurrentCfiBookmarked = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Da bo bookmark EPUB')),
-      );
-      return;
-    }
-
-    final now = DateTime.now();
-    await DatabaseHelper.instance.saveBookmark(
-      ReaderBookmark(
-        id: '$_mangaId-$_chapterId-${cfi.hashCode}',
-        mangaId: _mangaId,
-        chapterId: _chapterId,
-        pageIndex: 0,
-        scrollOffset: 0,
-        epubCfi: cfi,
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _isCurrentCfiBookmarked = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Da them bookmark EPUB')),
-    );
-  }
-
-  Future<void> _toggleTts() async {
-    if (_isTtsPlaying) {
-      await _tts.stop();
-      setState(() => _isTtsPlaying = false);
-    } else {
-      try {
-        // Trích xuất text từ trang hiện tại qua EPUB controller
-        final res = await _epubController.extractCurrentPageText();
-        final rawText = res.text;
-        final textToRead = (rawText != null && rawText.isNotEmpty)
-            ? rawText
-            : 'Không thể đọc nội dung trang này';
-        await _tts.speak(textToRead);
-        setState(() => _isTtsPlaying = true);
-      } catch (e) {
-        debugPrint('TTS read error: $e');
-        // Fallback: đọc tiêu đề chương
-        await _tts.speak(widget.title);
-        setState(() => _isTtsPlaying = true);
-      }
-    }
   }
 
   void _showReaderSettings() {
@@ -595,169 +969,133 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       context: context,
       backgroundColor: const Color(0xFF2C2C2E),
       isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Cài đặt đọc',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                    const Expanded(
+                      child: Text(
+                        'Cài đặt đọc',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(Icons.text_fields, color: Colors.white54),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Cỡ chữ $_fontSize',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ],
-                    ),
-                    Slider(
-                      value: _fontSize.toDouble(),
-                      min: 12,
-                      max: 40,
-                      divisions: 14,
-                      activeColor: Colors.blueAccent,
-                      onChanged: (value) async {
-                        await _setFontSize(value.round());
-                        setModalState(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SegmentedButton<int>(
-                      segments: const [
-                        ButtonSegment(
-                          value: 0,
-                          icon: Icon(Icons.swap_horiz),
-                          label: Text('Ngang'),
-                        ),
-                        ButtonSegment(
-                          value: 1,
-                          icon: Icon(Icons.swap_vert),
-                          label: Text('Dọc'),
-                        ),
-                      ],
-                      selected: {_flowType},
-                      onSelectionChanged: (values) async {
-                        await _setFlowType(values.first);
-                        setModalState(() {});
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _showColorSettings();
-                      },
-                      icon: const Icon(Icons.palette),
-                      label: const Text('Màu nền và màu chữ'),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: _showTtsPanel,
-                      onChanged: (value) {
-                        setState(() => _showTtsPanel = value);
-                        setModalState(() {});
-                      },
-                      title: const Text(
-                        'Mở bảng TTS',
-                        style: TextStyle(color: Colors.white),
                       ),
-                      secondary: const Icon(
-                        Icons.record_voice_over,
-                        color: Colors.white54,
-                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white70),
                     ),
                   ],
                 ),
-              ),
-            );
-          },
-        );
-      },
+                Text(
+                  'Cỡ chữ $_fontSize',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                Slider(
+                  value: _fontSize.toDouble(),
+                  min: 12,
+                  max: 40,
+                  divisions: 14,
+                  activeColor: Colors.blueAccent,
+                  onChanged: (value) async {
+                    await _setFontSize(value.round());
+                    setModalState(() {});
+                  },
+                ),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 0,
+                      icon: Icon(Icons.swap_horiz),
+                      label: Text('Ngang'),
+                    ),
+                    ButtonSegment(
+                      value: 1,
+                      icon: Icon(Icons.swap_vert),
+                      label: Text('Dọc'),
+                    ),
+                  ],
+                  selected: {_flowType},
+                  onSelectionChanged: (values) async {
+                    await _setFlowType(values.first);
+                    setModalState(() {});
+                  },
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Màu nền/chữ',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  leading: const Icon(Icons.palette, color: Colors.white54),
+                  onTap: _showColorSettings,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _showTtsPanel,
+                  onChanged: (value) {
+                    setState(() => _showTtsPanel = value);
+                    setModalState(() {});
+                  },
+                  title: const Text(
+                    'Mở bảng TTS',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  secondary: const Icon(
+                    Icons.record_voice_over,
+                    color: Colors.white54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   @override
   void dispose() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    _tts.stop();
+    _progressTimer?.cancel();
+    _ttsSettingsTimer?.cancel();
     _sleepTimer?.cancel();
-    // Xóa file EPUB tạm khi widget bị dispose — tránh temp dir đầy sau nhiều lần mở truyện
-    if (_epubPath != null) {
-      try {
-        final f = File(_epubPath!);
-        if (f.existsSync()) f.deleteSync();
-      } catch (_) {}
-    }
+    _tts.stop();
+    _verticalController.dispose();
+    _pageController.dispose();
     super.dispose();
-  }
-
-  EpubDisplaySettings? _cachedDisplaySettings;
-  int _lastFontSize = 0;
-
-  EpubDisplaySettings _buildDisplaySettings() {
-    final currentTheme = _buildEpubTheme();
-    final flow = _flowType == 1 ? EpubFlow.scrolled : EpubFlow.paginated;
-    final snap = _flowType == 0;
-    
-    if (_cachedDisplaySettings != null && 
-        _lastFontSize == _fontSize && 
-        _cachedEpubTheme == currentTheme &&
-        _cachedDisplaySettings!.flow == flow) {
-      return _cachedDisplaySettings!;
-    }
-    _lastFontSize = _fontSize;
-    _cachedDisplaySettings = EpubDisplaySettings(
-      fontSize: _fontSize,
-      flow: flow,
-      allowScriptedContent: true,
-      snap: snap,
-      theme: currentTheme,
-    );
-    return _cachedDisplaySettings!;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isEpubReady || _epubPath == null) {
+    if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator(color: Colors.redAccent)),
+      );
+    }
+    if (_errorMessage != null || _book == null) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black),
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Colors.redAccent),
-              SizedBox(height: 12),
-              Text(
-                'Đang mở file truyện...',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              _errorMessage ?? 'Không mở được EPUB',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
+            ),
           ),
         ),
       );
@@ -766,65 +1104,70 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Color(_bgColor),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: _showTtsPanel ? 220 : 72),
-        child: FloatingActionButton.small(
-          heroTag: 'epub-reader-settings-${widget.title}',
-          backgroundColor: const Color(0xFF2C2C2E),
-          foregroundColor: Colors.white,
-          tooltip: 'Cài đặt đọc',
-          onPressed: _showReaderSettings,
-          child: const Icon(Icons.tune),
-        ),
-      ),
       appBar: AppBar(
         backgroundColor: const Color(0xFF2C2C2E),
         title: Text(
-          widget.title,
-          style: const TextStyle(fontSize: 16, color: Colors.white),
+          _currentChapter.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             icon: const Icon(Icons.menu_book),
             tooltip: 'Mục lục',
-            onPressed: () {
-              _scaffoldKey.currentState?.openEndDrawer();
-            },
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
           ),
           IconButton(
             icon: Icon(
-              _isCurrentCfiBookmarked
-                  ? Icons.bookmark
-                  : Icons.bookmark_border,
-              color: _isCurrentCfiBookmarked ? Colors.amber : Colors.white,
+              _isCurrentBookmark ? Icons.bookmark : Icons.bookmark_border,
+              color: _isCurrentBookmark ? Colors.amber : Colors.white,
             ),
-            tooltip: _isCurrentCfiBookmarked
-                ? 'Bỏ bookmark EPUB'
-                : 'Bookmark vị trí EPUB',
-            onPressed: _toggleEpubBookmark,
+            tooltip: 'Bookmark',
+            onPressed: _toggleBookmark,
           ),
           IconButton(
             icon: const Icon(Icons.tune),
-            tooltip: 'Cài đặt đọc',
+            tooltip: 'Cài đặt',
             onPressed: _showReaderSettings,
           ),
-          const SizedBox(width: 4),
         ],
       ),
-      endDrawer: Drawer(
-        backgroundColor: const Color(0xFF1C1C1E),
+      endDrawer: _buildTocDrawer(),
+      floatingActionButton: Padding(
+        padding: EdgeInsets.only(bottom: _showTtsPanel ? 220 : 72),
+        child: FloatingActionButton.small(
+          heroTag: 'epub-reader-settings-${widget.storageKey}',
+          backgroundColor: const Color(0xFF2C2C2E),
+          foregroundColor: Colors.white,
+          onPressed: _showReaderSettings,
+          child: const Icon(Icons.tune),
+        ),
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _flowType == 1
+                ? _buildVerticalReader()
+                : _buildHorizontalReader(),
+          ),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildTtsBar()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTocDrawer() {
+    return Drawer(
+      backgroundColor: const Color(0xFF1C1C1E),
+      child: SafeArea(
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.only(top: 40, bottom: 16),
-              color: const Color(0xFF2C2C2E),
-              width: double.infinity,
-              child: const Text(
-                'Mục Lục',
-                textAlign: TextAlign.center,
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Mục lục',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
@@ -833,63 +1176,82 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               ),
             ),
             Expanded(
-              child: _chapters.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'Đang tải...',
-                        style: TextStyle(color: Colors.white54),
+              child: ListView.builder(
+                itemCount: _book!.chapters.length,
+                itemBuilder: (context, index) {
+                  final chapter = _book!.chapters[index];
+                  return ListTile(
+                    selected: index == _chapterIndex,
+                    selectedTileColor: Colors.white10,
+                    title: Text(
+                      chapter.title,
+                      style: TextStyle(
+                        color: index == _chapterIndex
+                            ? Colors.white
+                            : Colors.white70,
                       ),
-                    )
-                  : ListView.builder(
-                      itemCount: _chapters.length,
-                      itemBuilder: (context, index) {
-                        final ch = _chapters[index];
-                        return ListTile(
-                          title: Text(
-                            ch.title,
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-                          onTap: () {
-                            _jumpToChapter(ch);
-                          },
-                        );
-                      },
                     ),
+                    onTap: () => _jumpToChapter(index),
+                  );
+                },
+              ),
             ),
           ],
         ),
       ),
-      body: Stack(
-        children: [
-          // ── EPUB Viewer ──────────────────────────────────────────
-          EpubViewer(
-            key: ValueKey('epub-${_flowType}_$_viewerRevision'),
-            epubSource: EpubSource.fromFile(File(_epubPath!)),
-            epubController: _epubController,
-            initialCfi: _initialCfi,
-            displaySettings: _buildDisplaySettings(),
-            onEpubLoaded: () async {
-              await _applyEpubTheme();
-              await _applyEpubFlow();
-            },
-            onChaptersLoaded: (chapters) {
-              debugPrint('📚 EPUB loaded: ${chapters.length} chapters');
-              if (mounted) setState(() => _chapters = chapters);
-            },
-            onRelocated: (loc) async {
-              final startCfi = loc.startCfi;
-              _currentCfi = startCfi;
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('epub_cfi_${widget.title}', startCfi);
-              await _saveEpubProgress(startCfi);
-              await _refreshCurrentCfiBookmark();
-            },
-          ),
+    );
+  }
 
-          // ── TTS Control Bar (bottom) ─────────────────────────────
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildTtsBar()),
-        ],
+  Widget _buildVerticalReader() {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification ||
+            notification is ScrollEndNotification) {
+          _syncChapterFromVerticalOffset(notification.metrics.pixels);
+          _scheduleProgressSave();
+        }
+        return false;
+      },
+      child: SingleChildScrollView(
+        controller: _verticalController,
+        padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
+        child: SelectableText(
+          _fullBookText,
+          style: TextStyle(
+            color: Color(_textColor),
+            fontSize: _fontSize.toDouble(),
+            height: 1.65,
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _buildHorizontalReader() {
+    final pages = _horizontalPages;
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: pages.length,
+      onPageChanged: (index) {
+        setState(() => _horizontalPageIndex = index);
+        _syncChapterFromPage(index);
+        _scheduleProgressSave();
+      },
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              pages[index],
+              style: TextStyle(
+                color: Color(_textColor),
+                fontSize: _fontSize.toDouble(),
+                height: 1.65,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -930,6 +1292,14 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Widget _buildTtsBar() {
+    final selectedVoice = _selectedVoice == null
+        ? null
+        : _availableVoices.firstWhereOrNull(
+            (voice) =>
+                voice['name'] == _selectedVoice!['name'] &&
+                voice['locale'] == _selectedVoice!['locale'],
+          );
+
     if (!_showTtsPanel) {
       return SafeArea(
         top: false,
@@ -962,6 +1332,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       ),
                       onPressed: () => _setFlowType(_flowType == 1 ? 0 : 1),
                     ),
+                    IconButton(
+                      tooltip: 'Chương trước',
+                      icon: const Icon(Icons.chevron_left, color: Colors.white),
+                      onPressed: _prevChapter,
+                    ),
                     _TtsButton(
                       icon: _isTtsPlaying
                           ? Icons.stop_rounded
@@ -971,6 +1346,14 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                           ? Colors.redAccent
                           : Colors.blueAccent,
                       onTap: _toggleTts,
+                    ),
+                    IconButton(
+                      tooltip: 'Chương sau',
+                      icon: const Icon(
+                        Icons.chevron_right,
+                        color: Colors.white,
+                      ),
+                      onPressed: _nextChapter,
                     ),
                     IconButton(
                       tooltip: 'Mở TTS',
@@ -1006,32 +1389,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => setState(() => _showTtsPanel = false),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const Icon(
-                        Icons.keyboard_arrow_down,
-                        color: Colors.white54,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => setState(() => _showTtsPanel = false),
+              child: const Padding(
+                padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Icon(Icons.keyboard_arrow_down, color: Colors.white54),
               ),
             ),
             Row(
@@ -1041,12 +1404,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     _flowType == 1 ? Icons.swap_vert : Icons.swap_horiz,
                     color: Colors.white,
                   ),
-                  tooltip: _flowType == 1
-                      ? 'Chế độ cuộn dọc'
-                      : 'Chế độ vuốt ngang',
                   onPressed: () => _setFlowType(_flowType == 1 ? 0 : 1),
                 ),
-                const SizedBox(width: 8),
                 _TtsButton(
                   icon: _isTtsPlaying
                       ? Icons.stop_rounded
@@ -1084,7 +1443,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
             _buildTtsSlider(
               icon: Icons.speed,
               label: 'Tốc độ: ${_ttsRate.toStringAsFixed(1)}x',
@@ -1105,135 +1463,68 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               color: Colors.purpleAccent,
               onChanged: _setTtsPitch,
             ),
-
-            // Dòng thứ 2: Chọn Giọng Đọc và Hẹn Giờ Ngủ
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   flex: 2,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF3A3A3C),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<Map<String, String>>(
-                        isExpanded: true,
-                        dropdownColor: const Color(0xFF3A3A3C),
-                        hint: const Text(
-                          'Chọn giọng đọc',
-                          style: TextStyle(color: Colors.white54, fontSize: 12),
-                        ),
-                        value: _selectedVoice,
-                        icon: const Icon(
-                          Icons.keyboard_arrow_down,
-                          color: Colors.white54,
-                        ),
-                        items: _availableVoices.map((v) {
-                          return DropdownMenuItem<Map<String, String>>(
-                            value: v,
-                            child: Text(
-                              v['name'] ?? 'Giọng mặc định',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) _setTtsVoice(val);
-                        },
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<Map<String, String>>(
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF3A3A3C),
+                      value: selectedVoice,
+                      hint: const Text(
+                        'Chọn giọng',
+                        style: TextStyle(color: Colors.white54),
                       ),
+                      items: _availableVoices
+                          .map(
+                            (voice) => DropdownMenuItem<Map<String, String>>(
+                              value: voice,
+                              child: Text(
+                                voice['name'] ?? 'Giọng mặc định',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (voice) {
+                        if (voice != null) _setTtsVoice(voice);
+                      },
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  flex: 1,
                   child: PopupMenuButton<int>(
                     tooltip: 'Hẹn giờ tắt',
-                    // Keep the visible trigger near tooltip for readability.
-                    // ignore: sort_child_properties_last
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _sleepTimeMinutes > 0
-                            ? Colors.redAccent.withValues(alpha: 0.2)
-                            : const Color(0xFF3A3A3C),
-                        borderRadius: BorderRadius.circular(8),
-                        border: _sleepTimeMinutes > 0
-                            ? Border.all(color: Colors.redAccent)
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.snooze,
-                            size: 16,
-                            color: _sleepTimeMinutes > 0
-                                ? Colors.redAccent
-                                : Colors.white54,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _sleepTimeMinutes > 0
-                                ? '$_sleepTimeMinutes p'
-                                : 'Tắt',
-                            style: TextStyle(
-                              color: _sleepTimeMinutes > 0
-                                  ? Colors.redAccent
-                                  : Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     color: const Color(0xFF3A3A3C),
                     onSelected: _setSleepTimer,
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 0,
-                        child: Text(
-                          'Không hẹn giờ',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 15,
-                        child: Text(
-                          '15 phút',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 30,
-                        child: Text(
-                          '30 phút',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 45,
-                        child: Text(
-                          '45 phút',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 60,
-                        child: Text(
-                          '60 phút',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 0, child: Text('Không hẹn giờ')),
+                      PopupMenuItem(value: 15, child: Text('15 phút')),
+                      PopupMenuItem(value: 30, child: Text('30 phút')),
+                      PopupMenuItem(value: 60, child: Text('60 phút')),
                     ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF3A3A3C),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _sleepTimeMinutes > 0 ? '$_sleepTimeMinutes p' : 'Tắt',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1245,7 +1536,32 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 }
 
-/// Nút điều khiển TTS nhỏ gọn.
+class _ParsedEpub {
+  final String title;
+  final List<_EpubChapter> chapters;
+
+  const _ParsedEpub({required this.title, required this.chapters});
+}
+
+class _EpubChapter {
+  final String title;
+  final String text;
+
+  const _EpubChapter({required this.title, required this.text});
+}
+
+class _ManifestItem {
+  final String id;
+  final String href;
+  final String mediaType;
+
+  const _ManifestItem({
+    required this.id,
+    required this.href,
+    required this.mediaType,
+  });
+}
+
 class _TtsButton extends StatelessWidget {
   final IconData icon;
   final String label;

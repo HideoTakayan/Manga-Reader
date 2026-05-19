@@ -112,8 +112,10 @@ final GoRouter appRouter = GoRouter(
     // Route màn hình đọc truyện - nhận chapterId qua URL (/reader/xyz789)
     GoRoute(
       path: '/reader/:chapterId',
-      builder: (context, state) =>
-          ReaderPage(chapterId: state.pathParameters['chapterId']!),
+      builder: (context, state) => ReaderPage(
+        chapterId: state.pathParameters['chapterId']!,
+        mangaId: state.uri.queryParameters['mangaId'],
+      ),
     ),
     // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?genre=Action
     GoRoute(

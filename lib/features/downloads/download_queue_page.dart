@@ -295,7 +295,9 @@ class _ChapterDownloadItem extends StatelessWidget {
       onTap: () {
         // Chỉ cho mở reader khi đã tải xong
         if (task.status == DownloadStatus.completed) {
-          context.push('/reader/${task.chapterId}');
+          context.push(
+            '/reader/${task.chapterId}?mangaId=${Uri.encodeComponent(task.mangaId)}',
+          );
         }
       },
       child: Padding(

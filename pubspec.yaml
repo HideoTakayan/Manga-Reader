@@ -33,6 +33,7 @@ dependencies:
   flutter_easyloading: ^3.0.5
   file_picker: ^8.1.4
   archive: ^3.6.1
+  xml: ^6.5.0
   pdfx: ^2.6.0
   google_sign_in: ^6.2.2
   googleapis: ^13.1.0
@@ -50,9 +51,7 @@ dependencies:
   flutter_local_notifications: ^21.0.0
   flutter_background_service: ^5.1.0
   wakelock_plus: ^1.4.0
-  flutter_epub_viewer: ^1.2.8
   flutter_tts: ^4.2.5
-  flutter_inappwebview: ^6.1.5
   fl_chart: ^1.2.0
 dev_dependencies:
   flutter_test:

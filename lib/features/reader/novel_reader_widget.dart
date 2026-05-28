@@ -34,6 +34,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _verticalController = ScrollController();
   final _pageController = PageController();
+  final Map<int, GlobalKey> _chapterSectionKeys = {};
 
   _ParsedEpub? _book;
   bool _isLoading = true;
@@ -47,6 +48,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   bool _showTtsPanel = false;
   bool _isTtsPlaying = false;
+  bool _isTtsFromSelection = false;
   double _ttsRate = 0.5;
   double _ttsPitch = 1.0;
   String _ttsLang = 'vi-VN';
@@ -96,24 +98,56 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   _EpubChapter get _currentChapter =>
       _book!.chapters[_chapterIndex.clamp(0, _book!.chapters.length - 1)];
 
-  List<int> get _chapterStartChars {
-    var offset = 0;
-    final starts = <int>[];
-    for (final chapter in _book?.chapters ?? const <_EpubChapter>[]) {
-      starts.add(offset);
-      offset += _formatChapterText(chapter).length + 3;
+  // --- Phase 2: Horizontal Window State ---
+  int _windowCenterChapter = -1;
+  List<String> _windowPages = [];
+  int _pagesBeforeCenter = 0;
+  final Map<int, List<String>> _chapterPagesCache = {};
+
+
+
+  List<String> _getPagesForChapter(int chapterIndex) {
+    if (_book == null || chapterIndex < 0 || chapterIndex >= _book!.chapters.length) {
+      return [];
     }
-    return starts;
+    if (_chapterPagesCache.containsKey(chapterIndex)) {
+      return _chapterPagesCache[chapterIndex]!;
+    }
+    final text = _formatChapterText(_book!.chapters[chapterIndex]);
+    final pages = _splitIntoPages(text, max(900, _fontSize * 55));
+    _chapterPagesCache[chapterIndex] = pages;
+    return pages;
   }
 
-  String get _fullBookText => (_book?.chapters ?? const <_EpubChapter>[])
-      .map(_formatChapterText)
-      .join('\n\n\n');
-
-  int get _fullBookLength => max(1, _fullBookText.length);
-
-  List<String> get _horizontalPages =>
-      _splitIntoPages(_fullBookText, max(900, _fontSize * 55));
+  void _updateHorizontalWindow(int centerChapter) {
+    if (_book == null) return;
+    
+    final chapters = _book!.chapters;
+    final int prev = centerChapter - 1;
+    final int next = centerChapter + 1;
+    
+    final List<String> newPages = [];
+    int beforeCenterCount = 0;
+    
+    if (prev >= 0) {
+      final prevPages = _getPagesForChapter(prev);
+      newPages.addAll(prevPages);
+      beforeCenterCount = prevPages.length;
+    }
+    
+    final centerPages = _getPagesForChapter(centerChapter);
+    newPages.addAll(centerPages);
+    
+    if (next < chapters.length) {
+      final nextPages = _getPagesForChapter(next);
+      newPages.addAll(nextPages);
+    }
+    
+    _windowCenterChapter = centerChapter;
+    _windowPages = newPages;
+    _pagesBeforeCenter = beforeCenterCount;
+  }
+  // ----------------------------------------
 
   @override
   void initState() {
@@ -159,15 +193,23 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (_flowType == 1) {
-          if (_verticalController.hasClients && saved.$3 > 0) {
-            _verticalController.jumpTo(saved.$3);
-          } else {
-            _jumpVerticalToChapter(saved.$1);
-          }
+          _jumpVerticalToChapter(saved.$1, offsetRatio: saved.$3);
         } else {
-          final page = saved.$2 > 0 ? saved.$2 : _pageIndexForChapter(saved.$1);
-          setState(() => _horizontalPageIndex = page);
-          _jumpHorizontalToPage(page);
+          _updateHorizontalWindow(saved.$1);
+          final centerPagesCount = _getPagesForChapter(saved.$1).length;
+          
+          // Backward compatibility: if saved.$2 >= centerPagesCount, it's an old global index 
+          // or an invalid out-of-bounds index. Fallback to 0 safely.
+          final pageWithinChapter = saved.$2 >= centerPagesCount ? 0 : saved.$2;
+          final initialIndex = _pagesBeforeCenter + pageWithinChapter;
+          
+          setState(() => _horizontalPageIndex = initialIndex);
+          
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pageController.hasClients) {
+              _pageController.jumpToPage(initialIndex);
+            }
+          });
         }
       });
       await _refreshBookmarkState();
@@ -194,6 +236,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     _horizontalPageIndex = 0;
     _isCurrentBookmark = false;
     _isTtsPlaying = false;
+    _isTtsFromSelection = false;
+    _chapterSectionKeys.clear();
+    _chapterPagesCache.clear();
+    _windowCenterChapter = -1;
+    _windowPages.clear();
   }
 
   Future<void> _loadTtsSettings(SharedPreferences prefs) async {
@@ -266,10 +313,42 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   String _encodePosition() {
-    final offset = _verticalController.hasClients
-        ? _verticalController.offset
-        : 0.0;
-    return 'flutter:$_chapterIndex:$_horizontalPageIndex:${offset.toStringAsFixed(0)}';
+    double ratio = 0.0;
+    int pageWithinChapter = 0;
+    if (_flowType == 1) {
+      final key = _chapterSectionKeys[_chapterIndex];
+      if (key?.currentContext != null) {
+        final box = key!.currentContext!.findRenderObject() as RenderBox?;
+        if (box != null && box.attached) {
+          // dy is relative to screen top. If we scrolled down past the chapter top, dy is negative.
+          final top = box.localToGlobal(Offset.zero).dy;
+          final height = box.size.height;
+          if (height > 0) {
+            ratio = (max(0.0, -top) / height).clamp(0.0, 1.0);
+          }
+        }
+      }
+    } else {
+      // For horizontal mode, encode pageIndexWithinChapter
+      pageWithinChapter = _pageWithinCurrentChapter();
+      ratio = pageWithinChapter.toDouble();
+    }
+    return 'flutter:$_chapterIndex:$pageWithinChapter:${ratio.toStringAsFixed(4)}';
+  }
+
+  int _pageWithinCurrentChapter() {
+    if (_windowPages.isEmpty) return 0;
+    int page = 0;
+    if (_chapterIndex < _windowCenterChapter) {
+      page = _horizontalPageIndex;
+    } else if (_chapterIndex == _windowCenterChapter) {
+      page = _horizontalPageIndex - _pagesBeforeCenter;
+    } else {
+      final centerPages = _getPagesForChapter(_windowCenterChapter);
+      page = _horizontalPageIndex - (_pagesBeforeCenter + centerPages.length);
+    }
+    final targetPagesCount = _getPagesForChapter(_chapterIndex).length;
+    return page.clamp(0, max(0, targetPagesCount - 1)).toInt();
   }
 
   void _scheduleProgressSave() {
@@ -279,24 +358,26 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   Future<void> _saveProgress() async {
     final position = _encodePosition();
-    final offset = _verticalController.hasClients
-        ? _verticalController.offset
-        : 0.0;
+    // Get the parts directly from encodePosition to save in DB
+    final parts = position.substring('flutter:'.length).split(':');
+    final pageWithinChapter = parts.length == 3 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    final ratio = parts.length == 3 ? (double.tryParse(parts[2]) ?? 0.0) : 0.0;
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _progressPrefsKey,
       jsonEncode({
         'chapter': _chapterIndex,
-        'page': _horizontalPageIndex,
-        'offset': offset,
+        'page': pageWithinChapter,
+        'offset': ratio, // Save ratio instead of pixel offset
       }),
     );
     await DatabaseHelper.instance.saveReaderProgress(
       ReaderProgress(
         mangaId: _mangaId,
         chapterId: _chapterId,
-        pageIndex: _flowType == 0 ? _horizontalPageIndex : _chapterIndex,
-        scrollOffset: offset,
+        pageIndex: _flowType == 0 ? pageWithinChapter : _chapterIndex,
+        scrollOffset: ratio, // Store ratio in DB
         progressPercent: _book == null || _book!.chapters.isEmpty
             ? 0
             : _chapterIndex /
@@ -503,26 +584,79 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   Future<void> _setFontSize(int value) async {
     final next = value.clamp(12, 40);
     if (!mounted) return;
-    setState(() => _fontSize = next);
+    
+    double progressRatio = 0.0;
+    if (_flowType == 0 && _windowPages.isNotEmpty) {
+       final oldCenterPagesCount = _getPagesForChapter(_chapterIndex).length;
+       final pageWithinChapter = _pageWithinCurrentChapter();
+       if (oldCenterPagesCount > 0) {
+          progressRatio = pageWithinChapter / oldCenterPagesCount;
+       }
+    }
+    
+    setState(() {
+       _fontSize = next;
+       _chapterPagesCache.clear();
+       if (_flowType == 0) {
+          _updateHorizontalWindow(_chapterIndex);
+          final newCenterPagesCount = _getPagesForChapter(_chapterIndex).length;
+          final newPageWithinChapter = (progressRatio * newCenterPagesCount).floor().clamp(0, max(0, newCenterPagesCount - 1)).toInt();
+          _horizontalPageIndex = _pagesBeforeCenter + newPageWithinChapter;
+       }
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('epub_font_size', next);
     _scheduleProgressSave();
+    
+    if (_flowType == 0) {
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (mounted && _pageController.hasClients) {
+            _pageController.jumpToPage(_horizontalPageIndex);
+         }
+       });
+    }
   }
 
   Future<void> _setFlowType(int value) async {
     final next = value == 1 ? 1 : 0;
-    if (!mounted) return;
+    if (!mounted || _flowType == next) return;
+    
     final targetChapter = _chapterIndex;
+    double targetRatio = 0.0;
+    
+    if (_flowType == 1 && next == 0) {
+       // Vertical -> Horizontal: get vertical ratio
+       final position = _encodePosition();
+       final parts = position.substring('flutter:'.length).split(':');
+       targetRatio = parts.length == 3 ? (double.tryParse(parts[2]) ?? 0.0) : 0.0;
+    } else if (_flowType == 0 && next == 1) {
+       // Horizontal -> Vertical: calculate horizontal ratio
+       final centerPagesCount = _getPagesForChapter(targetChapter).length;
+       if (centerPagesCount > 0) {
+          targetRatio = _pageWithinCurrentChapter() / centerPagesCount;
+       }
+    }
+    
+    if (next == 0) {
+       _updateHorizontalWindow(targetChapter);
+    }
+    
     setState(() {
       _flowType = next;
-      _horizontalPageIndex = _pageIndexForChapter(targetChapter);
+      if (next == 0) {
+         final centerPagesCount = _getPagesForChapter(targetChapter).length;
+         final newPageWithinChapter = (targetRatio * centerPagesCount).floor().clamp(0, max(0, centerPagesCount - 1)).toInt();
+         _horizontalPageIndex = _pagesBeforeCenter + newPageWithinChapter;
+      }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_flowType == 1) {
-        _jumpVerticalToChapter(targetChapter);
+        _jumpVerticalToChapter(targetChapter, offsetRatio: targetRatio);
       } else {
-        _jumpHorizontalToPage(_horizontalPageIndex);
+        if (_pageController.hasClients) {
+           _pageController.jumpToPage(_horizontalPageIndex);
+        }
       }
     });
     final prefs = await SharedPreferences.getInstance();
@@ -549,94 +683,127 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     await _jumpChapterWithoutDrawer(index);
   }
 
-  int _chapterIndexForCharOffset(int charOffset) {
-    if (_book == null) return 0;
-    final starts = _chapterStartChars;
-    if (starts.isEmpty) return 0;
-    final clamped = charOffset.clamp(0, _fullBookLength);
-    var selected = 0;
-    for (var i = 0; i < starts.length; i++) {
-      if (starts[i] <= clamped) {
-        selected = i;
-      } else {
-        break;
+
+
+  void _jumpVerticalToChapter(int index, {double offsetRatio = 0.0}) {
+    // Try GlobalKey first (accurate, works when item is mounted by ListView)
+    final key = _chapterSectionKeys[index];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        alignment: 0.0,
+        duration: Duration.zero,
+      );
+      // Legacy progress records saved offset as an absolute pixel value (> 1.0).
+      // We safely ignore them and fallback to the top of the chapter (offsetRatio = 0.0).
+      if (offsetRatio > 0 && offsetRatio <= 1.0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_verticalController.hasClients) return;
+          final box = key.currentContext?.findRenderObject() as RenderBox?;
+          if (box != null && box.attached) {
+             final height = box.size.height;
+             _verticalController.jumpTo(_verticalController.offset + height * offsetRatio);
+          }
+        });
+      }
+      return;
+    }
+    // Fallback: estimate position using chapter index ratio when item not yet mounted
+    if (!_verticalController.hasClients || _book == null) return;
+    final chapters = _book!.chapters;
+    if (chapters.isEmpty) return;
+    
+    // Very rough estimate based on chapter index instead of char length to decouple from _fullBookText
+    final ratio = index / chapters.length;
+    final maxExtent = _verticalController.position.maxScrollExtent;
+    _verticalController.jumpTo((ratio * maxExtent).clamp(0.0, maxExtent));
+    
+    // After ListView builds the item, refine with GlobalKey (retry up to 10 frames)
+    int retryCount = 0;
+    void tryRefine() {
+      if (!mounted) return;
+      final newKey = _chapterSectionKeys[index];
+      if (newKey?.currentContext != null) {
+        Scrollable.ensureVisible(
+          newKey!.currentContext!,
+          alignment: 0.0,
+          duration: Duration.zero,
+        );
+        // Same check for the fallback route
+        if (offsetRatio > 0 && offsetRatio <= 1.0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_verticalController.hasClients) return;
+            final box = newKey.currentContext?.findRenderObject() as RenderBox?;
+            if (box != null && box.attached) {
+               final height = box.size.height;
+               _verticalController.jumpTo(_verticalController.offset + height * offsetRatio);
+            }
+          });
+        }
+      } else if (retryCount < 10) {
+        retryCount++;
+        WidgetsBinding.instance.addPostFrameCallback((_) => tryRefine());
       }
     }
-    return selected;
+    WidgetsBinding.instance.addPostFrameCallback((_) => tryRefine());
   }
 
-  int _chapterIndexForPage(int pageIndex) {
-    final pages = _horizontalPages;
-    if (pages.isEmpty) return 0;
-    final targetChars = max(900, _fontSize * 55);
-    final page = pageIndex.clamp(0, pages.length - 1).toInt();
-    final offset = page * targetChars;
-    return _chapterIndexForCharOffset(offset);
+  void _pruneChapterSectionKeys(int activeIndex) {
+    // Keep keys only for a small window around the active index to prevent memory bloat
+    _chapterSectionKeys.removeWhere((key, value) => (key - activeIndex).abs() > 3);
   }
 
-  int _chapterIndexForVerticalOffset(double offset) {
-    if (!_verticalController.hasClients) return _chapterIndex;
-    final maxOffset = max(1.0, _verticalController.position.maxScrollExtent);
-    final ratio = (offset / maxOffset).clamp(0.0, 1.0);
-    return _chapterIndexForCharOffset((ratio * _fullBookLength).round());
-  }
 
-  int _pageIndexForChapter(int index) {
-    final pages = _horizontalPages;
-    if (pages.isEmpty) return 0;
-    final starts = _chapterStartChars;
-    if (starts.isEmpty) return 0;
-    final chapter = index.clamp(0, max(0, starts.length - 1)).toInt();
-    final targetChars = max(900, _fontSize * 55);
-    return (starts[chapter] / targetChars)
-        .floor()
-        .clamp(0, pages.length - 1)
-        .toInt();
-  }
 
-  void _jumpVerticalToChapter(int index) {
-    if (!_verticalController.hasClients) return;
-    final starts = _chapterStartChars;
-    if (starts.isEmpty) return;
-    final chapter = index.clamp(0, starts.length - 1).toInt();
-    final ratio = starts[chapter] / _fullBookLength;
-    final target = ratio * _verticalController.position.maxScrollExtent;
-    _verticalController.jumpTo(
-      target.clamp(0.0, _verticalController.position.maxScrollExtent),
-    );
-  }
+  /// New GlobalKey-based sync for ListView.builder vertical reader.
+  /// Finds the chapter whose top edge is closest to (but still above) the
+  /// viewport top. Falls back gracefully if no key is mounted yet.
+  void _syncChapterFromVerticalKeys() {
+    if (_book == null) return;
+    int? best;
+    double bestTop = double.negativeInfinity;
 
-  void _jumpHorizontalToPage(int pageIndex) {
-    if (!_pageController.hasClients) return;
-    final pages = _horizontalPages;
-    if (pages.isEmpty) return;
-    _pageController.jumpToPage(pageIndex.clamp(0, pages.length - 1));
-  }
-
-  void _syncChapterFromVerticalOffset(double offset) {
-    final next = _chapterIndexForVerticalOffset(offset);
-    if (next != _chapterIndex && mounted) {
-      setState(() => _chapterIndex = next);
+    for (final entry in _chapterSectionKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached) continue;
+      final topInViewport = box.localToGlobal(Offset.zero).dy;
+      // Find chapter whose top is just above or at the screen top area
+      if (topInViewport <= 100 && topInViewport > bestTop) {
+        bestTop = topInViewport;
+        best = entry.key;
+      }
     }
-  }
 
-  void _syncChapterFromPage(int pageIndex) {
-    final next = _chapterIndexForPage(pageIndex);
-    if (next != _chapterIndex && mounted) {
-      setState(() => _chapterIndex = next);
+    if (best != null && best != _chapterIndex && mounted) {
+      setState(() => _chapterIndex = best!);
+      _pruneChapterSectionKeys(_chapterIndex);
     }
   }
 
   Future<void> _jumpChapterWithoutDrawer(int index) async {
     if (_book == null) return;
     final next = index.clamp(0, _book!.chapters.length - 1);
-    final pageIndex = _pageIndexForChapter(next);
+    
     setState(() {
       _chapterIndex = next;
-      _horizontalPageIndex = pageIndex;
     });
-    _jumpVerticalToChapter(next);
-    _jumpHorizontalToPage(pageIndex);
+    
+    if (_flowType == 1) {
+       _jumpVerticalToChapter(next);
+    } else {
+       _updateHorizontalWindow(next);
+       setState(() {
+          _horizontalPageIndex = _pagesBeforeCenter;
+       });
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _pageController.hasClients) {
+             _pageController.jumpToPage(_pagesBeforeCenter);
+          }
+       });
+    }
+    
     await _saveProgress();
   }
 
@@ -681,7 +848,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         id: '$_mangaId-$_chapterId-${position.hashCode}',
         mangaId: _mangaId,
         chapterId: _chapterId,
-        pageIndex: _flowType == 0 ? _horizontalPageIndex : _chapterIndex,
+        pageIndex: _flowType == 0 ? _pageWithinCurrentChapter() : _chapterIndex,
         scrollOffset: _verticalController.hasClients
             ? _verticalController.offset
             : 0,
@@ -791,16 +958,19 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       await _tts.stop();
       _ttsChunks = [];
       _ttsChunkIndex = 0;
+      _isTtsFromSelection = false;
       if (mounted) {
         setState(() => _isTtsPlaying = false);
       }
       return;
     }
 
+    if (_flowType == 0 && _windowPages.isEmpty) return;
+
     final text = _flowType == 0
-        ? _horizontalPages[_horizontalPageIndex.clamp(
+        ? _windowPages[_horizontalPageIndex.clamp(
             0,
-            _horizontalPages.length - 1,
+            _windowPages.length - 1,
           )]
         : _formatChapterText(_currentChapter);
     if (text.trim().isEmpty) return;
@@ -837,6 +1007,27 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       _ttsChunkIndex = 0;
       if (mounted) {
         setState(() => _isTtsPlaying = false);
+      }
+
+      if (_isTtsFromSelection && _flowType == 1) {
+        _isTtsFromSelection = false;
+        final oldChapter = _chapterIndex;
+        await _nextChapter();
+
+        if (_chapterIndex != oldChapter) {
+          if (mounted) {
+            final nextText = _formatChapterText(_currentChapter);
+            if (nextText.trim().isNotEmpty) {
+              await _startTts(nextText);
+            }
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Đã đọc hết sách')),
+            );
+          }
+        }
       }
       return;
     }
@@ -877,6 +1068,33 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       chunks.add(buffer.toString().trim());
     }
     return chunks;
+  }
+
+  Future<void> _startTtsFromSelection(
+    String sourceText,
+    TextSelection selection,
+  ) async {
+    if (!selection.isValid || sourceText.isEmpty) return;
+    final start = selection.start.clamp(0, sourceText.length);
+    if (start >= sourceText.length) return;
+    final text = sourceText.substring(start).trim();
+    if (text.isEmpty) return;
+    _isTtsFromSelection = true;
+    await _startTts(text);
+  }
+
+  Future<void> _startTtsForSelectionOnly(
+    String sourceText,
+    TextSelection selection,
+  ) async {
+    if (!selection.isValid || sourceText.isEmpty) return;
+    final start = selection.start.clamp(0, sourceText.length);
+    final end = selection.end.clamp(0, sourceText.length);
+    if (start >= end) return;
+    final text = sourceText.substring(start, end).trim();
+    if (text.isEmpty) return;
+    _isTtsFromSelection = false;
+    await _startTts(text);
   }
 
   void _setSleepTimer(int minutes) {
@@ -1207,51 +1425,162 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification ||
             notification is ScrollEndNotification) {
-          _syncChapterFromVerticalOffset(notification.metrics.pixels);
+          _syncChapterFromVerticalKeys();
           _scheduleProgressSave();
         }
         return false;
       },
-      child: SingleChildScrollView(
+      child: ListView.builder(
         controller: _verticalController,
         padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
-        child: SelectableText(
-          _fullBookText,
-          style: TextStyle(
-            color: Color(_textColor),
-            fontSize: _fontSize.toDouble(),
-            height: 1.65,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHorizontalReader() {
-    final pages = _horizontalPages;
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: pages.length,
-      onPageChanged: (index) {
-        setState(() => _horizontalPageIndex = index);
-        _syncChapterFromPage(index);
-        _scheduleProgressSave();
-      },
-      itemBuilder: (context, index) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
-          child: SingleChildScrollView(
+        itemCount: _book?.chapters.length ?? 0,
+        itemBuilder: (context, index) {
+          final isNear = (index - _chapterIndex).abs() <= 3;
+          if (!isNear) {
+            _chapterSectionKeys.remove(index);
+          } else {
+            _chapterSectionKeys[index] ??= GlobalKey();
+          }
+          final chapterText = _formatChapterText(_book!.chapters[index]);
+          return Container(
+            key: isNear ? _chapterSectionKeys[index] : null,
+            padding: const EdgeInsets.only(bottom: 48),
             child: SelectableText(
-              pages[index],
+              chapterText,
               style: TextStyle(
                 color: Color(_textColor),
                 fontSize: _fontSize.toDouble(),
                 height: 1.65,
               ),
+              contextMenuBuilder: (context, editableTextState) {
+                final buttonItems =
+                    editableTextState.contextMenuButtonItems;
+                final text = editableTextState.textEditingValue.text;
+                final selection =
+                    editableTextState.textEditingValue.selection;
+
+                buttonItems.insert(0, ContextMenuButtonItem(
+                  label: 'Đọc từ đây',
+                  onPressed: () {
+                    ContextMenuController.removeAny();
+                    _startTtsFromSelection(text, selection);
+                  },
+                ));
+                buttonItems.insert(1, ContextMenuButtonItem(
+                  label: 'Đọc đoạn này',
+                  onPressed: () {
+                    ContextMenuController.removeAny();
+                    _startTtsForSelectionOnly(text, selection);
+                  },
+                ));
+
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: editableTextState.contextMenuAnchors,
+                  buttonItems: buttonItems,
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHorizontalReader() {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollEndNotification) {
+          if (_chapterIndex != _windowCenterChapter) {
+            // Shift the window!
+            final centerPages = _getPagesForChapter(_windowCenterChapter);
+            int pageWithinChapter = 0;
+            if (_chapterIndex < _windowCenterChapter) {
+              pageWithinChapter = _horizontalPageIndex; // We are in prev chapter
+            } else {
+              pageWithinChapter = _horizontalPageIndex - (_pagesBeforeCenter + centerPages.length);
+            }
+            
+            _updateHorizontalWindow(_chapterIndex);
+            final newIndex = (_pagesBeforeCenter + pageWithinChapter).clamp(0, max(0, _windowPages.length - 1)).toInt();
+            setState(() => _horizontalPageIndex = newIndex);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+               if (mounted && _pageController.hasClients) {
+                  _pageController.jumpToPage(newIndex);
+               }
+            });
+          }
+        }
+        return false;
+      },
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: _windowPages.length,
+        onPageChanged: (index) {
+          setState(() => _horizontalPageIndex = index);
+          
+          if (_windowPages.isNotEmpty) {
+             if (index < _pagesBeforeCenter) {
+                final prevChapter = _windowCenterChapter - 1;
+                if (prevChapter >= 0 && mounted) {
+                   setState(() => _chapterIndex = prevChapter);
+                }
+             } else {
+                final centerPages = _getPagesForChapter(_windowCenterChapter);
+                if (index >= _pagesBeforeCenter + centerPages.length) {
+                   final nextChapter = _windowCenterChapter + 1;
+                   if (nextChapter < _book!.chapters.length && mounted) {
+                      setState(() => _chapterIndex = nextChapter);
+                   }
+                } else {
+                   if (mounted && _chapterIndex != _windowCenterChapter) {
+                      setState(() => _chapterIndex = _windowCenterChapter);
+                   }
+                }
+             }
+          }
+          _scheduleProgressSave();
+        },
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                _windowPages[index],
+              style: TextStyle(
+                color: Color(_textColor),
+                fontSize: _fontSize.toDouble(),
+                height: 1.65,
+              ),
+              contextMenuBuilder: (context, editableTextState) {
+                final buttonItems = editableTextState.contextMenuButtonItems;
+                final text = editableTextState.textEditingValue.text;
+                final selection = editableTextState.textEditingValue.selection;
+
+                buttonItems.insert(0, ContextMenuButtonItem(
+                  label: 'Đọc từ đây',
+                  onPressed: () {
+                    ContextMenuController.removeAny();
+                    _startTtsFromSelection(text, selection);
+                  },
+                ));
+                buttonItems.insert(1, ContextMenuButtonItem(
+                  label: 'Đọc đoạn này',
+                  onPressed: () {
+                    ContextMenuController.removeAny();
+                    _startTtsForSelectionOnly(text, selection);
+                  },
+                ));
+
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: editableTextState.contextMenuAnchors,
+                  buttonItems: buttonItems,
+                );
+              },
             ),
           ),
         );
       },
+      ),
     );
   }
 

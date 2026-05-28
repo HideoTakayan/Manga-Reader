@@ -1,6 +1,0 @@
-class DriveConfig {
-  DriveConfig._();
-
-  static const String API_KEY = 'YOUR_GOOGLE_API_KEY';
-  static const String PUBLIC_FOLDER_ID = 'YOUR_PUBLIC_DRIVE_FOLDER_ID';
-}

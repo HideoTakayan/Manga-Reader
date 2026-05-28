@@ -72,10 +72,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(readerProvider.notifier).init(
-        widget.chapterId,
-        mangaId: widget.mangaId,
-      );
+      ref
+          .read(readerProvider.notifier)
+          .init(widget.chapterId, mangaId: widget.mangaId);
     });
   }
 
@@ -106,9 +105,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final pageCount = state.pages.length;
     final estimatedPage = pageCount <= 1 || maxExtent <= 0
         ? 0
-        : ((pixels / maxExtent) * (pageCount - 1))
-              .round()
-              .clamp(0, pageCount - 1);
+        : ((pixels / maxExtent) * (pageCount - 1)).round().clamp(
+            0,
+            pageCount - 1,
+          );
     _scheduleVerticalProgressSave(pixels, estimatedPage);
   }
 
@@ -147,8 +147,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         _stopAutoScroll();
         return;
       }
-      final nextOffset =
-          position.pixels + (_autoScrollPixelsPerSecond * 0.04);
+      final nextOffset = position.pixels + (_autoScrollPixelsPerSecond * 0.04);
       _scrollController.jumpTo(nextOffset.clamp(0.0, position.maxScrollExtent));
     });
   }
@@ -372,14 +371,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  PhotoViewComputedScale _initialPhotoScale(ReaderImageFit fit) {
+  Object _initialPhotoScale(ReaderImageFit fit) {
     switch (fit) {
       case ReaderImageFit.width:
         return PhotoViewComputedScale.covered;
       case ReaderImageFit.screen:
         return PhotoViewComputedScale.contained;
       case ReaderImageFit.original:
-        return PhotoViewComputedScale.contained;
+        return 1.0;
     }
   }
 
@@ -432,9 +431,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           state.currentChapter?.id,
         ].whereType<String>().where((value) => value.isNotEmpty).join('_'),
         title:
-            state.currentChapter?.title ??
-            state.manga?.title ??
-            'Truyện chữ',
+            state.currentChapter?.title ?? state.manga?.title ?? 'Truyện chữ',
       );
     }
 
@@ -641,7 +638,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.1),
+                                        color: Colors.white.withValues(
+                                          alpha: 0.1,
+                                        ),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Row(
@@ -695,11 +694,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                 size: 24,
                               ),
                               tooltip: 'Cài đặt đọc',
-                              onPressed: () => _showReaderSettings(
-                                context,
-                                state,
-                                notifier,
-                              ),
+                              onPressed: () =>
+                                  _showReaderSettings(context, state, notifier),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
@@ -885,7 +881,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     ? Colors.white
                                     : Colors.white30,
                               ),
-                              onPressed: state.readingMode == ReadingMode.vertical
+                              onPressed:
+                                  state.readingMode == ReadingMode.vertical
                                   ? _toggleAutoScroll
                                   : null,
                             ),
@@ -955,8 +952,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 2.0,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+                thumbShape: const RoundSliderThumbShape(
+                  enabledThumbRadius: 6.0,
+                ),
+                overlayShape: const RoundSliderOverlayShape(
+                  overlayRadius: 14.0,
+                ),
               ),
               child: Slider(
                 value: hasMultiplePages ? currentPage.toDouble() : 0,
@@ -1001,10 +1002,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: () => notifier.init(
-                widget.chapterId,
-                mangaId: widget.mangaId,
-              ),
+              onPressed: () =>
+                  notifier.init(widget.chapterId, mangaId: widget.mangaId),
               icon: const Icon(Icons.refresh),
               label: const Text('Thử lại'),
             ),
@@ -1389,7 +1388,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           Icon(
                             Icons.arrow_upward,
                             color: Colors.blueAccent.withValues(
-                              alpha: 0.5 + (_holdProgressController.value * 0.5),
+                              alpha:
+                                  0.5 + (_holdProgressController.value * 0.5),
                             ),
                             size: 24,
                           ),
@@ -1557,7 +1557,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           Icon(
                             Icons.arrow_downward,
                             color: Colors.blueAccent.withValues(
-                              alpha: 0.5 + (_holdProgressController.value * 0.5),
+                              alpha:
+                                  0.5 + (_holdProgressController.value * 0.5),
                             ),
                             size: 24,
                           ),
@@ -1726,14 +1727,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     return;
                   }
 
-                  ref.read(readerProvider.notifier).onPageChanged(
-                        bookmark.pageIndex,
-                      );
+                  ref
+                      .read(readerProvider.notifier)
+                      .onPageChanged(bookmark.pageIndex);
                   if (state.readingMode == ReadingMode.horizontal &&
                       _pageController.hasClients) {
                     _pageController.jumpToPage(bookmark.pageIndex);
                   } else if (_scrollController.hasClients) {
-                    final maxScroll = _scrollController.position.maxScrollExtent;
+                    final maxScroll =
+                        _scrollController.position.maxScrollExtent;
                     _scrollController.jumpTo(
                       bookmark.scrollOffset.clamp(0.0, maxScroll),
                     );
@@ -1769,10 +1771,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           ListTile(
             leading: const Icon(Icons.refresh, color: Colors.white),
             title: const Text('Tải lại', style: TextStyle(color: Colors.white)),
-            onTap: () => notifier.init(
-              widget.chapterId,
-              mangaId: widget.mangaId,
-            ),
+            onTap: () =>
+                notifier.init(widget.chapterId, mangaId: widget.mangaId),
           ),
           ListTile(
             leading: Icon(
@@ -1801,7 +1801,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               state.isCurrentPageBookmarked
                   ? Icons.bookmark
                   : Icons.bookmark_border,
-              color: state.isCurrentPageBookmarked ? Colors.amber : Colors.white,
+              color: state.isCurrentPageBookmarked
+                  ? Colors.amber
+                  : Colors.white,
             ),
             title: Text(
               state.isCurrentPageBookmarked
@@ -1815,9 +1817,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(
-                    added ? 'Đã thêm bookmark' : 'Đã bỏ bookmark',
-                  ),
+                  content: Text(added ? 'Đã thêm bookmark' : 'Đã bỏ bookmark'),
                 ),
               );
             },
@@ -2022,7 +2022,9 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                               widget.mangaId == null || widget.mangaId!.isEmpty
                               ? ''
                               : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
-                          context.pushReplacement('/reader/${chapter.id}$mangaQuery');
+                          context.pushReplacement(
+                            '/reader/${chapter.id}$mangaQuery',
+                          );
                         }
                       },
                       child: Container(

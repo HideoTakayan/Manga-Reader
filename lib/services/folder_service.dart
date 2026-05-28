@@ -181,4 +181,33 @@ class FolderService {
     final path = await getMangaPathByTitle(mangaTitle);
     return '$path/cover.jpg';
   }
+
+  static Future<String> getNovelsPath() async {
+    final path = '$downloadPath/_novels';
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
+  }
+
+  static Future<String> getNovelFolderByTitle(String title) async {
+    final safeTitle = sanitize(title).replaceAll(RegExp(r'\s+'), '_');
+    final path = '${await getNovelsPath()}/$safeTitle';
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
+  }
+
+  static Future<String> getNovelFilePath(String title) async {
+    final folder = await getNovelFolderByTitle(title);
+    return '$folder/book.epub';
+  }
+
+  static Future<String> getNovelCoverPath(String title) async {
+    final folder = await getNovelFolderByTitle(title);
+    return '$folder/cover.jpg';
+  }
 }

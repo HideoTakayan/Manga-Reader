@@ -117,11 +117,22 @@ class _NovelListTabState extends State<NovelListTab>
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
           final novel = _novels[index];
-          final exists = File(novel.path).existsSync();
+          final isMissingLegacy = novel.path.startsWith('MISSING_FILE_Legacy|');
+          final exists = isMissingLegacy ? false : File(novel.path).existsSync();
           return _NovelTile(
             novel: novel,
             fileExists: exists,
+            isMissingLegacy: isMissingLegacy,
             onTap: () {
+              if (isMissingLegacy) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sách "${novel.title}" ở bản cũ không còn tồn tại trên máy.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
               if (!exists) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -144,12 +155,14 @@ class _NovelListTabState extends State<NovelListTab>
 class _NovelTile extends StatelessWidget {
   final LocalNovel novel;
   final bool fileExists;
+  final bool isMissingLegacy;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
   const _NovelTile({
     required this.novel,
     required this.fileExists,
+    this.isMissingLegacy = false,
     required this.onTap,
     required this.onLongPress,
   });
@@ -167,9 +180,11 @@ class _NovelTile extends StatelessWidget {
             color: const Color(0xFF1C1C1E),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: fileExists
-                  ? Colors.white12
-                  : Colors.orange.withValues(alpha: 0.5),
+              color: isMissingLegacy
+                  ? Colors.redAccent.withValues(alpha: 0.5)
+                  : (fileExists
+                      ? Colors.white12
+                      : Colors.orange.withValues(alpha: 0.5)),
             ),
           ),
           child: Padding(
@@ -184,9 +199,11 @@ class _NovelTile extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: fileExists
-                          ? [const Color(0xFF1A3A6B), const Color(0xFF2A5D9F)]
-                          : [const Color(0xFF4A2800), const Color(0xFF7A4500)],
+                      colors: isMissingLegacy
+                          ? [Colors.red[900]!, Colors.red[700]!]
+                          : (fileExists
+                              ? [const Color(0xFF1A3A6B), const Color(0xFF2A5D9F)]
+                              : [const Color(0xFF4A2800), const Color(0xFF7A4500)]),
                     ),
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
@@ -197,9 +214,9 @@ class _NovelTile extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child:
-                      novel.coverPath.isNotEmpty &&
-                          File(novel.coverPath).existsSync()
+                  child: novel.coverPath.isNotEmpty &&
+                          File(novel.coverPath).existsSync() &&
+                          !isMissingLegacy
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(6),
                           child: Image.file(
@@ -210,12 +227,16 @@ class _NovelTile extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          fileExists
-                              ? Icons.menu_book_rounded
-                              : Icons.broken_image_outlined,
-                          color: fileExists
-                              ? Colors.blue[200]
-                              : Colors.orange[300],
+                          isMissingLegacy
+                              ? Icons.error_outline
+                              : (fileExists
+                                  ? Icons.menu_book_rounded
+                                  : Icons.broken_image_outlined),
+                          color: isMissingLegacy
+                              ? Colors.red[200]
+                              : (fileExists
+                                  ? Colors.blue[200]
+                                  : Colors.orange[300]),
                           size: 26,
                         ),
                 ),
@@ -227,7 +248,9 @@ class _NovelTile extends StatelessWidget {
                       Text(
                         novel.title,
                         style: TextStyle(
-                          color: fileExists ? Colors.white : Colors.orange[300],
+                          color: isMissingLegacy
+                              ? Colors.red[300]
+                              : (fileExists ? Colors.white : Colors.orange[300]),
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -236,9 +259,11 @@ class _NovelTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        fileExists
-                            ? 'EPUB • Giữ lâu để xóa'
-                            : '⚠️ File không còn tồn tại',
+                        isMissingLegacy
+                            ? '❌ Sách cũ bị lỗi không mở được (Giữ lâu để xóa)'
+                            : (fileExists
+                                ? 'EPUB • Giữ lâu để xóa'
+                                : '⚠️ File không còn tồn tại'),
                         style: const TextStyle(
                           color: Colors.white38,
                           fontSize: 11,
@@ -249,9 +274,11 @@ class _NovelTile extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right,
-                  color: fileExists
-                      ? Colors.white24
-                      : Colors.orange.withValues(alpha: 0.4),
+                  color: isMissingLegacy
+                      ? Colors.red.withValues(alpha: 0.4)
+                      : (fileExists
+                          ? Colors.white24
+                          : Colors.orange.withValues(alpha: 0.4)),
                 ),
               ],
             ),

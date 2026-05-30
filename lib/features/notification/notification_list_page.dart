@@ -60,9 +60,23 @@ class NotificationListPage extends StatelessWidget {
               return InkWell(
                 onTap: () async {
                   if (!isRead) {
-                    await NotificationService.instance.markAsRead(note['id']);
+                    await NotificationService.instance.markNotificationAsRead(
+                      note,
+                    );
                   }
                   if (context.mounted) {
+                    final route = note['route'];
+                    if (route is String && route.isNotEmpty) {
+                      context.go(route);
+                      return;
+                    }
+
+                    final postId = note['postId'];
+                    if (note['source'] == 'forum' && postId is String && postId.isNotEmpty) {
+                      context.go('/forum/detail/$postId');
+                      return;
+                    }
+
                     final mangaId = note['mangaId'] ?? note['comicId'];
                     if (mangaId != null) context.push('/detail/$mangaId');
                   }

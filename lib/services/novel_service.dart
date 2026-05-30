@@ -81,9 +81,9 @@ class NovelService {
   }
 
   String _managedFolderName(String title, String sourcePath) {
-    final safeTitle = FolderService.sanitize(title)
-        .replaceAll(RegExp(r'\s+'), '_')
-        .trim();
+    final safeTitle = FolderService.sanitize(
+      title,
+    ).replaceAll(RegExp(r'\s+'), '_').trim();
     final normalizedSource = sourcePath.replaceAll('\\', '/').toLowerCase();
     final hash = _stablePathHash(normalizedSource).toRadixString(16);
     final titlePrefix = safeTitle.isEmpty ? 'novel' : safeTitle;
@@ -132,12 +132,18 @@ class NovelService {
     return '${folder.path}/book.epub';
   }
 
-  Future<String> _resolveManagedCoverPath(String title, String sourcePath) async {
+  Future<String> _resolveManagedCoverPath(
+    String title,
+    String sourcePath,
+  ) async {
     final managedPath = await _resolveManagedPath(title, sourcePath);
     return '${File(managedPath).parent.path}/cover.jpg';
   }
 
-  Future<void> _copyToManagedStorage(String sourcePath, String targetPath) async {
+  Future<void> _copyToManagedStorage(
+    String sourcePath,
+    String targetPath,
+  ) async {
     if (sourcePath == targetPath) return;
 
     final source = File(sourcePath);
@@ -259,7 +265,9 @@ class NovelService {
       final removedNovels = <LocalNovel>[];
       raw.removeWhere((s) {
         try {
-          final novel = LocalNovel.fromJson(jsonDecode(s) as Map<String, dynamic>);
+          final novel = LocalNovel.fromJson(
+            jsonDecode(s) as Map<String, dynamic>,
+          );
           final match = novel.path == path;
           if (match) {
             removedNovels.add(novel);
@@ -309,7 +317,7 @@ class NovelService {
         final legacyPath = novel.path.startsWith('MISSING_FILE_Legacy|')
             ? novel.path
             : 'MISSING_FILE_Legacy|${novel.path}';
-        
+
         if (legacyPath != novel.path) {
           migrated.add(
             LocalNovel(

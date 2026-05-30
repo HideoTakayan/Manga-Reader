@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../forum/services/image_upload_service.dart';
 
 // Trang chỉnh sửa hồ sơ: tên hiển thị, bio, avatar.
 class EditProfilePage extends StatefulWidget {
@@ -56,7 +56,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  // Chọn ảnh từ gallery. Ảnh chỉ preview local ở đây, khi lưu mới upload Storage.
+  // Chọn ảnh từ gallery. Ảnh chỉ preview local ở đây, khi lưu mới upload lên Cloudinary.
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -77,12 +77,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
     try {
       String? avatarUrl;
       if (_imageFile != null) {
-        final ref = FirebaseStorage.instance.ref('avatars/${user.uid}.jpg');
-        await ref.putFile(
+        avatarUrl = await ImageUploadService.uploadAvatarImage(
           _imageFile!,
-          SettableMetadata(contentType: 'image/jpeg'),
+          user.uid,
         );
-        avatarUrl = await ref.getDownloadURL();
         await user.updatePhotoURL(avatarUrl);
       }
 

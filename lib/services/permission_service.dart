@@ -21,7 +21,7 @@ class PermissionService {
     if (!Platform.isAndroid) return true;
 
     if (await Permission.manageExternalStorage.isGranted) return true;
-    
+
     return await Permission.storage.isGranted;
   }
 }

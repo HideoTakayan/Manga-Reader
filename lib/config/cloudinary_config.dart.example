@@ -1,0 +1,5 @@
+class CloudinaryConfig {
+  static const String cloudName = 'your_cloud_name';
+  static const String uploadPreset = 'forum_unsigned';
+  static const String folder = 'manga_reader/forum_posts';
+}

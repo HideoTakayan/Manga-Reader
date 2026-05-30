@@ -12,6 +12,7 @@ import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 import 'edit_manga_dialog.dart';
 import 'chapter_manager_page.dart';
+import 'users_list_page.dart';
 
 // Trang quản trị dành cho Admin: xem thống kê, thêm/sửa/xóa truyện.
 // Chỉ những email trong _adminEmails mới vào được — ngoài ra bị redirect về Home ngay.
@@ -179,6 +180,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                             : '${_stats['users']}',
                         icon: Icons.people,
                         color: Colors.orangeAccent,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const UsersListPage(),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -223,7 +232,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
     );
   }
-
 
   // Banner hiển thị trạng thái kết nối Google Drive (đã đăng nhập OAuth chưa).
   // Xanh = đã kết nối (có quyền ghi), Đỏ = chưa kết nối (chỉ đọc được).
@@ -737,50 +745,56 @@ class _StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.title,
     required this.value,
     this.icon = Icons.analytics,
     this.color = Colors.blueAccent,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: color,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-            ),
-          ],
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: color),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -77,7 +77,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thong ke doc'),
+        title: const Text('Thống kê đọc'),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -94,14 +94,14 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                   Row(
                     children: [
                       _buildStatCard(
-                        'Truyen da doc',
+                        'Truyện đã đọc',
                         '$_totalReadMangas',
                         Icons.menu_book,
                         Colors.blue,
                       ),
                       const SizedBox(width: 16),
                       _buildStatCard(
-                        'Ngay hoat dong',
+                        'Ngày hoạt động',
                         '$_activeDays',
                         Icons.calendar_month,
                         Colors.orange,
@@ -110,14 +110,14 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                   ),
                   const SizedBox(height: 30),
                   const Text(
-                    'Hoat dong tuan nay',
+                    'Hoạt động tuần này',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
                   _buildWeeklyChart(context),
                   const SizedBox(height: 30),
                   const Text(
-                    'The loai da doc',
+                    'Thể loại đã đọc',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
@@ -194,7 +194,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Text('Chua co du lieu the loai'),
+        child: const Text('Chưa có dữ liệu thể loại'),
       );
     }
 
@@ -232,7 +232,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
             ),
           ),
           const Text(
-            'Top\nthe loai',
+            'Top\nthể loại',
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.bold),
           ),

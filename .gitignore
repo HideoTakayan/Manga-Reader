@@ -57,28 +57,63 @@ app.*.map.json
 # Service Account credentials (Google Drive)
 lib/config/service_account_credentials.dart
 lib/config/service_account.json
+lib/config/service_account*.json
+lib/config/*service*account*.json
+**/service_account*.json
+**/*service*account*.json
+**/*credentials*.json
+**/*credential*.json
+**/*private_key*.json
+**/*.pem
+**/*.p12
+**/*.key
 
 # API Keys and Environment Variables
 lib/config/drive_config.dart
+lib/config/cloudinary_config.dart
+lib/config/tenor_config.dart
+lib/config/*_config.local.dart
+lib/config/*_secrets.dart
+lib/config/secrets.dart
+lib/config/env.dart
 *.env
 .env
+.env.*
+!.env.example
 android/key.properties
 android/key.jks
+android/*.jks
+android/app/*.jks
+android/*.keystore
+android/app/*.keystore
 
 # Firebase configuration
 lib/firebase_options.dart
+lib/firebase_options_*.dart
 google-services.json
 android/app/google-services.json
+android/app/src/**/google-services.json
 ios/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info.plist
+**/firebase_app_id_file.json
 
 # Keep template files (these are safe to commit)
 !lib/config/service_account_credentials.dart.example
+!lib/config/service_account.json.example
 !lib/config/drive_config.dart.example
+!lib/config/cloudinary_config.dart.example
+!lib/config/tenor_config.dart.example
 !lib/firebase_options.dart.example
+!**/*.example
+!**/*.sample
 
 # Personal backup folder (if you create one)
 /credentials_backup/
+/secrets/
+/private/
+/keys/
 *.backup
+*.bak
 
 # Local scratch scripts and one-off API tests
 /scratch/

@@ -15,6 +15,9 @@ import '../features/detail/manga_detail_page.dart';
 import '../features/reader/reader_page.dart';
 import '../features/search/search_page.dart';
 import '../features/main/main_scaffold.dart';
+import '../features/forum/forum_shell_page.dart';
+import '../features/forum/forum_post_detail_page.dart';
+import '../features/forum/forum_create_post_page.dart';
 import '../features/notification/notification_list_page.dart';
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/chapter_manager_page.dart';
@@ -95,6 +98,29 @@ final GoRouter appRouter = GoRouter(
                 GoRoute(
                   path: 'categories',
                   builder: (_, __) => const EditCategoriesPage(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        // Index 5: Diễn đàn
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/forum',
+              builder: (_, __) => const ForumShellPage(),
+              routes: [
+                GoRoute(
+                  path: 'create',
+                  builder: (context, state) {
+                    final type = state.uri.queryParameters['type'] ?? 'discussion';
+                    return ForumCreatePostPage(type: type);
+                  },
+                ),
+                GoRoute(
+                  path: 'detail/:id',
+                  builder: (context, state) =>
+                      ForumPostDetailPage(postId: state.pathParameters['id']!),
                 ),
               ],
             ),

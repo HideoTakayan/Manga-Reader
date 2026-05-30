@@ -1,0 +1,4 @@
+class TenorConfig {
+  // Replace this with your actual Tenor API key
+  static const String apiKey = 'YOUR_TENOR_API_KEY';
+}

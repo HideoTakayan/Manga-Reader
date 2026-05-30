@@ -101,58 +101,108 @@ class NotificationService {
   // ─── FIRESTORE NOTIFICATIONS (New Chapter Alerts) ──────────────────────────
 
   // Lọc: chỉ hiện thông báo của manga user đang following
-  Stream<List<Map<String, dynamic>>> streamUserNotifications() async* {
+  Stream<List<Map<String, dynamic>>> streamUserNotifications() {
     final userId = _auth.currentUser?.uid;
     if (userId == null) {
-      yield [];
-      return;
+      return Stream.value([]);
     }
 
-    final notifStream = _db
+    final controller = StreamController<List<Map<String, dynamic>>>.broadcast();
+
+    List<Map<String, dynamic>> globalNotifs = [];
+    List<Map<String, dynamic>> forumNotifs = [];
+
+    void emitMerged() {
+      final merged = [...globalNotifs, ...forumNotifs];
+      merged.sort((a, b) {
+        final ta =
+            (a['timestamp'] as Timestamp?)?.toDate() ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final tb =
+            (b['timestamp'] as Timestamp?)?.toDate() ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return tb.compareTo(ta);
+      });
+      controller.add(merged);
+    }
+
+    final globalSub = _db
         .collection('notifications')
         .orderBy('timestamp', descending: true)
         .limit(50)
-        .snapshots();
+        .snapshots()
+        .listen((snapshot) async {
+          try {
+            final results = await Future.wait([
+              _db.collection('users').doc(userId).collection('following').get(),
+              _db.collection('users').doc(userId).get(),
+            ]);
 
-    await for (final snapshot in notifStream) {
-      try {
-        // Lấy song song: following list + user doc (readNotificationIds)
-        final results = await Future.wait([
-          _db.collection('users').doc(userId).collection('following').get(),
-          _db.collection('users').doc(userId).get(),
-        ]);
+            final followingSnap = results[0] as QuerySnapshot;
+            final userDoc = results[1] as DocumentSnapshot;
 
-        final followingSnap = results[0] as QuerySnapshot;
-        final userDoc = results[1] as DocumentSnapshot;
+            final followingIds = followingSnap.docs.map((d) => d.id).toSet();
+            final userdata = userDoc.data() as Map<String, dynamic>?;
+            final readIds = Set<String>.from(
+              userdata?['readNotificationIds'] ?? [],
+            );
 
-        final followingIds = followingSnap.docs.map((d) => d.id).toSet();
-        final userdata = userDoc.data() as Map<String, dynamic>?;
-        final readIds = Set<String>.from(
-          userdata?['readNotificationIds'] ?? [],
-        );
+            globalNotifs = snapshot.docs
+                .where((doc) {
+                  final data = doc.data();
+                  final mangaId = data['mangaId'] ?? data['comicId'];
+                  if (mangaId == null || mangaId == '') return true;
+                  return followingIds.contains(mangaId);
+                })
+                .map(
+                  (doc) => {
+                    ...doc.data(),
+                    'id': doc.id,
+                    'isRead': readIds.contains(doc.id),
+                    'source': 'global',
+                  },
+                )
+                .toList();
+            emitMerged();
+          } catch (e) {
+            debugPrint('Error filtering global notifications: $e');
+          }
+        }, onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Global notification stream error: $error');
+        });
 
-        final filteredNotifications = snapshot.docs
-            .where((doc) {
+    final forumSub = _db
+        .collection('users')
+        .doc(userId)
+        .collection('forum_notifications')
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots()
+        .listen((snapshot) {
+          try {
+            forumNotifs = snapshot.docs.map((doc) {
               final data = doc.data();
-              final mangaId = data['mangaId'] ?? data['comicId'];
-              if (mangaId == null || mangaId == '') return true;
-              return followingIds.contains(mangaId);
-            })
-            .map(
-              (doc) => {
-                ...doc.data(),
+              return {
+                ...data,
                 'id': doc.id,
-                'isRead': readIds.contains(doc.id),
-              },
-            )
-            .toList();
+                'source': 'forum',
+                'timestamp': data['createdAt'], // Normalize for sorting
+              };
+            }).toList();
+            emitMerged();
+          } catch (e) {
+            debugPrint('Error filtering forum notifications: $e');
+          }
+        }, onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Forum notification stream error: $error');
+        });
 
-        yield filteredNotifications;
-      } catch (e) {
-        debugPrint('Error filtering notifications: $e');
-        yield [];
-      }
-    }
+    controller.onCancel = () {
+      globalSub.cancel();
+      forumSub.cancel();
+    };
+
+    return controller.stream;
   }
 
   Future<void> markAsRead(String notificationId) async {
@@ -161,6 +211,26 @@ class NotificationService {
     await _db.collection('users').doc(userId).set({
       'readNotificationIds': FieldValue.arrayUnion([notificationId]),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> markNotificationAsRead(Map<String, dynamic> note) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+
+    if (note['source'] == 'forum') {
+      try {
+        await _db
+            .collection('users')
+            .doc(userId)
+            .collection('forum_notifications')
+            .doc(note['id'])
+            .update({'isRead': true});
+      } catch (e) {
+        debugPrint('Error marking forum notification as read: $e');
+      }
+    } else {
+      await markAsRead(note['id'] as String);
+    }
   }
 
   final Set<String> _processedIds = {};
@@ -239,7 +309,9 @@ class NotificationService {
 
       final prefs = await SharedPreferences.getInstance();
       final mangas = await DriveService.instance.getMangas();
-      for (final manga in mangas.where((manga) => libraryIds.contains(manga.id))) {
+      for (final manga in mangas.where(
+        (manga) => libraryIds.contains(manga.id),
+      )) {
         final chapterCount = manga.chapterOrder.length;
         if (chapterCount <= 0) continue;
 
@@ -251,7 +323,8 @@ class NotificationService {
 
         await showGeneralNotification(
           title: 'Có chapter mới',
-          body: '${manga.title} vừa cập nhật ${chapterCount - lastCount} chapter',
+          body:
+              '${manga.title} vừa cập nhật ${chapterCount - lastCount} chapter',
         );
       }
     } catch (e) {

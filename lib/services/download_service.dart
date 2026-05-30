@@ -236,7 +236,7 @@ class DownloadService {
     final notifId = task.chapterId.hashCode;
     if (!task.isSilent) {
       await NotificationService.instance.showDownloadProgress(
-          notifId,
+        notifId,
         0,
         'Đang chuẩn bị...',
         task.chapterTitle,
@@ -368,8 +368,8 @@ class DownloadService {
 
       if (!task.isSilent) {
         await NotificationService.instance.showDownloadComplete(
-        notifId,
-        'Lỗi tải',
+          notifId,
+          'Lỗi tải',
           task.chapterTitle,
           isError: true,
         );

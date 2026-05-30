@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import '../forum/services/image_upload_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -193,12 +193,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       String? avatarUrl;
       if (avatar != null) {
-        // Upload lên Firebase Storage — không giới hạn dung lượng như Firestore
-        final ref = FirebaseStorage.instance.ref(
-          'avatars/${currentUser.uid}.jpg',
+        avatarUrl = await ImageUploadService.uploadAvatarImage(
+          avatar,
+          currentUser.uid,
         );
-        await ref.putFile(avatar, SettableMetadata(contentType: 'image/jpeg'));
-        avatarUrl = await ref.getDownloadURL();
         // Cập nhật photoURL trên Firebase Auth để hiện ở các nơi khác
         await currentUser.updatePhotoURL(avatarUrl);
       }

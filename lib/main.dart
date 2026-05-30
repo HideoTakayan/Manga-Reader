@@ -3,6 +3,7 @@ import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import 'firebase_options.dart';
 import 'data/drive_service.dart';
 import 'services/folder_service.dart';
@@ -22,6 +23,9 @@ Future<void> main() async {
 
   // Khởi tạo hệ thống thư mục
   await FolderService.init();
+
+  // Đăng ký ngôn ngữ tiếng Việt cho timeago
+  timeago.setLocaleMessages('vi', timeago.ViMessages());
 
   // Khởi tạo Hệ thống Thông báo (Cục bộ + Trình lắng nghe Firestore)
   await NotificationService.instance.initialize();

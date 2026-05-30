@@ -55,13 +55,13 @@ class LocalScanService {
 
     // 2. Fallback: tạo Manga giả từ tên folder nếu không có/parse lỗi details.json
     manga ??= Manga(
-        id: 'local_${folderName.hashCode}', // Hash ổn định để ID không đổi giữa các lần scan
-        title: folderName,
-        coverUrl: '',
-        author: 'Local Source',
-        description: 'Được nhập từ bộ nhớ máy',
-        genres: [],
-      );
+      id: 'local_${folderName.hashCode}', // Hash ổn định để ID không đổi giữa các lần scan
+      title: folderName,
+      coverUrl: '',
+      author: 'Local Source',
+      description: 'Được nhập từ bộ nhớ máy',
+      genres: [],
+    );
 
     // 3. Dùng cover.jpg local thay vì URL nếu tồn tại
     final coverFile = File('${folder.path}/cover.jpg');

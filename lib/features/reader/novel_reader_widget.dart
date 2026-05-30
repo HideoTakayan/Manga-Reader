@@ -100,21 +100,34 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   // --- Phase 2: Horizontal Window State ---
   int _windowCenterChapter = -1;
-  List<String> _windowPages = [];
+  List<_EpubPage> _windowPages = [];
   int _pagesBeforeCenter = 0;
-  final Map<int, List<String>> _chapterPagesCache = {};
+  final Map<int, List<_EpubPage>> _chapterPagesCache = {};
 
 
 
-  List<String> _getPagesForChapter(int chapterIndex) {
+  List<_EpubPage> _getPagesForChapter(int chapterIndex) {
     if (_book == null || chapterIndex < 0 || chapterIndex >= _book!.chapters.length) {
       return [];
     }
     if (_chapterPagesCache.containsKey(chapterIndex)) {
       return _chapterPagesCache[chapterIndex]!;
     }
-    final text = _formatChapterText(_book!.chapters[chapterIndex]);
-    final pages = _splitIntoPages(text, max(900, _fontSize * 55));
+    final chapter = _book!.chapters[chapterIndex];
+    final pages = <_EpubPage>[];
+    
+    for (final img in chapter.images) {
+      pages.add(_EpubPage(image: img));
+    }
+
+    final text = _formatChapterText(chapter);
+    if (text.trim().isNotEmpty) {
+       final textPages = _splitIntoPages(text, max(900, _fontSize * 55));
+       for (final tp in textPages) {
+         pages.add(_EpubPage(text: tp));
+       }
+    }
+    
     _chapterPagesCache[chapterIndex] = pages;
     return pages;
   }
@@ -126,7 +139,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     final int prev = centerChapter - 1;
     final int next = centerChapter + 1;
     
-    final List<String> newPages = [];
+    final List<_EpubPage> newPages = [];
     int beforeCenterCount = 0;
     
     if (prev >= 0) {
@@ -432,9 +445,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       final html = _readArchiveText(files, item.href);
       final title =
           navTitles[item.href] ?? _extractTitle(html) ?? 'Chương $index';
-      final text = _htmlToText(html);
-      if (text.trim().isEmpty) continue;
-      chapters.add(_EpubChapter(title: title, text: text));
+      final cleanedHtml = _cleanHtml(html);
+      final text = _htmlToText(cleanedHtml);
+      final images = _extractImages(cleanedHtml, item.href, files);
+
+      if (text.trim().isEmpty && images.isEmpty) continue;
+      chapters.add(_EpubChapter(title: title, text: text, images: images));
       index++;
     }
 
@@ -504,8 +520,15 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     }
   }
 
-  String _htmlToText(String html) {
-    final normalized = html
+  String _cleanHtml(String html) {
+    var cleanedHtml = html.replaceAll(RegExp(r'<head[^>]*>[\s\S]*?<\/head>', caseSensitive: false), '');
+    cleanedHtml = cleanedHtml.replaceAll(RegExp(r'<style[^>]*>[\s\S]*?<\/style>', caseSensitive: false), '');
+    cleanedHtml = cleanedHtml.replaceAll(RegExp(r'<script[^>]*>[\s\S]*?<\/script>', caseSensitive: false), '');
+    return cleanedHtml;
+  }
+
+  String _htmlToText(String cleanedHtml) {
+    final normalized = cleanedHtml
         .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
         .replaceAll(
           RegExp(
@@ -521,6 +544,28 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       final stripped = normalized.replaceAll(RegExp(r'<[^>]+>'), ' ');
       return _cleanText(stripped);
     }
+  }
+
+  List<Uint8List> _extractImages(String cleanedHtml, String htmlPath, Map<String, ArchiveFile> files) {
+    final images = <Uint8List>[];
+    final imgRegex = RegExp(r'''<(?:img|image)[^>]+(?:src|href|xlink:href)=["']([^"']+)["']''', caseSensitive: false);
+    for (final match in imgRegex.allMatches(cleanedHtml)) {
+      final src = match.group(1);
+      if (src != null && src.isNotEmpty) {
+        final cleanSrc = src.split('#').first.split('?').first;
+        final imgPath = _normalizePath(_joinPath(_dirname(htmlPath), cleanSrc));
+        final imgFile = files[imgPath];
+        if (imgFile != null && imgFile.isFile) {
+          final content = imgFile.content;
+          if (content is Uint8List) {
+            images.add(content);
+          } else if (content is List<int>) {
+            images.add(Uint8List.fromList(content));
+          }
+        }
+      }
+    }
+    return images;
   }
 
   String _cleanText(String value) {
@@ -968,10 +1013,10 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     if (_flowType == 0 && _windowPages.isEmpty) return;
 
     final text = _flowType == 0
-        ? _windowPages[_horizontalPageIndex.clamp(
+        ? (_windowPages[_horizontalPageIndex.clamp(
             0,
             _windowPages.length - 1,
-          )]
+          )].text ?? '')
         : _formatChapterText(_currentChapter);
     if (text.trim().isEmpty) return;
     await _startTts(text);
@@ -1441,44 +1486,56 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           } else {
             _chapterSectionKeys[index] ??= GlobalKey();
           }
-          final chapterText = _formatChapterText(_book!.chapters[index]);
+          final chapter = _book!.chapters[index];
+          final chapterText = _formatChapterText(chapter);
           return Container(
             key: isNear ? _chapterSectionKeys[index] : null,
             padding: const EdgeInsets.only(bottom: 48),
-            child: SelectableText(
-              chapterText,
-              style: TextStyle(
-                color: Color(_textColor),
-                fontSize: _fontSize.toDouble(),
-                height: 1.65,
-              ),
-              contextMenuBuilder: (context, editableTextState) {
-                final buttonItems =
-                    editableTextState.contextMenuButtonItems;
-                final text = editableTextState.textEditingValue.text;
-                final selection =
-                    editableTextState.textEditingValue.selection;
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (chapter.images.isNotEmpty)
+                  ...chapter.images.map((img) => Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Image.memory(img, fit: BoxFit.contain),
+                  )),
+                if (chapterText.trim().isNotEmpty)
+                  SelectableText(
+                    chapterText,
+                    style: TextStyle(
+                      color: Color(_textColor),
+                      fontSize: _fontSize.toDouble(),
+                      height: 1.65,
+                    ),
+                    contextMenuBuilder: (context, editableTextState) {
+                      final buttonItems =
+                          editableTextState.contextMenuButtonItems;
+                      final text = editableTextState.textEditingValue.text;
+                      final selection =
+                          editableTextState.textEditingValue.selection;
 
-                buttonItems.insert(0, ContextMenuButtonItem(
-                  label: 'Đọc từ đây',
-                  onPressed: () {
-                    ContextMenuController.removeAny();
-                    _startTtsFromSelection(text, selection);
-                  },
-                ));
-                buttonItems.insert(1, ContextMenuButtonItem(
-                  label: 'Đọc đoạn này',
-                  onPressed: () {
-                    ContextMenuController.removeAny();
-                    _startTtsForSelectionOnly(text, selection);
-                  },
-                ));
+                      buttonItems.insert(0, ContextMenuButtonItem(
+                        label: 'Đọc từ đây',
+                        onPressed: () {
+                          ContextMenuController.removeAny();
+                          _startTtsFromSelection(text, selection);
+                        },
+                      ));
+                      buttonItems.insert(1, ContextMenuButtonItem(
+                        label: 'Đọc đoạn này',
+                        onPressed: () {
+                          ContextMenuController.removeAny();
+                          _startTtsForSelectionOnly(text, selection);
+                        },
+                      ));
 
-                return AdaptiveTextSelectionToolbar.buttonItems(
-                  anchors: editableTextState.contextMenuAnchors,
-                  buttonItems: buttonItems,
-                );
-              },
+                      return AdaptiveTextSelectionToolbar.buttonItems(
+                        anchors: editableTextState.contextMenuAnchors,
+                        buttonItems: buttonItems,
+                      );
+                    },
+                  ),
+              ],
             ),
           );
         },
@@ -1541,11 +1598,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           _scheduleProgressSave();
         },
         itemBuilder: (context, index) {
-          return Padding(
-            padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                _windowPages[index],
+          final page = _windowPages[index];
+          Widget child;
+          if (page.image != null) {
+            child = Center(child: Image.memory(page.image!, fit: BoxFit.contain));
+          } else {
+            child = SelectableText(
+              page.text ?? '',
               style: TextStyle(
                 color: Color(_textColor),
                 fontSize: _fontSize.toDouble(),
@@ -1576,10 +1635,16 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   buttonItems: buttonItems,
                 );
               },
+            );
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(22, 24, 22, _showTtsPanel ? 270 : 110),
+            child: SingleChildScrollView(
+              child: child,
             ),
-          ),
-        );
-      },
+          );
+        },
       ),
     );
   }
@@ -1875,8 +1940,16 @@ class _ParsedEpub {
 class _EpubChapter {
   final String title;
   final String text;
+  final List<Uint8List> images;
 
-  const _EpubChapter({required this.title, required this.text});
+  const _EpubChapter({required this.title, required this.text, this.images = const []});
+}
+
+class _EpubPage {
+  final String? text;
+  final Uint8List? image;
+
+  _EpubPage({this.text, this.image});
 }
 
 class _ManifestItem {

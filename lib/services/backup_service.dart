@@ -119,10 +119,7 @@ class BackupImportResult {
   final String path;
   final Map<String, int> importedCounts;
 
-  const BackupImportResult({
-    required this.path,
-    required this.importedCounts,
-  });
+  const BackupImportResult({required this.path, required this.importedCounts});
 
   int get totalRows =>
       importedCounts.values.fold<int>(0, (sum, value) => sum + value);

@@ -11,7 +11,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && request.auth.token.admin == true;
+      return signedIn() && (request.auth.token.admin == true || request.auth.token.email in ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com']);
     }
 
     function onlyMangaStatsChanged() {
@@ -46,6 +46,40 @@ service cloud.firestore {
       match /following/{mangaId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
+
+      match /forum_notifications/{notificationId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+        allow update: if isAdmin() || (isOwner(userId) 
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool);
+        allow create: if signedIn()
+          && request.auth.uid != userId
+          && request.resource.data.keys().hasOnly([
+            'type', 'recipientId', 'actorId', 'actorName', 'actorAvatar',
+            'postId', 'commentId', 'postPreview', 'title', 'body', 'route', 'createdAt', 'isRead'
+          ])
+          && (!request.resource.data.keys().hasAny(['commentId']) || request.resource.data.commentId is string)
+          && request.resource.data.recipientId == userId
+          && request.resource.data.actorId == request.auth.uid
+          && request.resource.data.type in ['forum_like', 'forum_comment']
+          && request.resource.data.postId is string
+          && request.resource.data.postId.size() > 0
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 150
+          && request.resource.data.body is string
+          && request.resource.data.body.size() <= 500
+          && request.resource.data.postPreview is string
+          && request.resource.data.postPreview.size() <= 200
+          && request.resource.data.actorName is string
+          && request.resource.data.actorName.size() <= 100
+          && request.resource.data.actorAvatar is string
+          && request.resource.data.actorAvatar.size() <= 500
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.route == ('/forum/detail/' + request.resource.data.postId)
+          && request.resource.data.isRead == false
+          && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId;
+      }
     }
 
     match /comics/{mangaId} {
@@ -65,6 +99,156 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();
+    }
+
+    // =========================================================
+    // RULES CHO FORUM (PHASE 2)
+    // =========================================================
+
+    match /forumPosts/{postId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'type', 'authorId', 'authorName', 'authorAvatar', 'body', 
+          'gifUrl', 'imageUrl', 'sharedMangaId', 'sharedMangaTitle', 
+          'sharedMangaCoverUrl', 'sharedMangaAuthor', 'likeCount', 
+          'commentCount', 'viewCount', 'reportCount', 'isDeleted', 
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.type in ['discussion', 'manga_share']
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 2000
+        && (
+          request.resource.data.body.size() > 0 
+          || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
+          || (request.resource.data.keys().hasAny(['imageUrl']) && request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0)
+        )
+        && request.resource.data.likeCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.viewCount == 0
+        && request.resource.data.reportCount == 0
+        && request.resource.data.isDeleted == false
+        && (
+          request.resource.data.type == 'discussion'
+          || (
+            request.resource.data.type == 'manga_share'
+            && request.resource.data.sharedMangaId is string
+            && request.resource.data.sharedMangaId.size() > 0
+            && request.resource.data.sharedMangaTitle is string
+            && request.resource.data.sharedMangaTitle.size() > 0
+            && request.resource.data.sharedMangaTitle.size() <= 200
+            && request.resource.data.sharedMangaCoverUrl is string
+            && request.resource.data.sharedMangaCoverUrl.size() > 0
+          )
+        );
+        
+      allow update: if 
+        // Owner update content fields only
+        (isOwner(resource.data.authorId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['body', 'gifUrl', 'imageUrl', 'updatedAt', 'isDeleted']))
+        ||
+        // Any signed-in user can increment commentCount, update likeCount (+1/-1), or update viewCount (+1)
+        (signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount', 'likeCount', 'viewCount'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount', 'likeCount', 'viewCount'])
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount']) ||
+            (request.resource.data.commentCount == (resource.data.commentCount + 1))
+          )
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeCount']) ||
+            (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
+          )
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['viewCount']) ||
+            (request.resource.data.viewCount == (resource.data.viewCount + 1))
+          )
+        )
+        ||
+        isAdmin();
+        
+      match /reactions/{userId} {
+        allow read: if signedIn();
+        allow create, delete: if isOwner(userId);
+        allow update: if false;
+      }
+      
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly([
+            'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
+            'likeCount', 'isDeleted', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0 
+          && request.resource.data.body.size() <= 1000
+          && request.resource.data.likeCount == 0
+          && request.resource.data.isDeleted == false;
+          
+        allow update: if 
+          (isOwner(resource.data.authorId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['body', 'isDeleted', 'updatedAt']))
+          ||
+          (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+            && (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
+          )
+          || isAdmin();
+          
+        match /reactions/{userId} {
+          allow read: if signedIn();
+          allow create, delete: if isOwner(userId);
+          allow update: if false;
+        }
+      }
+    }
+
+    match /forumMessages/{messageId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
+          'isDeleted', 'createdAt'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.body is string
+        && request.resource.data.body.size() <= 1000
+        && (
+          request.resource.data.body.size() > 0 
+          || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
+        )
+        && request.resource.data.isDeleted == false;
+        
+      allow update: if 
+        (isOwner(resource.data.authorId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['isDeleted']))
+        || isAdmin();
+    }
+
+    match /forumReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'id', 'reporterId', 'targetType', 'targetId', 'postId', 
+          'reason', 'createdAt', 'status'
+        ])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.targetType in ['post', 'comment']
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 1000
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.postId is string
+        && request.resource.data.postId.size() > 0;
+      allow update, delete: if isAdmin();
     }
 
     match /{document=**} {

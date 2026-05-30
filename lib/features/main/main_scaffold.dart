@@ -6,18 +6,19 @@ import '../../config/admin_config.dart';
 
 // ── Branch indices trong GoRouter StatefulNavigationShell ──────────────────
 // Thứ tự này phải khớp với thứ tự khai báo branches trong app_router.dart.
-// Branches: 0=home, 1=library, 2=follow, 3=admin(admin only), 4=settings
+// Branches: 0=home, 1=library, 2=follow, 3=admin(admin only), 4=settings, 5=forum
 abstract class _Branch {
-  static const admin = 3; // Chỉ tồn tại cho Admin users
-  static const settings = 4; // Branch 4 với Admin, branch 3 với User thường
+  static const admin = 3;
+  static const settings = 4;
+  static const forum = 5;
 }
 
 // ── UI tab indices (NavigationBar) ─────────────────────────────────────────
-// Admin thấy 5 tabs: Home, Library, Follow, Admin, Settings.
-// User thấy 4 tabs:  Home, Library, Follow, Settings.
-// Tabs: 0=home, 1=library, 2=follow, 3=admin|settings, 4=settings(admin only)
 abstract class _Tab {
-  static const adminOrSettings = 3; // Admin tab cho admin / Settings cho user
+  static const forumForUser = 3;
+  static const settingsForUser = 4;
+  static const forumForAdmin = 4;
+  static const settingsForAdmin = 5;
 }
 
 // MainScaffold là shell bao quanh toàn bộ app — chứa bottom navigation bar
@@ -28,21 +29,29 @@ class MainScaffold extends StatelessWidget {
 
   /// Chuyển router branch index → UI tab index để highlight đúng tab.
   int _branchToTab(int branchIndex, bool isAdmin) {
-    if (isAdmin) return branchIndex; // Admin: 1-to-1 mapping
-    // User thường: branch 3 (admin) không tồn tại, branch 4 (settings) → tab 3
-    if (branchIndex == _Branch.settings) return _Tab.adminOrSettings;
-    if (branchIndex == _Branch.admin) {
-      return 0; // fallback: admin route → home tab
+    if (isAdmin) {
+      if (branchIndex == _Branch.forum) return _Tab.forumForAdmin;
+      if (branchIndex == _Branch.settings) return _Tab.settingsForAdmin;
+      return branchIndex; // home, library, follow, admin giữ nguyên
+    } else {
+      if (branchIndex == _Branch.forum) return _Tab.forumForUser;
+      if (branchIndex == _Branch.settings) return _Tab.settingsForUser;
+      if (branchIndex == _Branch.admin) return 0; // fallback home nếu vô nhầm
+      return branchIndex;
     }
-    return branchIndex;
   }
 
   /// Chuyển UI tab index → router branch index khi user tap tab.
   int _tabToBranch(int tabIndex, bool isAdmin) {
-    if (isAdmin) return tabIndex; // Admin: 1-to-1 mapping
-    // User thường: tab 3 (Settings) → branch 4 (settings)
-    if (tabIndex == _Tab.adminOrSettings) return _Branch.settings;
-    return tabIndex;
+    if (isAdmin) {
+      if (tabIndex == _Tab.forumForAdmin) return _Branch.forum;
+      if (tabIndex == _Tab.settingsForAdmin) return _Branch.settings;
+      return tabIndex;
+    } else {
+      if (tabIndex == _Tab.forumForUser) return _Branch.forum;
+      if (tabIndex == _Tab.settingsForUser) return _Branch.settings;
+      return tabIndex;
+    }
   }
 
   @override
@@ -111,6 +120,11 @@ class MainScaffold extends StatelessWidget {
                             selectedIcon: Icon(Icons.admin_panel_settings),
                             label: 'Quản trị',
                           ),
+                        const NavigationDestination(
+                          icon: Icon(Icons.forum_outlined),
+                          selectedIcon: Icon(Icons.forum),
+                          label: 'Diễn đàn',
+                        ),
                         const NavigationDestination(
                           icon: Icon(Icons.settings_outlined),
                           selectedIcon: Icon(Icons.settings),

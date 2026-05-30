@@ -94,7 +94,9 @@ class LibraryStatusEntry {
       mangaId: map['mangaId']?.toString() ?? '',
       status: _statusFromString(map['status']?.toString()),
       tags: _readTags(map['tagsJson']),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(_readInt(map['updatedAt'])),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        _readInt(map['updatedAt']),
+      ),
     );
   }
 

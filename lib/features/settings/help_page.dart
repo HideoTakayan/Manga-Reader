@@ -16,39 +16,43 @@ class _HelpPageState extends State<HelpPage> {
 
   final List<Map<String, String>> _faqs = [
     {
-      'question': 'Làm sao để đọc truyện?',
+      'question': 'App hỗ trợ những định dạng truyện nào?',
       'answer':
-          '1. Chọn truyện từ trang chủ\n'
-          '2. Click vào chapter muốn đọc\n'
-          '3. Swipe sang trái/phải để chuyển trang\n'
-          '4. Pinch để zoom ảnh',
+          'MangaReader hỗ trợ đa dạng các định dạng:\n'
+          '- PDF: Tối ưu hoá cực mượt cho cả file khổng lồ (>50MB).\n'
+          '- Truyện tranh: ZIP, CBZ.\n'
+          '- Tiểu thuyết/Light Novel: TXT.\n'
+          '- Sách điện tử: EPUB.',
     },
     {
-      'question': 'Làm sao để bật thông báo chapter mới?',
+      'question': 'Làm sao để thao tác khi đọc truyện?',
       'answer':
-          '1. Vào trang chi tiết truyện\n'
-          '2. Click icon 🔔 ở góc trên bên phải\n'
-          '3. ✅ Bạn sẽ nhận thông báo khi có chapter mới!\n\n'
+          '1. Truyện tranh/EPUB: Swipe (vuốt) sang trái/phải để lật trang.\n'
+          '2. PDF: Vuốt dọc để cuộn trang, dùng 2 ngón tay (Pinch) để phóng to/thu nhỏ.\n'
+          '3. Tiểu thuyết (TXT): Vuốt dọc để cuộn, chạm giữa màn hình để đổi Font chữ, Kích thước hoặc Màu nền.\n'
+          '4. Phím cứng: Dùng phím Tăng/Giảm âm lượng để lật trang (Trừ PDF).',
+    },
+    {
+      'question': 'Diễn đàn (Forum) dùng để làm gì?',
+      'answer':
+          'Diễn đàn là nơi cộng đồng giao lưu, chia thành 3 khu vực:\n'
+          '- Chat tổng: Nhắn tin trực tuyến (Real-time) cùng mọi người.\n'
+          '- Chia sẻ truyện: Đăng bài giới thiệu truyện hay.\n'
+          '- Thảo luận: Nơi bàn luận các chủ đề nóng hổi.\n'
+          'Bạn có thể Đăng bài, Bình luận, Thả tim (Like) và gửi Ảnh/GIF.',
+    },
+    {
+      'question': 'Làm sao để lưu lại trang đang đọc?',
+      'answer':
+          'App tự động lưu lại Tiến trình đọc của bạn một cách chính xác.\n\n'
+          'Ngoài ra, bạn có thể chạm vào giữa màn hình, bấm icon Bookmark (Lưu trang) ở góc trên để đánh dấu lại vị trí ưa thích. Sau này có thể truy cập lại thông qua Menu Bookmark.',
+    },
+    {
+      'question': 'Làm sao để theo dõi & nhận thông báo?',
+      'answer':
+          '- Theo dõi: Click icon ❤️ ở trang chi tiết, truyện sẽ vào thư viện "Theo dõi".\n'
+          '- Thông báo: Click icon 🔔 để nhận cảnh báo khi có Chapter mới.\n\n'
           'Lưu ý: Bạn cần đăng nhập để sử dụng tính năng này.',
-    },
-    {
-      'question': 'Làm sao để xem thông báo?',
-      'answer':
-          'Click icon 🔔 ở góc trên bên phải trang chủ.\n\n'
-          'Badge đỏ hiện số thông báo chưa đọc.\n'
-          'Click vào thông báo để xem chi tiết truyện.',
-    },
-    {
-      'question': 'Làm sao để theo dõi truyện?',
-      'answer':
-          'Click vào icon ❤️ ở góc trên bên phải trang chi tiết truyện.\n\n'
-          'Truyện sẽ được thêm vào thư viện của bạn và hiển thị ở tab "Theo dõi".',
-    },
-    {
-      'question': 'Làm sao để đổi mật khẩu?',
-      'answer':
-          'Vào Settings → Tài khoản → Đổi mật khẩu\n\n'
-          'Nhập mật khẩu cũ và mật khẩu mới để thay đổi.',
     },
     {
       'question': 'Làm sao để đăng nhập bằng Google?',
@@ -56,14 +60,8 @@ class _HelpPageState extends State<HelpPage> {
           'Ở trang đăng nhập:\n'
           '1. Click nút "Đăng nhập bằng Google"\n'
           '2. Chọn tài khoản Google của bạn\n'
-          '3. ✅ Đăng nhập thành công!\n\n'
+          '3. Đăng nhập thành công!\n\n'
           'Bạn có thể thêm mật khẩu sau ở Settings → Thêm mật khẩu.',
-    },
-    {
-      'question': 'Tại sao không thấy truyện mới?',
-      'answer':
-          'Kéo xuống ở trang chủ để refresh danh sách truyện mới nhất.\n\n'
-          'Nếu vẫn không thấy, kiểm tra kết nối internet của bạn.',
     },
   ];
 
@@ -76,59 +74,52 @@ class _HelpPageState extends State<HelpPage> {
           '📝 ĐĂNG KÝ TÀI KHOẢN\n\n'
           '1️⃣ Mở app MangaReader\n'
           '2️⃣ Tại màn hình đăng nhập, click "Chưa có tài khoản? Đăng ký ngay"\n'
-          '3️⃣ Nhập thông tin:\n'
-          '   • Email: Địa chỉ email hợp lệ\n'
-          '   • Mật khẩu: Tối thiểu 6 ký tự\n'
-          '   • Xác nhận mật khẩu: Nhập lại mật khẩu\n'
+          '3️⃣ Nhập thông tin (Email, Mật khẩu)\n'
           '4️⃣ Click nút "Đăng ký"\n'
-          '5️⃣ Kiểm tra email để xác thực tài khoản\n'
-          '6️⃣ Click link xác thực trong email\n'
-          '7️⃣ ✅ Hoàn tất! Đăng nhập để sử dụng\n\n'
+          '5️⃣ Nhận link xác thực trong Email và tiến hành Đăng nhập\n\n'
           '🔐 ĐĂNG NHẬP BẰNG GOOGLE\n\n'
-          '1️⃣ Tại màn hình đăng nhập\n'
-          '2️⃣ Click "Đăng nhập bằng Google"\n'
-          '3️⃣ Chọn tài khoản Google của bạn\n'
-          '4️⃣ ✅ Đăng nhập thành công!\n\n'
-          '💡 LƯU Ý:\n'
-          '• Mật khẩu phải có ít nhất 6 ký tự\n'
-          '• Email phải là địa chỉ hợp lệ\n'
-          '• Nếu đăng nhập bằng Google, bạn có thể thêm mật khẩu sau ở Settings',
+          '1️⃣ Tại màn hình đăng nhập, click "Đăng nhập bằng Google"\n'
+          '2️⃣ Chọn tài khoản Google\n'
+          '3️⃣ Vào Settings để thiết lập thêm Mật khẩu (nếu cần)',
     },
     {
-      'title': 'Đọc truyện',
-      'description': 'Cách đọc và điều hướng trong truyện',
+      'title': 'Khám phá tính năng Đọc Truyện',
+      'description': 'Hỗ trợ PDF, EPUB, ZIP, Tiểu thuyết',
       'content':
-          '📖 ĐỌC TRUYỆN\n\n'
-          '1️⃣ TÌM TRUYỆN\n'
-          '   • Trang chủ: Xem truyện mới nhất\n'
-          '   • Tìm kiếm: Click icon 🔍 để tìm truyện\n'
-          '   • Thể loại: Lọc theo thể loại yêu thích\n\n'
-          '2️⃣ XEM CHI TIẾT TRUYỆN\n'
-          '   • Click vào truyện để xem thông tin\n'
-          '   • Xem mô tả, tác giả, thể loại\n'
-          '   • Danh sách chapters\n'
-          '   • Số người theo dõi\n\n'
-          '3️⃣ ĐỌC CHAPTER\n'
-          '   • Click vào chapter muốn đọc\n'
-          '   • Swipe trái/phải để chuyển trang\n'
-          '   • Pinch (2 ngón tay) để zoom ảnh\n'
-          '   • Double tap để zoom nhanh\n\n'
-          '4️⃣ ĐIỀU HƯỚNG\n'
-          '   • Swipe phải: Trang trước\n'
-          '   • Swipe trái: Trang sau\n'
-          '   • Click giữa màn hình: Hiện/ẩn controls\n'
-          '   • Slider dưới: Nhảy đến trang bất kỳ\n\n'
-          '5️⃣ THEO DÕI TRUYỆN\n'
-          '   • Click icon ❤️ để theo dõi\n'
-          '   • Truyện sẽ lưu vào thư viện\n'
-          '   • Xem lại ở tab "Theo dõi"\n\n'
-          '6️⃣ BẬT THÔNG BÁO\n'
-          '   • Click icon 🔔 ở trang chi tiết\n'
-          '   • Nhận thông báo khi có chapter mới\n\n'
-          '💡 MẸO:\n'
-          '• Lịch sử đọc tự động lưu\n'
-          '• Kéo xuống trang chủ để refresh\n'
-          '• Đọc offline (nếu đã tải)',
+          '📖 ĐỌC TRUYỆN ĐA ĐỊNH DẠNG\n\n'
+          '1️⃣ TRUYỆN TRANH (ZIP, CBZ, EPUB)\n'
+          '   • Vuốt trái/phải để sang trang\n'
+          '   • Dùng phím Âm lượng để chuyển trang\n'
+          '   • Double tap để phóng to nhanh\n\n'
+          '2️⃣ ĐỌC SÁCH PDF\n'
+          '   • Tối ưu hoá cực tốt cho file nặng >50MB\n'
+          '   • Dùng 2 ngón tay (Pinch) để phóng to/thu nhỏ thoải mái\n'
+          '   • Vuốt dọc để cuộn trang mượt mà\n\n'
+          '3️⃣ TIỂU THUYẾT (TXT, NOVEL)\n'
+          '   • Chạm giữa màn hình để mở Bảng điều khiển\n'
+          '   • Tuỳ chỉnh Font chữ, Cỡ chữ to/nhỏ\n'
+          '   • Thay đổi Màu nền (Trắng/Đen/Vàng) cho đỡ mỏi mắt\n\n'
+          '4️⃣ ĐIỀU HƯỚNG & BOOKMARK\n'
+          '   • Thanh Slider dưới đáy: Kéo nhanh đến trang mong muốn\n'
+          '   • Nút Bookmark: Lưu lại vị trí trang hay\n'
+          '   • Tiến trình đọc luôn được lưu tự động!',
+    },
+    {
+      'title': 'Giao lưu tại Diễn đàn',
+      'description': 'Chat tổng, Đăng bài, Bình luận & Thả tim',
+      'content':
+          '🌐 THAM GIA DIỄN ĐÀN\n\n'
+          '1️⃣ CHAT TỔNG (GLOBAL CHAT)\n'
+          '   • Nơi chém gió, giao lưu trực tuyến với toàn server\n'
+          '   • Hỗ trợ gửi text, emoji, và cả hình động (GIF)\n\n'
+          '2️⃣ CHIA SẺ & THẢO LUẬN\n'
+          '   • Đăng bài viết chia sẻ truyện hay hoặc lập Topic thảo luận\n'
+          '   • Có thể đính kèm Ảnh / GIF vào bài đăng\n'
+          '   • Tương tác với người khác: Thả tim (Like), Bình luận (Comment)\n\n'
+          '3️⃣ QUẢN LÝ BÀI VIẾT\n'
+          '   • Bạn có thể Xóa bài viết / Xóa bình luận của chính mình\n'
+          '   • Báo cáo (Report) nếu thấy bài viết vi phạm\n'
+          '   • Admin sẽ có quyền kiểm duyệt mọi bài đăng!',
     },
   ];
 

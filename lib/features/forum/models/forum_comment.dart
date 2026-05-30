@@ -11,6 +11,9 @@ class ForumComment {
   final bool isDeleted;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? replyToCommentId;
+  final String? replyToAuthorName;
+  final String? replyToUserId;
 
   ForumComment({
     required this.id,
@@ -23,6 +26,9 @@ class ForumComment {
     this.isDeleted = false,
     required this.createdAt,
     required this.updatedAt,
+    this.replyToCommentId,
+    this.replyToAuthorName,
+    this.replyToUserId,
   });
 
   factory ForumComment.fromFirestore(DocumentSnapshot doc) {
@@ -38,6 +44,9 @@ class ForumComment {
       isDeleted: data['isDeleted'] ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      replyToCommentId: data['replyToCommentId'],
+      replyToAuthorName: data['replyToAuthorName'],
+      replyToUserId: data['replyToUserId'],
     );
   }
 
@@ -52,6 +61,9 @@ class ForumComment {
       'isDeleted': isDeleted,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      if (replyToCommentId != null) 'replyToCommentId': replyToCommentId,
+      if (replyToAuthorName != null) 'replyToAuthorName': replyToAuthorName,
+      if (replyToUserId != null) 'replyToUserId': replyToUserId,
     };
   }
 }

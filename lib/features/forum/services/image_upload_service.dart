@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import '../../../config/cloudinary_config.dart';
 
+import 'dart:isolate';
+
 class ImageUploadService {
   static Future<String> uploadForumImage(
     File imageFile,
@@ -15,6 +17,7 @@ class ImageUploadService {
       folder: CloudinaryConfig.folder,
       publicIdPrefix: 'post_${postId}_$uid',
       maxSizeLimit: 3 * 1024 * 1024, // 3MB
+      maxWidth: 1200,
     );
   }
 
@@ -24,6 +27,7 @@ class ImageUploadService {
       folder: 'manga_reader/avatars',
       publicIdPrefix: 'avatar_$uid',
       maxSizeLimit: 5 * 1024 * 1024, // 5MB
+      maxWidth: 800,
     );
   }
 
@@ -32,17 +36,40 @@ class ImageUploadService {
     required String folder,
     required String publicIdPrefix,
     required int maxSizeLimit,
+    required int maxWidth,
   }) async {
-    // Compress image
-    final bytes = await imageFile.readAsBytes();
-    final decodedImage = img.decodeImage(bytes);
-    if (decodedImage == null) {
-      throw Exception('Lỗi xử lý ảnh: Không thể đọc được file ảnh này.');
+    // Guard file: Kiểm tra kích thước file gốc trước khi đưa vào bộ nhớ/isolate để chống OOM
+    final fileSize = await imageFile.length();
+    if (fileSize > 20 * 1024 * 1024) {
+      // 20MB hard limit cho file gốc
+      throw Exception(
+        'File ảnh quá lớn (trên 20MB). Vui lòng chọn ảnh nhỏ hơn.',
+      );
     }
 
-    final compressedBytes = img.encodeJpg(decodedImage, quality: 70);
+    // Đọc bytes ở luồng chính, truyền vào isolate để tránh lỗi khi pass object File
+    final bytes = await imageFile.readAsBytes();
+
+    // Nén và resize ảnh trên luồng nền (Isolate) để không block UI
+    final compressedBytes = await Isolate.run(() {
+      final decodedImage = img.decodeImage(bytes);
+      if (decodedImage == null) {
+        throw Exception('Lỗi xử lý ảnh: Không thể đọc được file ảnh này.');
+      }
+
+      var processedImage = decodedImage;
+      // Chỉ thu nhỏ ảnh nếu chiều rộng lớn hơn maxWidth, không upscale ảnh nhỏ
+      if (processedImage.width > maxWidth) {
+        processedImage = img.copyResize(processedImage, width: maxWidth);
+      }
+
+      return img.encodeJpg(processedImage, quality: 70);
+    });
+
     if (compressedBytes.length > maxSizeLimit) {
-      throw Exception('Ảnh quá lớn sau khi nén, vui lòng chọn ảnh nhỏ hơn.');
+      throw Exception(
+        'Ảnh quá lớn sau khi nén, vui lòng chọn ảnh có độ phân giải thấp hơn hoặc kích thước nhỏ hơn.',
+      );
     }
 
     // Prepare HTTP request

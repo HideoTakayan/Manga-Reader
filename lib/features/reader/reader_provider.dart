@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:pdfx/pdfx.dart';
 import '../../services/follow_service.dart';
 import '../../services/interaction_service.dart';
 
@@ -33,6 +32,8 @@ class ReaderState {
   final CloudChapter? currentChapter;
   final List<Uint8List> pages;
   final Uint8List? epubBytes; // Dữ liệu file EPUB cho truyện chữ
+  final Uint8List? pdfBytes; // Dữ liệu file PDF gốc (không giải nén ngầm)
+  final int pdfPageCount; // Số trang của file PDF
   final int currentPageIndex;
   final bool showControls;
   final String? errorMessage;
@@ -49,6 +50,7 @@ class ReaderState {
   final ReaderBackground background;
   final bool
   isNovel; // Cờ xác định đây là truyện chữ (EPUB) hay truyện tranh (Ảnh)
+  final bool isPdf; // Cờ xác định đây là định dạng PDF
 
   const ReaderState({
     this.isLoading = true,
@@ -59,6 +61,8 @@ class ReaderState {
     this.currentChapter,
     this.pages = const [],
     this.epubBytes,
+    this.pdfBytes,
+    this.pdfPageCount = 0,
     this.currentPageIndex = 0,
     this.showControls = true,
     this.errorMessage,
@@ -74,6 +78,7 @@ class ReaderState {
     this.direction = ReaderDirection.ltr,
     this.background = ReaderBackground.black,
     this.isNovel = false,
+    this.isPdf = false,
   });
 
   ReaderState copyWith({
@@ -85,6 +90,10 @@ class ReaderState {
     CloudChapter? currentChapter,
     List<Uint8List>? pages,
     Uint8List? epubBytes,
+    bool clearEpubBytes = false,
+    Uint8List? pdfBytes,
+    bool clearPdfBytes = false,
+    int? pdfPageCount,
     int? currentPageIndex,
     bool? showControls,
     String? errorMessage,
@@ -100,6 +109,7 @@ class ReaderState {
     ReaderDirection? direction,
     ReaderBackground? background,
     bool? isNovel,
+    bool? isPdf,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
@@ -109,7 +119,9 @@ class ReaderState {
       chapters: chapters ?? this.chapters,
       currentChapter: currentChapter ?? this.currentChapter,
       pages: pages ?? this.pages,
-      epubBytes: epubBytes ?? this.epubBytes,
+      epubBytes: clearEpubBytes ? null : (epubBytes ?? this.epubBytes),
+      pdfBytes: clearPdfBytes ? null : (pdfBytes ?? this.pdfBytes),
+      pdfPageCount: pdfPageCount ?? this.pdfPageCount,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       showControls: showControls ?? this.showControls,
       errorMessage: errorMessage ?? this.errorMessage,
@@ -126,6 +138,7 @@ class ReaderState {
       direction: direction ?? this.direction,
       background: background ?? this.background,
       isNovel: isNovel ?? this.isNovel,
+      isPdf: isPdf ?? this.isPdf,
     );
   }
 }
@@ -136,10 +149,6 @@ final readerProvider =
     );
 
 class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
-  /// Token dùng để huỷ render PDF cũ khi load chương mới.
-  /// Mỗi lần load tăng lên 1 — background render kiểm tra token này trước khi emit.
-  int _loadToken = 0;
-
   @override
   ReaderState build() {
     return const ReaderState();
@@ -183,8 +192,9 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return progress;
   }
 
-  int _restorePageIndex(ReaderProgress? progress, int pageCount) {
-    if (progress == null || pageCount <= 0) return 0;
+  int _restorePageIndex(ReaderProgress? progress, int? pageCount) {
+    if (progress == null) return 0;
+    if (pageCount == null || pageCount <= 0) return progress.pageIndex;
     return progress.pageIndex.clamp(0, pageCount - 1);
   }
 
@@ -349,39 +359,26 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // --- Trường hợp Manga (Truyện tranh) ---
       if (fileType == 'pdf') {
-        // PDF: Hiển thị ngay từ trang 1, render phần còn lại ngầm
-        final token = ++_loadToken;
-        final completer = _PdfCompleter();
-
-        // ignore: unawaited_futures
-        _streamPdfPages(
-          fileBytes,
-          token,
-          onFirstPage: (pages) {
-            if (_loadToken != token) return;
-            state = state.copyWith(
-              isLoading: false,
-              pages: pages,
-              currentPageIndex: _restorePageIndex(savedProgress, pages.length),
-              scrollOffset: savedProgress?.scrollOffset ?? 0,
-              mangaId: mangaId,
-              currentChapter: CloudChapter(
-                id: chapterId,
-                title: chapterTitle.isEmpty ? 'Chapter' : chapterTitle,
-                fileId: '',
-                fileType: fileType,
-                uploadedAt: DateTime.now(),
-                viewCount: 0,
-              ),
-            );
-            completer.complete();
-          },
-          onMorePages: (pages) {
-            if (_loadToken == token) state = state.copyWith(pages: pages);
-          },
-          onDone: () => completer.complete(), // An toàn nếu trang đầu thất bại
+        state = state.copyWith(
+          isLoading: false,
+          pages: const [],
+          pdfBytes: fileBytes,
+          clearEpubBytes: true,
+          isNovel: false,
+          isPdf: true,
+          pdfPageCount: 0,
+          currentPageIndex: _restorePageIndex(savedProgress, null),
+          scrollOffset: savedProgress?.scrollOffset ?? 0,
+          mangaId: mangaId,
+          currentChapter: CloudChapter(
+            id: chapterId,
+            title: chapterTitle.isEmpty ? 'Chapter' : chapterTitle,
+            fileId: '',
+            fileType: fileType,
+            uploadedAt: DateTime.now(),
+            viewCount: 0,
+          ),
         );
-        await completer.future; // Chờ cho đến khi trang 1 hiển thị
       } else {
         // ZIP / CBZ: Trích xuất ảnh ngay
         final images = await _extractImagesFromZip(fileBytes);
@@ -395,6 +392,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         state = state.copyWith(
           isLoading: false,
           pages: images,
+          clearPdfBytes: true,
+          clearEpubBytes: true,
+          isPdf: false,
+          isNovel: false,
+          pdfPageCount: 0,
           currentPageIndex: _restorePageIndex(savedProgress, images.length),
           scrollOffset: savedProgress?.scrollOffset ?? 0,
           mangaId: mangaId,
@@ -562,6 +564,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         // Nhưng trong dự án này (Dựa theo nextChapter) nó là index - 1
         final nextChapter = allChapters[currentIndex - 1];
 
+        // Bỏ qua tải ngầm đối với file định dạng PDF (vì PDF thường nặng)
+        if (nextChapter.fileType.toLowerCase() == 'pdf') {
+          return;
+        }
+
         // Kiểm tra xem đã tải chưa
         DatabaseHelper.instance.isChapterDownloaded(nextChapter.id).then((
           isDownloaded,
@@ -685,8 +692,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     if (fileType == 'epub') {
       state = baseState.copyWith(
         epubBytes: fileBytes,
+        clearPdfBytes: true,
+        isPdf: false,
         isNovel: true,
         pages: const [],
+        pdfPageCount: 0,
       );
       _saveProgress();
       _refreshBookmarkState();
@@ -699,30 +709,15 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     // --- Trường hợp Manga (Truyện tranh: PDF / ZIP / CBZ) ---
     if (fileType == 'pdf') {
-      // PDF: Hiển thị trang 1 ngay, render phần còn lại ngầm
-      final token = ++_loadToken;
-      final completer = _PdfCompleter();
-
-      // ignore: unawaited_futures
-      _streamPdfPages(
-        fileBytes,
-        token,
-        onFirstPage: (pages) {
-          if (_loadToken != token) return;
-          state = baseState.copyWith(
-            pages: pages,
-            isNovel: false,
-            epubBytes: null,
-            currentPageIndex: _restorePageIndex(savedProgress, pages.length),
-          );
-          completer.complete();
-        },
-        onMorePages: (pages) {
-          if (_loadToken == token) state = state.copyWith(pages: pages);
-        },
-        onDone: () => completer.complete(),
+      state = baseState.copyWith(
+        pages: const [],
+        isNovel: false,
+        isPdf: true,
+        clearEpubBytes: true,
+        pdfBytes: fileBytes,
+        pdfPageCount: 0,
+        currentPageIndex: _restorePageIndex(savedProgress, null),
       );
-      await completer.future;
     } else {
       final images = await _extractImagesFromZip(fileBytes);
       if (images.isEmpty) {
@@ -735,7 +730,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       state = baseState.copyWith(
         pages: images,
         isNovel: false,
-        epubBytes: null,
+        isPdf: false,
+        clearEpubBytes: true,
+        clearPdfBytes: true,
+        pdfPageCount: 0,
         currentPageIndex: _restorePageIndex(savedProgress, images.length),
       );
     }
@@ -814,20 +812,30 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // Tải và quên (Fire and forget) - kết quả sẽ được lưu vào bộ nhớ tạm bởi DriveService
       if (nextId != null) {
-        DriveService.instance
-            .downloadFile(nextId)
-            .then((_) {
-              debugPrint('✅ Prefetched next chapter: $nextId');
-            })
-            .catchError((_) {});
+        final nextChap = state.chapters.firstWhereOrNull((c) => c.id == nextId);
+        if (nextChap?.fileType != 'pdf') {
+          DriveService.instance
+              .downloadFile(nextId)
+              .then((_) {
+                debugPrint('✅ Prefetched next chapter: $nextId');
+              })
+              .catchError((_) {});
+        } else {
+          debugPrint('⏭️ Skip prefetch for PDF: $nextId');
+        }
       }
       if (prevId != null) {
-        DriveService.instance
-            .downloadFile(prevId)
-            .then((_) {
-              debugPrint('✅ Prefetched prev chapter: $prevId');
-            })
-            .catchError((_) {});
+        final prevChap = state.chapters.firstWhereOrNull((c) => c.id == prevId);
+        if (prevChap?.fileType != 'pdf') {
+          DriveService.instance
+              .downloadFile(prevId)
+              .then((_) {
+                debugPrint('✅ Prefetched prev chapter: $prevId');
+              })
+              .catchError((_) {});
+        } else {
+          debugPrint('⏭️ Skip prefetch for PDF: $prevId');
+        }
       }
     });
   }
@@ -843,88 +851,19 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
-  /// Hiển thị trang 1 ngay, render phần còn lại của PDF ngầm trong background.
-  /// [token]: nếu _loadToken thay đổi thì huỷ render — tránh memory leak khi thậ đọc.
-  Future<void> _streamPdfPages(
-    Uint8List fileBytes,
-    int token, {
-    required void Function(List<Uint8List> pages) onFirstPage,
-    required void Function(List<Uint8List> pages) onMorePages,
-    required void Function() onDone,
-  }) async {
-    PdfDocument? document;
-    try {
-      document = await PdfDocument.openData(fileBytes);
-      final count = document.pagesCount;
-      if (count == 0) {
-        await document.close();
-        onDone();
-        return;
-      }
 
-      // Chuẩn bị mảng có đú số phần tử, bản đầu đều rỗng
-      final pages = List<Uint8List>.generate(count, (_) => Uint8List(0));
-
-      // Bước 1: Render trang 1 — gọi ngay, trả về cho UI
-      final p1 = await document.getPage(1);
-      final img1 = await p1.render(
-        width: p1.width * 1.5,
-        height: p1.height * 1.5,
-        format: PdfPageImageFormat.jpeg,
-        backgroundColor: '#FFFFFF',
-        quality: 85,
-      );
-      await p1.close();
-
-      if (img1 == null || _loadToken != token) {
-        await document.close();
-        onDone();
-        return;
-      }
-
-      pages[0] = img1.bytes;
-      onFirstPage(List<Uint8List>.from(pages)); // UI hiển thị ngay!
-      debugPrint(
-        '⚡ PDF trang 1 hiển thị (tổng $count trang, render ngầm phần còn lại)',
-      );
-
-      // Bước 2: Render các trang tiếp theo ngầm
-      for (int i = 1; i < count; i++) {
-        if (_loadToken != token) break; // Load mới đã được kích hoạt, dừng
-        final page = await document.getPage(i + 1);
-        final img = await page.render(
-          width: page.width * 1.5,
-          height: page.height * 1.5,
-          format: PdfPageImageFormat.jpeg,
-          backgroundColor: '#FFFFFF',
-          quality: 85,
-        );
-        await page.close();
-        if (img != null) pages[i] = img.bytes;
-
-        // Cập nhật state mỗi 5 trang hoặc trang cuối — giảm rebuild
-        if (((i + 1) % 5 == 0 || i == count - 1) && _loadToken == token) {
-          onMorePages(List<Uint8List>.from(pages));
-        }
-      }
-
-      await document.close();
-      onDone();
-      debugPrint('✅ PDF render xong $count trang');
-    } catch (e) {
-      debugPrint('PDF stream error: $e');
-      try {
-        await document?.close();
-      } catch (_) {}
-      onDone();
-    }
-  }
 
   // So sánh chuỗi đơn giản cho tên chương/trang — dùng _naturalSort trực tiếp
   // [Dead code đã xóa: _compareChapterNames, shortChapterSort]
 
   void toggleControls() {
     state = state.copyWith(showControls: !state.showControls);
+  }
+
+  void setPdfPageCount(int count) {
+    if (state.isPdf) {
+      state = state.copyWith(pdfPageCount: count);
+    }
   }
 
   /// Cập nhật chế độ đọc và persist vào SharedPreferences để nhớ qua các lần mở app.
@@ -971,8 +910,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     if (state.mangaId == null || state.currentChapter == null) return;
 
     try {
-      final pageCount = state.pages.isEmpty ? 1 : state.pages.length;
-      final currentPage = state.currentPageIndex.clamp(0, pageCount - 1);
+      final pageCount = state.isPdf ? state.pdfPageCount : (state.pages.isEmpty ? 1 : state.pages.length);
+      final currentPage = (state.isPdf && state.pdfPageCount <= 0) 
+          ? state.currentPageIndex 
+          : state.currentPageIndex.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
       final progressPercent = pageCount <= 1
           ? 0.0
           : currentPage / (pageCount - 1);
@@ -1154,8 +1095,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         state = state.copyWith(
           currentChapter: targetChapter,
           epubBytes: fileBytes,
+          clearPdfBytes: true,
+          isPdf: false,
           isNovel: true,
           pages: const [],
+          pdfPageCount: 0,
           currentPageIndex: 0,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
@@ -1175,40 +1119,20 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // --- Trường hợp Manga (Truyện tranh: PDF / ZIP / CBZ) ---
       if (fileType == 'pdf') {
-        final token = ++_loadToken;
-        final completer = _PdfCompleter();
-        // ignore: unawaited_futures
-        _streamPdfPages(
-          fileBytes,
-          token,
-          onFirstPage: (pages) {
-            if (_loadToken != token) return;
-            state = state.copyWith(
-              currentChapter: targetChapter,
-              pages: pages,
-              isNovel: false,
-              epubBytes: null,
-              currentPageIndex: isNext ? 0 : pages.length - 1,
-              scrollOffset: 0,
-              hasReachedEnd: isNext ? false : state.hasReachedEnd,
-              hasReachedStart: !isNext ? false : state.hasReachedStart,
-            );
-            resetLoadingState();
-            completer.complete();
-          },
-          onMorePages: (pages) {
-            if (_loadToken == token) {
-              state = state.copyWith(
-                pages: pages,
-                currentPageIndex: isNext
-                    ? state.currentPageIndex
-                    : pages.length - 1,
-              );
-            }
-          },
-          onDone: () => completer.complete(),
+        state = state.copyWith(
+          currentChapter: targetChapter,
+          pages: const [],
+          isNovel: false,
+          isPdf: true,
+          clearEpubBytes: true,
+          pdfBytes: fileBytes,
+          pdfPageCount: 0,
+          currentPageIndex: 0,
+          scrollOffset: 0,
+          hasReachedEnd: isNext ? false : state.hasReachedEnd,
+          hasReachedStart: !isNext ? false : state.hasReachedStart,
         );
-        await completer.future;
+        resetLoadingState();
       } else {
         final images = await _extractImagesFromZip(fileBytes);
         if (images.isEmpty) {
@@ -1219,7 +1143,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           currentChapter: targetChapter,
           pages: images,
           isNovel: false,
-          epubBytes: null,
+          isPdf: false,
+          clearEpubBytes: true,
+          clearPdfBytes: true,
+          pdfPageCount: 0,
           currentPageIndex: isNext ? 0 : images.length - 1,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
@@ -1295,18 +1222,3 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   }
 }
 
-/// Helper: Completer an toàn — gọi complete() nhiều lần không throw.
-/// Dùng cho _streamPdfPages để đảm bảo onFirstPage + onDone không xung đột.
-class _PdfCompleter {
-  final _c = Completer<void>();
-  bool _done = false;
-
-  Future<void> get future => _c.future;
-
-  void complete() {
-    if (!_done) {
-      _done = true;
-      _c.complete();
-    }
-  }
-}

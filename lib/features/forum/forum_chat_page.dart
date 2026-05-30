@@ -325,7 +325,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                                 ),
                               )
                             : const Icon(Icons.send),
-                        color: Theme.of(context).primaryColor,
+                        color: const Color(0xFFFF5252),
                       ),
                     ],
                   ),

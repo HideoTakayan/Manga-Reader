@@ -11,6 +11,7 @@ import '../../data/models_cloud.dart';
 import '../../features/shared/drive_image.dart';
 import '../../services/history_service.dart';
 import 'novel_reader_widget.dart';
+import 'pdf_reader_view.dart';
 import 'reader_provider.dart';
 
 class ReaderPage extends ConsumerStatefulWidget {
@@ -297,6 +298,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _handleKeyEvent(KeyEvent event, ReaderState state) {
+    if (state.isPdf) return;
     if (event is! KeyDownEvent) return;
 
     if (event.logicalKey == LogicalKeyboardKey.audioVolumeDown ||
@@ -346,9 +348,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _jumpToPage(int pageIndex) {
     final state = ref.read(readerProvider);
-    if (state.pages.isEmpty) return;
-    final target = pageIndex.clamp(0, state.pages.length - 1);
+    if (!state.isPdf && state.pages.isEmpty) return;
+    
+    final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
+    if (pageCount <= 0) return;
+    
+    final target = pageIndex.clamp(0, pageCount - 1);
     ref.read(readerProvider.notifier).onPageChanged(target);
+    
+    // PDF handles jumping via initialPage passing to PdfReaderView
+    if (state.isPdf) return;
+
     if (state.readingMode == ReadingMode.horizontal) {
       if (_pageController.hasClients) {
         _pageController.animateToPage(
@@ -489,7 +499,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       final screenWidth = MediaQuery.of(context).size.width;
                       final tapX = details.globalPosition.dx;
 
-                      if (state.readingMode == ReadingMode.horizontal) {
+                      if (state.readingMode == ReadingMode.horizontal && !state.isPdf) {
                         if (tapX < screenWidth * 0.3) {
                           if (state.direction == ReaderDirection.rtl) {
                             if (state.currentPageIndex <
@@ -537,13 +547,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           notifier.toggleControls();
                         }
                       } else {
-                        // Vertical mode: Tap Center = menu, otherwise menu (for now keep simple)
+                        // Vertical mode or PDF: Tap Center = menu, otherwise menu (for now keep simple)
                         notifier.toggleControls();
                       }
                     },
-                    child: state.readingMode == ReadingMode.horizontal
-                        ? _buildHorizontalView(state, notifier)
-                        : _buildVerticalView(state, notifier),
+                    child: state.isPdf && state.pdfBytes != null
+                        ? PdfReaderView(
+                            pdfBytes: state.pdfBytes!,
+                            initialPage: state.currentPageIndex,
+                            onDocumentLoaded: (count) {
+                              notifier.setPdfPageCount(count);
+                            },
+                            onPageChanged: (pageIndex) {
+                              notifier.onPageChanged(pageIndex);
+                              _scheduleVerticalProgressSave(0.0, pageIndex);
+                            },
+                            onToggleControls: notifier.toggleControls,
+                          )
+                        : state.readingMode == ReadingMode.horizontal
+                            ? _buildHorizontalView(state, notifier)
+                            : _buildVerticalView(state, notifier),
                   ),
 
                   if (state.showControls)
@@ -675,17 +698,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
 
                             // Nút Menu (Ngăn kéo)
-                            IconButton(
-                              icon: const Icon(
-                                Icons.grid_view,
-                                color: Colors.white,
-                                size: 24,
+                            if (!state.isPdf) // Ẩn Thumbnail grid khi đọc PDF
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.grid_view,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                                tooltip: 'Danh sách trang',
+                                onPressed: () => _showPageThumbnailSheet(state),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
-                              tooltip: 'Danh sách trang',
-                              onPressed: () => _showPageThumbnailSheet(state),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
                             const SizedBox(width: 10),
                             IconButton(
                               icon: const Icon(
@@ -916,9 +940,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   // PhotoViewComputedScale.contained: hiện đủ cả trang trong màn hình
   // maxScale: covered * 2 → zoom tối đa 2x
   Widget _buildPageSlider(ReaderState state) {
-    if (state.pages.isEmpty) return const SizedBox.shrink();
-    final hasMultiplePages = state.pages.length > 1;
-    final currentPage = state.currentPageIndex.clamp(0, state.pages.length - 1);
+    final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
+    if (pageCount <= 0) return const SizedBox.shrink();
+    final hasMultiplePages = pageCount > 1;
+    final currentPage = state.currentPageIndex.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.72),
@@ -933,7 +958,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             Row(
               children: [
                 Text(
-                  'Trang ${state.currentPageIndex + 1}/${state.pages.length}',
+                  'Trang ${state.currentPageIndex + 1}/$pageCount',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -962,8 +987,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               child: Slider(
                 value: hasMultiplePages ? currentPage.toDouble() : 0,
                 min: 0,
-                max: hasMultiplePages ? (state.pages.length - 1).toDouble() : 1,
-                divisions: hasMultiplePages ? state.pages.length - 1 : null,
+                max: hasMultiplePages ? (pageCount - 1).toDouble() : 1,
+                divisions: hasMultiplePages ? pageCount - 1 : null,
                 activeColor: Colors.blueAccent,
                 inactiveColor: Colors.white24,
                 onChanged: hasMultiplePages

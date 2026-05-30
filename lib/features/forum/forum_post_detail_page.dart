@@ -18,17 +18,18 @@ class ForumPostDetailPage extends StatefulWidget {
 class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
   final _repository = FirebaseForumRepository();
   final _commentController = TextEditingController();
+  final FocusNode _commentFocusNode = FocusNode();
 
   ForumPost? _post;
   List<ForumComment> _comments = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
+  ForumComment? _replyingTo;
 
   @override
   void initState() {
     super.initState();
     _loadComments();
-    _incrementViewCount();
   }
 
   Future<void> _incrementViewCount() async {
@@ -42,21 +43,37 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
   @override
   void dispose() {
     _commentController.dispose();
+    _commentFocusNode.dispose();
     super.dispose();
   }
 
   Future<void> _loadComments() async {
     try {
       final post = await _repository.fetchPost(widget.postId);
-      final comments = await _repository.fetchComments(widget.postId);
 
-      if (!mounted) return;
+      if (post != null) {
+        final comments = await _repository.fetchComments(widget.postId);
 
-      setState(() {
-        _post = post;
-        _comments = comments;
-        _isLoading = false;
-      });
+        // Nếu load lần đầu mới tăng view
+        if (_post == null) {
+          _incrementViewCount();
+        }
+
+        if (!mounted) return;
+
+        setState(() {
+          _post = post;
+          _comments = comments;
+          _isLoading = false;
+        });
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _post = null;
+          _comments = [];
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -88,9 +105,13 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
         authorName: user.displayName ?? 'Người dùng',
         authorAvatar: user.photoURL ?? '',
         body: body,
+        replyToCommentId: _replyingTo?.id,
+        replyToAuthorName: _replyingTo?.authorName,
+        replyToUserId: _replyingTo?.authorId,
       );
 
       _commentController.clear();
+      setState(() => _replyingTo = null);
       await _loadComments(); // Tải lại danh sách comment
     } catch (e) {
       if (mounted) {
@@ -128,6 +149,13 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                       return ForumCommentTile(
                         postId: widget.postId,
                         comment: _comments[index - 1],
+                        onDeleted: _loadComments,
+                        onReply: (comment) {
+                          setState(() {
+                            _replyingTo = comment;
+                          });
+                          _commentFocusNode.requestFocus();
+                        },
                       );
                     },
                   ),
@@ -145,31 +173,70 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
               ),
             ),
             child: SafeArea(
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _commentController,
-                      decoration: const InputDecoration(
-                        hintText: 'Viết bình luận...',
-                        border: InputBorder.none,
+                  if (_replyingTo != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.reply_rounded,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Đang phản hồi @${_replyingTo!.authorName}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () {
+                              setState(() => _replyingTo = null);
+                            },
+                          ),
+                        ],
                       ),
-                      onChanged: (_) => setState(() {}),
                     ),
-                  ),
-                  IconButton(
-                    icon: _isSubmitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                    color: Theme.of(context).colorScheme.primary,
-                    onPressed:
-                        _isSubmitting || _commentController.text.trim().isEmpty
-                        ? null
-                        : _submitComment,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _commentController,
+                          focusNode: _commentFocusNode,
+                          decoration: const InputDecoration(
+                            hintText: 'Viết bình luận...',
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      IconButton(
+                        icon: _isSubmitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.send),
+                        color: const Color(0xFFFF5252),
+                        onPressed:
+                            _isSubmitting
+                                ? null
+                                : _submitComment,
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -149,7 +149,9 @@ class FirebaseForumRepository implements ForumRepository {
   Future<ForumPost?> fetchPost(String postId) async {
     final doc = await _firestore.collection('forumPosts').doc(postId).get();
     if (doc.exists) {
-      return ForumPost.fromFirestore(doc);
+      final post = ForumPost.fromFirestore(doc);
+      if (post.isDeleted) return null;
+      return post;
     }
     return null;
   }
@@ -184,6 +186,9 @@ class FirebaseForumRepository implements ForumRepository {
     required String authorAvatar,
     required String body,
     String? gifUrl,
+    String? replyToCommentId,
+    String? replyToAuthorName,
+    String? replyToUserId,
   }) async {
     final trimmedBody = body.trim();
     if (trimmedBody.isEmpty) {
@@ -205,11 +210,18 @@ class FirebaseForumRepository implements ForumRepository {
       gifUrl: gifUrl,
       createdAt: DateTime.now(), // Overwritten by server timestamp
       updatedAt: DateTime.now(), // Overwritten by server timestamp
+      replyToCommentId: replyToCommentId,
+      replyToAuthorName: replyToAuthorName,
+      replyToUserId: replyToUserId,
     );
 
     final postSnapshot = await postRef.get();
     if (!postSnapshot.exists) return;
     final postData = postSnapshot.data() as Map<String, dynamic>;
+    if (postData['isDeleted'] == true) {
+      throw Exception('Không thể bình luận. Bài viết này đã bị xóa.');
+    }
+
     final postAuthorId = postData['authorId'] as String;
     final postBody = postData['body'] as String? ?? '';
     final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
@@ -224,26 +236,49 @@ class FirebaseForumRepository implements ForumRepository {
       transaction.update(postRef, {'commentCount': FieldValue.increment(1)});
     });
 
-    await _createForumNotification(
-      type: 'forum_comment',
-      recipientId: postAuthorId,
-      actorId: uid,
-      actorName: authorName,
-      actorAvatar: authorAvatar,
-      postId: postId,
-      commentId: commentRef.id,
-      postPreview: preview,
-    );
+    if (replyToUserId != null && replyToCommentId != null) {
+      await _createForumNotification(
+        type: 'forum_reply',
+        recipientId: replyToUserId,
+        actorId: uid,
+        actorName: authorName,
+        actorAvatar: authorAvatar,
+        postId: postId,
+        commentId: commentRef.id,
+        replyToCommentId: replyToCommentId,
+        postPreview: preview,
+      );
+    } else {
+      await _createForumNotification(
+        type: 'forum_comment',
+        recipientId: postAuthorId,
+        actorId: uid,
+        actorName: authorName,
+        actorAvatar: authorAvatar,
+        postId: postId,
+        commentId: commentRef.id,
+        postPreview: preview,
+      );
+    }
   }
 
   @override
   Future<void> softDeleteComment(String postId, String commentId) async {
-    await _firestore
-        .collection('forumPosts')
-        .doc(postId)
-        .collection('comments')
-        .doc(commentId)
-        .update({'isDeleted': true});
+    final postRef = _firestore.collection('forumPosts').doc(postId);
+    final commentRef = postRef.collection('comments').doc(commentId);
+
+    await _firestore.runTransaction((transaction) async {
+      final commentSnapshot = await transaction.get(commentRef);
+      if (!commentSnapshot.exists) return;
+      final data = commentSnapshot.data();
+      if (data != null && data['isDeleted'] == true) return;
+
+      transaction.update(commentRef, {
+        'isDeleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      transaction.update(postRef, {'commentCount': FieldValue.increment(-1)});
+    });
   }
 
   @override
@@ -254,6 +289,9 @@ class FirebaseForumRepository implements ForumRepository {
     final postSnapshot = await postRef.get();
     if (!postSnapshot.exists) return;
     final postData = postSnapshot.data() as Map<String, dynamic>;
+    if (postData['isDeleted'] == true) {
+      throw Exception('Không thể thích. Bài viết này đã bị xóa.');
+    }
     final postAuthorId = postData['authorId'] as String;
     final postBody = postData['body'] as String? ?? '';
     final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
@@ -305,14 +343,21 @@ class FirebaseForumRepository implements ForumRepository {
     String commentId,
     String uid,
   ) async {
-    final commentRef = _firestore
-        .collection('forumPosts')
-        .doc(postId)
-        .collection('comments')
-        .doc(commentId);
+    final postRef = _firestore.collection('forumPosts').doc(postId);
+    final commentRef = postRef.collection('comments').doc(commentId);
     final reactionRef = commentRef.collection('reactions').doc(uid);
 
     await _firestore.runTransaction((transaction) async {
+      final postSnapshot = await transaction.get(postRef);
+      if (!postSnapshot.exists || (postSnapshot.data()?['isDeleted'] == true)) {
+        return;
+      }
+      final commentSnapshot = await transaction.get(commentRef);
+      if (!commentSnapshot.exists ||
+          (commentSnapshot.data()?['isDeleted'] == true)) {
+        return;
+      }
+
       final reactionSnapshot = await transaction.get(reactionRef);
       if (reactionSnapshot.exists) {
         transaction.delete(reactionRef);
@@ -443,12 +488,15 @@ class FirebaseForumRepository implements ForumRepository {
     required String actorAvatar,
     required String postId,
     String? commentId,
+    String? replyToCommentId,
     required String postPreview,
   }) async {
     if (recipientId == actorId) return;
 
     final docId = type == 'forum_like'
-        ? 'post_like_${postId}_$actorId'
+        ? 'post_like_${postId}_${actorId}_${DateTime.now().millisecondsSinceEpoch}'
+        : type == 'forum_reply'
+        ? 'post_reply_${postId}_$commentId'
         : 'post_comment_${postId}_$commentId';
 
     String title = '';
@@ -456,6 +504,8 @@ class FirebaseForumRepository implements ForumRepository {
 
     if (type == 'forum_like') {
       title = '$actorName đã thích bài viết của bạn';
+    } else if (type == 'forum_reply') {
+      title = '$actorName đã phản hồi bình luận của bạn';
     } else {
       title = '$actorName đã bình luận bài viết của bạn';
     }
@@ -468,6 +518,7 @@ class FirebaseForumRepository implements ForumRepository {
       'actorAvatar': actorAvatar,
       'postId': postId,
       if (commentId != null) 'commentId': commentId,
+      if (replyToCommentId != null) 'replyToCommentId': replyToCommentId,
       'postPreview': postPreview,
       'title': title,
       'body': body,

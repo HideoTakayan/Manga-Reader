@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../data/database_helper.dart';
+import 'folder_service.dart';
 
 class BackupService {
   BackupService._();
@@ -40,17 +41,21 @@ class BackupService {
 
     final fileName =
         'manga_reader_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-    final outputPath = await FilePicker.platform.saveFile(
-      dialogTitle: 'Lưu backup Manga Reader',
-      fileName: fileName,
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-    if (outputPath == null) return null;
+    
+    final rootPath = FolderService.rootPath;
+    if (rootPath == null) return null;
 
+    final backupsDir = Directory('$rootPath/backups');
+    if (!await backupsDir.exists()) {
+      await backupsDir.create(recursive: true);
+    }
+
+    final outputPath = '${backupsDir.path}/$fileName';
     final file = File(outputPath);
     const encoder = JsonEncoder.withIndent('  ');
     await file.writeAsString(encoder.convert(data), flush: true);
+    
+    debugPrint('✅ Đã lưu backup tại: $outputPath');
     return outputPath;
   }
 

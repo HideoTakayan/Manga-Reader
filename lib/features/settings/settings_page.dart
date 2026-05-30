@@ -160,7 +160,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   ImageProvider? _getUserAvatar(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
-    // Ưu tiên avatarUrl (Firebase Storage) — mới hơn và không giới hạn dung lượng
+    // Ưu tiên avatarUrl (Cloudinary) — mới hơn và không bị block
     final avatarUrl = _readString(data, 'avatarUrl');
     if (avatarUrl.isNotEmpty) {
       return NetworkImage(avatarUrl);

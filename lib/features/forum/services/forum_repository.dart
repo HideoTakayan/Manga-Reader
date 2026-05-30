@@ -44,6 +44,9 @@ abstract class ForumRepository {
     required String authorAvatar,
     required String body,
     String? gifUrl,
+    String? replyToCommentId,
+    String? replyToAuthorName,
+    String? replyToUserId,
   });
   Future<void> softDeleteComment(String postId, String commentId);
 

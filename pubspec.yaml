@@ -14,8 +14,6 @@ dependencies:
   go_router: ^14.8.0
 
   cached_network_image: ^3.4.1
-  extended_image: ^9.0.2
-  logger: ^2.0.2
   photo_view: ^0.15.0
 
   shared_preferences: ^2.5.5
@@ -39,12 +37,9 @@ dependencies:
   googleapis_auth: ^1.6.0
   extension_google_sign_in_as_googleapis_auth: ^2.0.13
   http: ^1.2.1
-  state_notifier: ^1.0.0
 
   sqflite: ^2.3.0
   collection: ^1.18.0
-  format: ^1.6.0
-  font_awesome_flutter: ^10.7.0
   url_launcher: ^6.3.1
   permission_handler: ^11.3.1
   flutter_local_notifications: ^21.0.0

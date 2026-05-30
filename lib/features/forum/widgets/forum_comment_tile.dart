@@ -10,11 +10,15 @@ import 'report_dialog.dart';
 class ForumCommentTile extends StatelessWidget {
   final String postId;
   final ForumComment comment;
+  final VoidCallback? onDeleted;
+  final ValueChanged<ForumComment>? onReply;
 
   const ForumCommentTile({
     super.key,
     required this.postId,
     required this.comment,
+    this.onDeleted,
+    this.onReply,
   });
 
   @override
@@ -66,10 +70,35 @@ class ForumCommentTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
+                    if (comment.replyToAuthorName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text(
+                          'Phản hồi @${comment.replyToAuthorName}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     Text(comment.body, style: const TextStyle(fontSize: 14)),
                     const SizedBox(height: 8),
-                    // Actions: Like
-                    _buildLikeButton(context),
+                    Row(
+                      children: [
+                        _buildLikeButton(context),
+                        const SizedBox(width: 16),
+                        _buildAction(
+                          context,
+                          Icons.reply_rounded,
+                          'Phản hồi',
+                          onTap: () {
+                            onReply?.call(comment);
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -149,6 +178,7 @@ class ForumCommentTile extends StatelessWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Đã xóa bình luận')),
                           );
+                          onDeleted?.call();
                         }
                       } catch (e) {
                         if (context.mounted) {

@@ -57,12 +57,13 @@ service cloud.firestore {
           && request.auth.uid != userId
           && request.resource.data.keys().hasOnly([
             'type', 'recipientId', 'actorId', 'actorName', 'actorAvatar',
-            'postId', 'commentId', 'postPreview', 'title', 'body', 'route', 'createdAt', 'isRead'
+            'postId', 'commentId', 'postPreview', 'title', 'body', 'route', 'createdAt', 'isRead', 'replyToCommentId'
           ])
           && (!request.resource.data.keys().hasAny(['commentId']) || request.resource.data.commentId is string)
+          && (!request.resource.data.keys().hasAny(['replyToCommentId']) || request.resource.data.replyToCommentId is string)
           && request.resource.data.recipientId == userId
           && request.resource.data.actorId == request.auth.uid
-          && request.resource.data.type in ['forum_like', 'forum_comment']
+          && request.resource.data.type in ['forum_like', 'forum_comment', 'forum_reply']
           && request.resource.data.postId is string
           && request.resource.data.postId.size() > 0
           && request.resource.data.title is string
@@ -78,7 +79,10 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time
           && request.resource.data.route == ('/forum/detail/' + request.resource.data.postId)
           && request.resource.data.isRead == false
-          && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId;
+          && (
+              (request.resource.data.type in ['forum_like', 'forum_comment'] && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId) ||
+              (request.resource.data.type == 'forum_reply' && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.replyToCommentId)).data.authorId == userId)
+            );
       }
     }
 
@@ -149,14 +153,16 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['body', 'gifUrl', 'imageUrl', 'updatedAt', 'isDeleted']))
         ||
-        // Any signed-in user can increment commentCount, update likeCount (+1/-1), or update viewCount (+1)
+        // Any signed-in user can update stats, only if post is not deleted
         (signedIn()
+          && resource.data.isDeleted == false
           && request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount', 'likeCount', 'viewCount'])
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount', 'likeCount', 'viewCount'])
           && (
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount']) ||
-            (request.resource.data.commentCount == (resource.data.commentCount + 1))
+            (request.resource.data.commentCount == (resource.data.commentCount + 1) || request.resource.data.commentCount == (resource.data.commentCount - 1))
           )
+          && (!request.resource.data.keys().hasAny(['commentCount']) || request.resource.data.commentCount >= 0)
           && (
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeCount']) ||
             (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
@@ -171,16 +177,19 @@ service cloud.firestore {
         
       match /reactions/{userId} {
         allow read: if signedIn();
-        allow create, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false;
+        allow delete: if isOwner(userId);
         allow update: if false;
       }
       
       match /comments/{commentId} {
         allow read: if true;
         allow create: if signedIn()
+          && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
           && request.resource.data.keys().hasOnly([
             'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
-            'likeCount', 'isDeleted', 'createdAt', 'updatedAt'
+            'likeCount', 'isDeleted', 'createdAt', 'updatedAt',
+            'replyToCommentId', 'replyToAuthorName', 'replyToUserId'
           ])
           && request.resource.data.authorId == request.auth.uid
           && request.resource.data.body is string
@@ -195,6 +204,8 @@ service cloud.firestore {
                .hasOnly(['body', 'isDeleted', 'updatedAt']))
           ||
           (signedIn()
+            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+            && resource.data.isDeleted == false
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
             && (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
           )
@@ -202,7 +213,10 @@ service cloud.firestore {
           
         match /reactions/{userId} {
           allow read: if signedIn();
-          allow create, delete: if isOwner(userId);
+          allow create: if isOwner(userId)
+            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+            && get(/databases/$(database)/documents/forumPosts/$(postId)/comments/$(commentId)).data.isDeleted == false;
+          allow delete: if isOwner(userId);
           allow update: if false;
         }
       }

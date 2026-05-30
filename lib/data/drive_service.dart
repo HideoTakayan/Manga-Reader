@@ -657,9 +657,10 @@ class DriveService {
         final name = f['name'] as String? ?? '';
         final id = f['id'] as String? ?? '';
         String type = 'zip';
-        if (name.endsWith('.epub')) type = 'epub';
-        if (name.endsWith('.cbz')) type = 'cbz';
-        if (name.endsWith('.pdf')) type = 'pdf';
+        final lowerName = name.toLowerCase();
+        if (lowerName.endsWith('.epub')) type = 'epub';
+        if (lowerName.endsWith('.cbz')) type = 'cbz';
+        if (lowerName.endsWith('.pdf')) type = 'pdf';
 
         return CloudChapter(
           id: id,
@@ -846,32 +847,70 @@ class DriveService {
           print('📥 Đang tải file: $fileId');
         }
 
-        final response = await _downloadDriveMedia(fileId);
-
-        if (response.statusCode == 404) {
-          print('❌ File not found on Drive: $fileId');
-          return null;
-        }
-
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
-        }
-
-        final result = response.bodyBytes;
-        if (_looksLikeHtml(result, response.headers['content-type'])) {
-          throw Exception(
-            'Drive returned an HTML page instead of chapter bytes',
+        final client = http.Client();
+        try {
+          final apiMediaUrl = Uri.parse(
+            'https://www.googleapis.com/drive/v3/files/$fileId'
+            '?alt=media&key=${DriveConfig.apiKey}',
           );
+
+          http.StreamedResponse response = await client
+              .send(http.Request('GET', apiMediaUrl))
+              .timeout(const Duration(seconds: 300));
+
+          if (response.statusCode != 200 ||
+              (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+            final publicUrl = Uri.parse(
+              'https://drive.google.com/uc?export=download&id=$fileId',
+            );
+            response = await client
+                .send(http.Request('GET', publicUrl))
+                .timeout(const Duration(seconds: 300));
+          }
+
+          if (response.statusCode == 404) {
+            print('❌ File not found on Drive: $fileId');
+            return null;
+          }
+
+          if (response.statusCode != 200) {
+            throw Exception('HTTP ${response.statusCode}');
+          }
+
+          if (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false) {
+            throw Exception('Drive returned an HTML page instead of chapter bytes');
+          }
+
+          final total = response.contentLength ?? 0;
+          int received = 0;
+          final bytes = <int>[];
+
+          await for (final chunk in response.stream) {
+            bytes.addAll(chunk);
+            received += chunk.length;
+            if (onProgress != null && total > 0) {
+              onProgress(received, total);
+            }
+          }
+
+          final result = Uint8List.fromList(bytes);
+
+          print('✅ Tải file hoàn tất: $fileId (${result.length} bytes)');
+          if (onProgress != null && total == 0) onProgress(100, 100);
+
+          // Lưu vào cache nếu dung lượng < 20MB để tiết kiệm RAM (Chống OOM)
+          if (result.length <= 20 * 1024 * 1024) {
+            _fileCache[fileId] = result;
+            _fileCacheOrder.add(fileId);
+            _trimFileCache();
+          } else {
+            print('⚠️ Tải xong nhưng không Cache RAM vì file > 20MB: $fileId');
+          }
+
+          return result;
+        } finally {
+          client.close();
         }
-        print('✅ Tải file hoàn tất: $fileId (${result.length} bytes)');
-        if (onProgress != null) onProgress(100, 100);
-
-        // Lưu vào cache và xóa bớt nếu đã đầy
-        _fileCache[fileId] = result;
-        _fileCacheOrder.add(fileId);
-        _trimFileCache();
-
-        return result;
       } catch (e) {
         print('⚠️ Lỗi tải file (Attempt ${retryCount + 1}): $e');
         retryCount++;
@@ -895,41 +934,7 @@ class DriveService {
     return null;
   }
 
-  Future<http.Response> _downloadDriveMedia(String fileId) async {
-    final apiMediaUrl = Uri.parse(
-      'https://www.googleapis.com/drive/v3/files/$fileId'
-      '?alt=media&key=${DriveConfig.apiKey}',
-    );
-    final apiResponse = await http
-        .get(apiMediaUrl)
-        .timeout(const Duration(seconds: 60));
 
-    if (apiResponse.statusCode == 200 &&
-        !_looksLikeHtml(
-          apiResponse.bodyBytes,
-          apiResponse.headers['content-type'],
-        )) {
-      return apiResponse;
-    }
 
-    final publicUrl = Uri.parse(
-      'https://drive.google.com/uc?export=download&id=$fileId',
-    );
-    return http.get(publicUrl).timeout(const Duration(seconds: 60));
-  }
 
-  bool _looksLikeHtml(Uint8List bytes, String? contentType) {
-    final type = contentType?.toLowerCase() ?? '';
-    if (type.contains('text/html')) return true;
-    if (bytes.length < 16) return false;
-
-    final prefixLength = bytes.length < 256 ? bytes.length : 256;
-    final prefix = utf8
-        .decode(bytes.take(prefixLength).toList(), allowMalformed: true)
-        .trimLeft()
-        .toLowerCase();
-    return prefix.startsWith('<!doctype html') ||
-        prefix.startsWith('<html') ||
-        prefix.contains('<title>google drive');
-  }
 }

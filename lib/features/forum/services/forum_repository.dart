@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/forum_post.dart';
 import '../models/forum_comment.dart';
 import '../models/forum_message.dart';
+import '../models/forum_report.dart';
 
 abstract class ForumRepository {
   Future<(List<ForumPost>, DocumentSnapshot?)> fetchDiscussionPosts({
@@ -62,10 +63,21 @@ abstract class ForumRepository {
   // Report
   Future<void> reportContent({
     required String reporterId,
-    required String targetType, // 'post' or 'comment'
+    required String targetType, // 'post', 'comment', 'message'
     required String targetId,
     required String postId,
     required String reason,
+  });
+
+  Future<(List<ForumReport>, DocumentSnapshot?)> fetchPendingReports({
+    DocumentSnapshot? startAfter,
+    int limit = 20,
+  });
+
+  Future<void> resolveReport({
+    required String reportId,
+    required String action, // 'dismissed', 'resolved'
+    required String resolvedBy,
   });
 
   // Chat

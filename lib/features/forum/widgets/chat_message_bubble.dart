@@ -10,6 +10,7 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback? onDelete;
   final void Function(Duration)? onMute;
   final VoidCallback? onUnmute;
+  final VoidCallback? onReport;
 
   const ChatMessageBubble({
     super.key,
@@ -17,6 +18,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onDelete,
     this.onMute,
     this.onUnmute,
+    this.onReport,
   });
 
   @override
@@ -26,7 +28,7 @@ class ChatMessageBubble extends StatelessWidget {
     final currentUserIsAdmin = AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email);
 
     return GestureDetector(
-      onLongPress: currentUserIsAdmin && !isMe ? () => _showModerationMenu(context) : null,
+      onLongPress: (!isMe && !message.isDeleted) ? () => _showOptionsMenu(context, currentUserIsAdmin) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
@@ -181,7 +183,7 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  void _showModerationMenu(BuildContext context) {
+  void _showOptionsMenu(BuildContext context, bool isAdmin) {
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -190,47 +192,58 @@ class ChatMessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text('Xóa tin nhắn này', style: TextStyle(color: Colors.red)),
+                leading: const Icon(Icons.report, color: Colors.orange),
+                title: const Text('Báo cáo vi phạm'),
                 onTap: () {
                   Navigator.pop(context);
-                  onDelete?.call();
+                  onReport?.call();
                 },
               ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.timer_off),
-                title: const Text('Cấm ngôn 10 phút'),
-                onTap: () {
-                  Navigator.pop(context);
-                  onMute?.call(const Duration(minutes: 10));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.timer_off),
-                title: const Text('Cấm ngôn 1 giờ'),
-                onTap: () {
-                  Navigator.pop(context);
-                  onMute?.call(const Duration(hours: 1));
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.timer_off),
-                title: const Text('Cấm ngôn 24 giờ'),
-                onTap: () {
-                  Navigator.pop(context);
-                  onMute?.call(const Duration(hours: 24));
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.volume_up),
-                title: const Text('Gỡ cấm ngôn'),
-                onTap: () {
-                  Navigator.pop(context);
-                  onUnmute?.call();
-                },
-              ),
+              if (isAdmin) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.delete, color: Colors.red),
+                  title: const Text('Xóa tin nhắn này', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onDelete?.call();
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.timer_off),
+                  title: const Text('Cấm ngôn 10 phút'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onMute?.call(const Duration(minutes: 10));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_off),
+                  title: const Text('Cấm ngôn 1 giờ'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onMute?.call(const Duration(hours: 1));
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_off),
+                  title: const Text('Cấm ngôn 24 giờ'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onMute?.call(const Duration(hours: 24));
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.volume_up),
+                  title: const Text('Gỡ cấm ngôn'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onUnmute?.call();
+                  },
+                ),
+              ],
             ],
           ),
         );

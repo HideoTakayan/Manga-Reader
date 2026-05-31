@@ -3,9 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_forum_repository.dart';
 
 class ReportDialog extends StatefulWidget {
-  final String targetType; // 'post' or 'comment'
+  final String targetType; // 'post', 'comment', or 'message'
   final String targetId;
-  final String postId; // the root post id
+  final String postId; // the root post id (can be empty for message)
 
   const ReportDialog({
     super.key,
@@ -87,11 +87,20 @@ class _ReportDialogState extends State<ReportDialog> {
     }
   }
 
+  String _getTypeName() {
+    switch (widget.targetType) {
+      case 'post': return 'bài viết';
+      case 'comment': return 'bình luận';
+      case 'message': return 'tin nhắn';
+      default: return 'nội dung';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
-        'Báo cáo ${widget.targetType == 'post' ? 'bài viết' : 'bình luận'}',
+        'Báo cáo ${_getTypeName()}',
       ),
       content: SingleChildScrollView(
         child: Column(

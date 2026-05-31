@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firebase_forum_repository.dart';
 import 'models/forum_message.dart';
 import 'widgets/chat_message_bubble.dart';
+import 'widgets/report_dialog.dart';
 import 'widgets/forum_composer.dart';
 import 'widgets/simple_emoji_picker.dart';
 
@@ -358,6 +359,16 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                         }
+                      },
+                      onReport: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => ReportDialog(
+                            targetType: 'message',
+                            targetId: message.id,
+                            postId: '',
+                          ),
+                        );
                       },
                     );
                   },

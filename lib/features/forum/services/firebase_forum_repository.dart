@@ -6,6 +6,7 @@ import 'image_upload_service.dart';
 import '../models/forum_post.dart';
 import '../models/forum_comment.dart';
 import '../models/forum_message.dart';
+import '../models/forum_report.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../config/admin_config.dart';
 
@@ -411,7 +412,8 @@ class FirebaseForumRepository implements ForumRepository {
     required String postId,
     required String reason,
   }) async {
-    final reportRef = _firestore.collection('forumReports').doc();
+    final reportId = '${reporterId}_${targetType}_$targetId';
+    final reportRef = _firestore.collection('forumReports').doc(reportId);
     await reportRef.set({
       'id': reportRef.id,
       'reporterId': reporterId,
@@ -421,6 +423,45 @@ class FirebaseForumRepository implements ForumRepository {
       'reason': reason,
       'createdAt': FieldValue.serverTimestamp(),
       'status': 'pending',
+    });
+  }
+
+  @override
+  Future<(List<ForumReport>, DocumentSnapshot?)> fetchPendingReports({
+    DocumentSnapshot? startAfter,
+    int limit = 20,
+  }) async {
+    var query = _firestore
+        .collection('forumReports')
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .limit(limit);
+
+    if (startAfter != null) {
+      query = query.startAfterDocument(startAfter);
+    }
+
+    final snapshot = await query.get();
+    final reports = snapshot.docs.map((doc) => ForumReport.fromFirestore(doc)).toList();
+
+    return (
+      reports,
+      snapshot.docs.isNotEmpty ? snapshot.docs.last : null,
+    );
+  }
+
+  @override
+  Future<void> resolveReport({
+    required String reportId,
+    required String action,
+    required String resolvedBy,
+  }) async {
+    final reportRef = _firestore.collection('forumReports').doc(reportId);
+    await reportRef.update({
+      'status': action == 'dismissed' ? 'dismissed' : 'resolved',
+      'action': action,
+      'resolvedBy': resolvedBy,
+      'resolvedAt': FieldValue.serverTimestamp(),
     });
   }
 

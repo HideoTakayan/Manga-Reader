@@ -298,16 +298,33 @@ service cloud.firestore {
           'id', 'reporterId', 'targetType', 'targetId', 'postId', 
           'reason', 'createdAt', 'status'
         ])
+        && request.resource.data.id == reportId
+        && reportId == request.auth.uid + '_' + request.resource.data.targetType + '_' + request.resource.data.targetId
         && request.resource.data.reporterId == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.targetType in ['post', 'comment']
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.targetType in ['post', 'comment', 'message']
         && request.resource.data.reason is string
         && request.resource.data.reason.size() > 0
         && request.resource.data.reason.size() <= 1000
         && request.resource.data.targetId is string
         && request.resource.data.targetId.size() > 0
         && request.resource.data.postId is string
-        && request.resource.data.postId.size() > 0;
+        && (request.resource.data.targetType == 'message' || request.resource.data.postId.size() > 0)
+        && (request.resource.data.targetType != 'post' || request.resource.data.postId == request.resource.data.targetId)
+        && (request.resource.data.targetType != 'message' || request.resource.data.postId == '')
+        && (request.resource.data.targetType != 'post' || (
+              exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)) &&
+              get(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)).data.isDeleted == false
+           ))
+        && (request.resource.data.targetType != 'comment' || (
+              exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)) &&
+              get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)).data.isDeleted == false
+           ))
+        && (request.resource.data.targetType != 'message' || (
+              exists(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)) &&
+              get(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)).data.isDeleted == false
+           ));
       allow update, delete: if isAdmin();
     }
 

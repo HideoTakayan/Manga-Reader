@@ -80,4 +80,13 @@ abstract class ForumRepository {
     required String body,
     String? gifUrl,
   });
+
+  // Moderation
+  Future<void> softDeleteMessage(String messageId);
+  Future<void> muteForumUser({
+    required String userId,
+    required Duration duration,
+    required String reason,
+  });
+  Future<void> unmuteForumUser(String userId);
 }

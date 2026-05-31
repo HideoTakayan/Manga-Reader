@@ -11,7 +11,49 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && (request.auth.token.admin == true || request.auth.token.email in ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com']);
+      return signedIn() && request.auth.token.email in ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
+    }
+
+    function isSafeProfileUpdate() {
+      let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64'];
+      let diffKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let hasValidKeys = diffKeys.hasOnly(allowedKeys);
+      let isValidUid = !diffKeys.hasAny(['uid']) || request.resource.data.uid == request.auth.uid;
+      let isValidEmail = !diffKeys.hasAny(['email']) || (request.auth.token.email != null && request.resource.data.email == request.auth.token.email);
+      return hasValidKeys && isValidUid && isValidEmail;
+    }
+
+    function isSafeProfileCreate() {
+      let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'createdAt', 'following', 'followers', 'isOnline', 'lastSeen'];
+      let payload = request.resource.data;
+
+      return payload.keys().hasOnly(allowedKeys)
+        && payload.keys().hasAll(['uid', 'email'])
+        && payload.uid == request.auth.uid
+        && request.auth.token.email is string
+        && payload.email == request.auth.token.email
+        && payload.uid is string
+        && payload.email is string
+        && (!payload.keys().hasAny(['name']) || payload.name is string)
+        && (!payload.keys().hasAny(['bio']) || payload.bio is string)
+        && (!payload.keys().hasAny(['avatar']) || payload.avatar is string)
+        && (!payload.keys().hasAny(['authProvider']) || payload.authProvider in ['email', 'google', 'google+email'])
+        && (!payload.keys().hasAny(['isOnline']) || payload.isOnline is bool)
+        && (!payload.keys().hasAny(['following']) || payload.following is list)
+        && (!payload.keys().hasAny(['followers']) || payload.followers is list)
+        && (!payload.keys().hasAny(['hasPassword']) || payload.hasPassword is bool)
+        && (!payload.keys().hasAny(['readNotificationIds']) || payload.readNotificationIds is list)
+        && (!payload.keys().hasAny(['createdAt']) || payload.createdAt == request.time)
+        && (!payload.keys().hasAny(['lastSeen']) || payload.lastSeen == null || payload.lastSeen is timestamp);
+    }
+
+    function canSendForumMessage() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let isExisting = exists(userPath);
+      let userDoc = isExisting ? get(userPath) : null;
+      let isNotBanned = isExisting && (!userDoc.data.keys().hasAny(['isBanned']) || userDoc.data.isBanned != true);
+      let isNotMuted = isExisting && (!userDoc.data.keys().hasAny(['mutedUntil']) || userDoc.data.mutedUntil == null || userDoc.data.mutedUntil <= request.time);
+      return signedIn() && isExisting && isNotBanned && isNotMuted;
     }
 
     function onlyMangaStatsChanged() {
@@ -35,8 +77,11 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isSafeProfileCreate();
+      allow update: if (isOwner(userId) && isSafeProfileUpdate()) ||
+        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isBanned', 'mutedUntil', 'mutedReason', 'mutedBy', 'moderationUpdatedAt'
+        ]));
       allow delete: if isAdmin();
 
       match /history/{mangaId} {
@@ -146,7 +191,7 @@ service cloud.firestore {
             && request.resource.data.sharedMangaCoverUrl.size() > 0
           )
         );
-        
+
       allow update: if 
         // Owner update content fields only
         (isOwner(resource.data.authorId)
@@ -174,14 +219,14 @@ service cloud.firestore {
         )
         ||
         isAdmin();
-        
+
       match /reactions/{userId} {
         allow read: if signedIn();
         allow create: if isOwner(userId) && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false;
         allow delete: if isOwner(userId);
         allow update: if false;
       }
-      
+
       match /comments/{commentId} {
         allow read: if true;
         allow create: if signedIn()
@@ -197,7 +242,7 @@ service cloud.firestore {
           && request.resource.data.body.size() <= 1000
           && request.resource.data.likeCount == 0
           && request.resource.data.isDeleted == false;
-          
+
         allow update: if 
           (isOwner(resource.data.authorId)
             && request.resource.data.diff(resource.data).affectedKeys()
@@ -210,7 +255,7 @@ service cloud.firestore {
             && (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
           )
           || isAdmin();
-          
+
         match /reactions/{userId} {
           allow read: if signedIn();
           allow create: if isOwner(userId)
@@ -224,10 +269,10 @@ service cloud.firestore {
 
     match /forumMessages/{messageId} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if canSendForumMessage()
         && request.resource.data.keys().hasOnly([
           'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
-          'isDeleted', 'createdAt'
+          'isDeleted', 'createdAt', 'authorIsAdmin'
         ])
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.body is string
@@ -236,13 +281,14 @@ service cloud.firestore {
           request.resource.data.body.size() > 0 
           || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
         )
+        && (!request.resource.data.keys().hasAny(['authorIsAdmin']) || request.resource.data.authorIsAdmin == isAdmin())
         && request.resource.data.isDeleted == false;
-        
+
       allow update: if 
-        (isOwner(resource.data.authorId)
-          && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['isDeleted']))
-        || isAdmin();
+        (isOwner(resource.data.authorId) || isAdmin())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted'])
+        && request.resource.data.isDeleted == true
+        && resource.data.isDeleted == false;
     }
 
     match /forumReports/{reportId} {

@@ -16,7 +16,7 @@ class ForumShellPage extends StatelessWidget {
           title: const Text('Diễn đàn'),
           bottom: const TabBar(
             tabs: [
-              Tab(text: 'Chat tổng'),
+              Tab(text: 'Diễn đàn'),
               Tab(text: 'Chia sẻ truyện'),
               Tab(text: 'Thảo luận'),
             ],

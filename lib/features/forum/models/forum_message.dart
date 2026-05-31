@@ -9,6 +9,7 @@ class ForumMessage {
   final String? gifUrl;
   final bool isDeleted;
   final DateTime createdAt;
+  final bool authorIsAdmin;
 
   ForumMessage({
     required this.id,
@@ -19,6 +20,7 @@ class ForumMessage {
     this.gifUrl,
     this.isDeleted = false,
     required this.createdAt,
+    this.authorIsAdmin = false,
   });
 
   factory ForumMessage.fromFirestore(DocumentSnapshot doc) {
@@ -31,6 +33,7 @@ class ForumMessage {
       body: data['body'] ?? '',
       gifUrl: data['gifUrl'],
       isDeleted: data['isDeleted'] ?? false,
+      authorIsAdmin: data['authorIsAdmin'] ?? false,
       createdAt: data['createdAt'] != null
           ? (data['createdAt'] as Timestamp).toDate()
           : DateTime.now(),
@@ -45,6 +48,7 @@ class ForumMessage {
       'body': body,
       if (gifUrl != null) 'gifUrl': gifUrl,
       'isDeleted': isDeleted,
+      'authorIsAdmin': authorIsAdmin,
       'createdAt': FieldValue.serverTimestamp(),
     };
   }

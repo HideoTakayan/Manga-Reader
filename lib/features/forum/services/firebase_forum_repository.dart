@@ -6,6 +6,8 @@ import 'image_upload_service.dart';
 import '../models/forum_post.dart';
 import '../models/forum_comment.dart';
 import '../models/forum_message.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../config/admin_config.dart';
 
 class FirebaseForumRepository implements ForumRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -474,6 +476,7 @@ class FirebaseForumRepository implements ForumRepository {
       authorAvatar: authorAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
+      authorIsAdmin: AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email),
       createdAt: DateTime.now(), // Overwritten by server timestamp
     );
 
@@ -537,5 +540,37 @@ class FirebaseForumRepository implements ForumRepository {
     } catch (e) {
       debugPrint('Lỗi tạo thông báo diễn đàn: $e');
     }
+  }
+
+  @override
+  Future<void> softDeleteMessage(String messageId) async {
+    await _firestore.collection('forumMessages').doc(messageId).update({
+      'isDeleted': true,
+    });
+  }
+
+  @override
+  Future<void> muteForumUser({
+    required String userId,
+    required Duration duration,
+    required String reason,
+  }) async {
+    final mutedUntil = DateTime.now().add(duration);
+    await _firestore.collection('users').doc(userId).update({
+      'mutedUntil': Timestamp.fromDate(mutedUntil),
+      'mutedReason': reason,
+      'mutedBy': FirebaseAuth.instance.currentUser?.uid,
+      'moderationUpdatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  @override
+  Future<void> unmuteForumUser(String userId) async {
+    await _firestore.collection('users').doc(userId).update({
+      'mutedUntil': FieldValue.delete(),
+      'mutedReason': FieldValue.delete(),
+      'mutedBy': FieldValue.delete(),
+      'moderationUpdatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }

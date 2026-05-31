@@ -3,19 +3,32 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/forum_message.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../config/admin_config.dart';
 
 class ChatMessageBubble extends StatelessWidget {
   final ForumMessage message;
+  final VoidCallback? onDelete;
+  final void Function(Duration)? onMute;
+  final VoidCallback? onUnmute;
 
-  const ChatMessageBubble({super.key, required this.message});
+  const ChatMessageBubble({
+    super.key,
+    required this.message,
+    this.onDelete,
+    this.onMute,
+    this.onUnmute,
+  });
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final isMe = message.authorId == currentUserId;
+    final currentUserIsAdmin = AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    return GestureDetector(
+      onLongPress: currentUserIsAdmin && !isMe ? () => _showModerationMenu(context) : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         mainAxisAlignment: isMe
             ? MainAxisAlignment.end
@@ -40,15 +53,41 @@ class ChatMessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                if (!isMe)
+                if (!isMe || message.authorIsAdmin)
                   Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 4),
-                    child: Text(
-                      message.authorName,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    padding: EdgeInsets.only(
+                      left: isMe ? 0 : 4,
+                      right: isMe ? 4 : 0,
+                      bottom: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isMe)
+                          Text(
+                            message.authorName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        if (message.authorIsAdmin)
+                          Container(
+                            margin: EdgeInsets.only(left: isMe ? 0 : 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.amber,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.verified_user, size: 10, color: Colors.black),
+                                SizedBox(width: 2),
+                                Text('ADMIN', style: TextStyle(fontSize: 8, color: Colors.black, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 Container(
@@ -138,6 +177,64 @@ class ChatMessageBubble extends StatelessWidget {
             ), // Placeholder for avatar if we want to show it for 'me' too, but usually we don't.
         ],
       ),
+      ),
+    );
+  }
+
+  void _showModerationMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Xóa tin nhắn này', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  onDelete?.call();
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.timer_off),
+                title: const Text('Cấm ngôn 10 phút'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onMute?.call(const Duration(minutes: 10));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_off),
+                title: const Text('Cấm ngôn 1 giờ'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onMute?.call(const Duration(hours: 1));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_off),
+                title: const Text('Cấm ngôn 24 giờ'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onMute?.call(const Duration(hours: 24));
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.volume_up),
+                title: const Text('Gỡ cấm ngôn'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onUnmute?.call();
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

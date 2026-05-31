@@ -8,6 +8,7 @@ class ForumComposer extends StatelessWidget {
   final ValueChanged<String> onGifSelected;
   final ValueChanged<File> onImageSelected;
   final bool showImagePicker;
+  final bool enabled;
 
   const ForumComposer({
     super.key,
@@ -15,6 +16,7 @@ class ForumComposer extends StatelessWidget {
     required this.onGifSelected,
     required this.onImageSelected,
     this.showImagePicker = true,
+    this.enabled = true,
   });
 
   Future<void> _pickImage() async {
@@ -55,18 +57,18 @@ class ForumComposer extends StatelessWidget {
         children: [
           IconButton(
             icon: const Icon(Icons.emoji_emotions_outlined),
-            onPressed: onEmojiPressed,
+            onPressed: enabled ? onEmojiPressed : null,
             tooltip: 'Chọn Emoji',
           ),
           IconButton(
             icon: const Icon(Icons.gif_box_outlined),
-            onPressed: () => _showGifPicker(context),
+            onPressed: enabled ? () => _showGifPicker(context) : null,
             tooltip: 'Chọn GIF',
           ),
           if (showImagePicker)
             IconButton(
               icon: const Icon(Icons.image_outlined),
-              onPressed: _pickImage,
+              onPressed: enabled ? _pickImage : null,
               tooltip: 'Chọn Ảnh',
             ),
         ],

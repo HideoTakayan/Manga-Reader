@@ -30,6 +30,17 @@ class _ForumChatPageState extends State<ForumChatPage> {
   bool _isInitialLoading = true;
   bool _showEmojiPicker = false;
   String? _gifUrl;
+  Timer? _muteTimer;
+  DateTime? _currentMutedUntil;
+
+  void _scheduleMuteTimer(DateTime mutedUntil) {
+    _muteTimer?.cancel();
+    final delay = mutedUntil.difference(DateTime.now());
+    if (delay.isNegative) return;
+    _muteTimer = Timer(delay, () {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void initState() {
@@ -68,6 +79,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
 
   @override
   void dispose() {
+    _muteTimer?.cancel();
     _tabController?.removeListener(_onTabChanged);
     _streamSubscription?.cancel();
     _messageController.dispose();
@@ -217,6 +229,58 @@ class _ForumChatPageState extends State<ForumChatPage> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
+    if (user == null) {
+      return _buildChatLayout(null, false, null, false);
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+      builder: (context, snapshot) {
+        bool isMuted = false;
+        bool isBanned = false;
+        DateTime? mutedUntil;
+
+        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>;
+          if (data['isBanned'] == true) {
+            isBanned = true;
+          }
+          if (data['mutedUntil'] != null) {
+            mutedUntil = (data['mutedUntil'] as Timestamp).toDate();
+            if (mutedUntil.isAfter(DateTime.now())) {
+              isMuted = true;
+            }
+          }
+        }
+
+        if (mutedUntil != _currentMutedUntil) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _currentMutedUntil = mutedUntil;
+            if (isMuted && mutedUntil != null) {
+              _scheduleMuteTimer(mutedUntil);
+            } else {
+              _muteTimer?.cancel();
+            }
+          });
+        }
+
+        if (isMuted || isBanned) {
+          if (_showEmojiPicker || _gifUrl != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
+              if (_gifUrl != null) setState(() => _gifUrl = null);
+            });
+          }
+        }
+
+        return _buildChatLayout(user, isMuted, mutedUntil, isBanned);
+      },
+    );
+  }
+
+  Widget _buildChatLayout(User? user, bool isMuted, DateTime? mutedUntil, bool isBanned) {
     return Column(
       children: [
         Expanded(
@@ -238,12 +302,91 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         ),
                       );
                     }
-                    return ChatMessageBubble(message: _messages[index]);
+                    final message = _messages[index];
+                    return ChatMessageBubble(
+                      message: message,
+                      onDelete: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Xóa tin nhắn'),
+                            content: const Text('Bạn có chắc muốn xóa tin nhắn này?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('Hủy'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                        if (!context.mounted) return;
+
+                        try {
+                          await _repository.softDeleteMessage(message.id);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xóa tin nhắn')));
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                        }
+                      },
+                      onMute: (duration) async {
+                        try {
+                          await _repository.muteForumUser(
+                            userId: message.authorId,
+                            duration: duration,
+                            reason: 'Vi phạm quy định diễn đàn',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cấm ngôn người dùng')));
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                        }
+                      },
+                      onUnmute: () async {
+                        try {
+                          await _repository.unmuteForumUser(message.authorId);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gỡ cấm ngôn')));
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                        }
+                      },
+                    );
                   },
                 ),
         ),
 
         // Input bar
+        if (isBanned)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Colors.red.withValues(alpha: 0.1),
+            child: const Text(
+              'Tài khoản của bạn đã bị cấm khỏi diễn đàn',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          )
+        else if (isMuted && mutedUntil != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            color: Colors.orange.withValues(alpha: 0.1),
+            child: Text(
+              'Bạn đang bị cấm ngôn đến ${mutedUntil.hour}:${mutedUntil.minute.toString().padLeft(2, '0')} ${mutedUntil.day}/${mutedUntil.month}/${mutedUntil.year}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+            ),
+          ),
         Container(
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
@@ -293,7 +436,11 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           decoration: InputDecoration(
                             hintText: user == null
                                 ? 'Vui lòng đăng nhập...'
-                                : 'Nhập tin nhắn...',
+                                : isBanned
+                                    ? 'Tài khoản đã bị cấm'
+                                    : isMuted
+                                        ? 'Bạn đang bị cấm ngôn'
+                                        : 'Nhập tin nhắn...',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(24),
                               borderSide: BorderSide.none,
@@ -305,7 +452,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                               vertical: 10,
                             ),
                           ),
-                          enabled: user != null,
+                          enabled: user != null && !isMuted && !isBanned,
                           maxLines: 4,
                           minLines: 1,
                           onSubmitted: (_) => _sendMessage(),
@@ -313,7 +460,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        onPressed: user == null || _isSending
+                        onPressed: user == null || _isSending || isMuted || isBanned
                             ? null
                             : _sendMessage,
                         icon: _isSending
@@ -332,6 +479,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                 ),
                 ForumComposer(
                   showImagePicker: false, // Chat chỉ hỗ trợ emoji, GIF
+                  enabled: !isMuted && !isBanned,
                   onEmojiPressed: () {
                     setState(() {
                       _showEmojiPicker = !_showEmojiPicker;

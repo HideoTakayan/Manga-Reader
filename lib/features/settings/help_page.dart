@@ -36,7 +36,7 @@ class _HelpPageState extends State<HelpPage> {
       'question': 'Diễn đàn (Forum) dùng để làm gì?',
       'answer':
           'Diễn đàn là nơi cộng đồng giao lưu, chia thành 3 khu vực:\n'
-          '- Chat tổng: Nhắn tin trực tuyến (Real-time) cùng mọi người.\n'
+          '- Diễn đàn: Nhắn tin trực tuyến (Real-time) cùng mọi người.\n'
           '- Chia sẻ truyện: Đăng bài giới thiệu truyện hay.\n'
           '- Thảo luận: Nơi bàn luận các chủ đề nóng hổi.\n'
           'Bạn có thể Đăng bài, Bình luận, Thả tim (Like) và gửi Ảnh/GIF.',
@@ -106,10 +106,10 @@ class _HelpPageState extends State<HelpPage> {
     },
     {
       'title': 'Giao lưu tại Diễn đàn',
-      'description': 'Chat tổng, Đăng bài, Bình luận & Thả tim',
+      'description': 'Diễn đàn, Đăng bài, Bình luận & Thả tim',
       'content':
           '🌐 THAM GIA DIỄN ĐÀN\n\n'
-          '1️⃣ CHAT TỔNG (GLOBAL CHAT)\n'
+          '1️⃣ DIỄN ĐÀN (GLOBAL CHAT)\n'
           '   • Nơi chém gió, giao lưu trực tuyến với toàn server\n'
           '   • Hỗ trợ gửi text, emoji, và cả hình động (GIF)\n\n'
           '2️⃣ CHIA SẺ & THẢO LUẬN\n'

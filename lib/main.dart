@@ -11,6 +11,7 @@ import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
+import 'core/utils/archive_image_extractor.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,9 @@ Future<void> main() async {
 
   // Khởi tạo hệ thống thư mục
   await FolderService.init();
+
+  // Dọn dẹp cache của Reader từ các phiên đọc trước (tránh rác hệ thống)
+  ArchiveImageExtractor.clearCache();
 
   // Đăng ký ngôn ngữ tiếng Việt cho timeago
   timeago.setLocaleMessages('vi', timeago.ViMessages());

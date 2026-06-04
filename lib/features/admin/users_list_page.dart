@@ -54,12 +54,18 @@ class UsersListPage extends StatelessWidget {
                 ),
                 title: Text(
                   name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: isBanned ? Colors.red : null,
                   ),
                 ),
-                subtitle: Text(email),
+                subtitle: Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 trailing: isBanned
                     ? const Icon(Icons.block, color: Colors.red)
                     : null,

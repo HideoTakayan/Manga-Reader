@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 /// Model đại diện cho một bộ truyện lấy từ Google Drive (qua catalog.json).
 /// Đây là model "online", khác với [Manga] là model cục bộ SQLite.
 class CloudManga {
@@ -120,4 +122,93 @@ class CloudChapter {
 
   @override
   int get hashCode => id.hashCode; // Dùng id file làm khóa hash
+}
+
+/// Model đại diện cho một báo cáo lỗi từ người dùng
+class Report {
+  final String id;
+  final String mangaId;
+  final String mangaTitle;
+  final String chapterId;
+  final String chapterTitle;
+  final String userId;
+  final String reason; // Lỗi ảnh, Sai chương, v.v.
+  final String description;
+  final String status; // pending, resolved
+  final String readerType;
+  final int pageIndex;
+  final int totalPages;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final DateTime? resolvedAt;
+  final String resolvedBy;
+
+  Report({
+    required this.id,
+    required this.mangaId,
+    required this.mangaTitle,
+    this.chapterId = '',
+    this.chapterTitle = '',
+    this.userId = '',
+    required this.reason,
+    this.description = '',
+    this.status = 'pending',
+    this.readerType = 'manga',
+    this.pageIndex = 0,
+    this.totalPages = 0,
+    required this.createdAt,
+    this.updatedAt,
+    this.resolvedAt,
+    this.resolvedBy = '',
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'mangaId': mangaId,
+      'mangaTitle': mangaTitle,
+      'chapterId': chapterId,
+      'chapterTitle': chapterTitle,
+      'userId': userId,
+      'reason': reason,
+      'description': description,
+      'status': status,
+      'readerType': readerType,
+      'pageIndex': pageIndex,
+      'totalPages': totalPages,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  static DateTime? _parseOptionalDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
+  factory Report.fromMap(Map<String, dynamic> map, String docId) {
+    final parsedCreatedAt =
+        _parseOptionalDate(map['createdAt']) ?? DateTime.now();
+
+    return Report(
+      id: docId,
+      mangaId: map['mangaId'] ?? '',
+      mangaTitle: map['mangaTitle'] ?? '',
+      chapterId: map['chapterId'] ?? '',
+      chapterTitle: map['chapterTitle'] ?? '',
+      userId: map['userId'] ?? '',
+      reason: map['reason'] ?? '',
+      description: map['description'] ?? '',
+      status: map['status'] ?? 'pending',
+      readerType: map['readerType'] ?? 'manga',
+      pageIndex: map['pageIndex'] ?? 0,
+      totalPages: map['totalPages'] ?? 0,
+      createdAt: parsedCreatedAt,
+      updatedAt: _parseOptionalDate(map['updatedAt']),
+      resolvedAt: _parseOptionalDate(map['resolvedAt']),
+      resolvedBy: map['resolvedBy'] ?? '',
+    );
+  }
 }

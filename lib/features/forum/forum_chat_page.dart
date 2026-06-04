@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,6 +32,8 @@ class _ForumChatPageState extends State<ForumChatPage> {
   bool _isInitialLoading = true;
   bool _showEmojiPicker = false;
   String? _gifUrl;
+  File? _imageFile;
+  ForumMessage? _replyingTo;
   Timer? _muteTimer;
   DateTime? _currentMutedUntil;
 
@@ -181,7 +184,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty && _gifUrl == null) return;
+    if (text.isEmpty && _gifUrl == null && _imageFile == null) return;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -200,12 +203,22 @@ class _ForumChatPageState extends State<ForumChatPage> {
         authorAvatar: user.photoURL ?? '',
         body: text,
         gifUrl: _gifUrl,
+        imageFile: _imageFile,
+        replyToMessageId: _replyingTo?.id,
+        replyToAuthorName: _replyingTo?.authorName,
+        replyToBody: _replyingTo?.body.isNotEmpty == true
+            ? _replyingTo!.body
+            : (_replyingTo?.gifUrl != null || _replyingTo?.imageUrl != null
+                ? 'Hình ảnh/GIF'
+                : null),
       );
 
       if (mounted) {
         _messageController.clear();
         setState(() {
           _gifUrl = null;
+          _imageFile = null;
+          _replyingTo = null;
         });
         _scrollController.animateTo(
           0.0,
@@ -370,6 +383,12 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           ),
                         );
                       },
+                      onReply: () {
+                        setState(() {
+                          _replyingTo = message;
+                          _focusNode.requestFocus();
+                        });
+                      },
                     );
                   },
                 ),
@@ -410,6 +429,70 @@ class _ForumChatPageState extends State<ForumChatPage> {
           child: SafeArea(
             child: Column(
               children: [
+                if (_replyingTo != null)
+                  Container(
+                    width: double.infinity,
+                    color: Theme.of(context).cardColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.reply, size: 20, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Đang trả lời ${_replyingTo!.authorName}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                _replyingTo!.body.isNotEmpty
+                                    ? _replyingTo!.body
+                                    : 'Hình ảnh/GIF',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => setState(() => _replyingTo = null),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_imageFile != null)
+                  Stack(
+                    children: [
+                      Container(
+                        height: 100,
+                        width: double.infinity,
+                        margin: const EdgeInsets.all(8),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(_imageFile!, fit: BoxFit.contain),
+                        ),
+                      ),
+                      Positioned(
+                        top: 12,
+                        right: 12,
+                        child: IconButton(
+                          icon: const Icon(Icons.cancel),
+                          color: Colors.red,
+                          onPressed: () => setState(() => _imageFile = null),
+                        ),
+                      ),
+                    ],
+                  ),
                 if (_gifUrl != null)
                   Stack(
                     children: [
@@ -489,7 +572,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                   ),
                 ),
                 ForumComposer(
-                  showImagePicker: false, // Chat chỉ hỗ trợ emoji, GIF
+                  showImagePicker: true,
                   enabled: !isMuted && !isBanned,
                   onEmojiPressed: () {
                     setState(() {
@@ -506,7 +589,11 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       _gifUrl = url;
                     });
                   },
-                  onImageSelected: (file) {}, // Not used
+                  onImageSelected: (file) {
+                    setState(() {
+                      _imageFile = file;
+                    });
+                  },
                 ),
                 if (_showEmojiPicker)
                   SizedBox(

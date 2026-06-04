@@ -30,7 +30,9 @@ class LocalNovel {
   factory LocalNovel.fromJson(Map<String, dynamic> json) {
     final path = _readString(json, 'path');
     if (path.isEmpty) {
-      throw const FormatException('LocalNovel requires a path.');
+      throw const FormatException(
+        'LocalNovel yêu cầu phải có đường dẫn file (path).',
+      );
     }
 
     final title = _readString(json, 'title');
@@ -73,23 +75,6 @@ class NovelService {
 
   static const _key = 'local_novels_v1';
 
-  int _stablePathHash(String value) {
-    return value.codeUnits.fold<int>(
-      0,
-      (hash, codeUnit) => (hash * 31 + codeUnit) & 0x7fffffff,
-    );
-  }
-
-  String _managedFolderName(String title, String sourcePath) {
-    final safeTitle = FolderService.sanitize(
-      title,
-    ).replaceAll(RegExp(r'\s+'), '_').trim();
-    final normalizedSource = sourcePath.replaceAll('\\', '/').toLowerCase();
-    final hash = _stablePathHash(normalizedSource).toRadixString(16);
-    final titlePrefix = safeTitle.isEmpty ? 'novel' : safeTitle;
-    return '${titlePrefix}_$hash';
-  }
-
   /// Lấy toàn bộ danh sách EPUB đã nhập, mới nhất lên đầu.
   Future<List<LocalNovel>> getAll() async {
     try {
@@ -122,14 +107,32 @@ class NovelService {
         normalizedPath.contains('/_novels/');
   }
 
+  Future<bool> _isDirectNovelFilePath(String path) async {
+    final normalizedPath = path.replaceAll('\\', '/');
+    final novelsPath = (await FolderService.getNovelsPath()).replaceAll(
+      '\\',
+      '/',
+    );
+    return File(normalizedPath).parent.path.replaceAll('\\', '/') == novelsPath;
+  }
+
+  String _managedFileName(String title, String sourcePath) {
+    final sourceName = sourcePath.split(RegExp(r'[\\/]')).last;
+    const extension = '.epub';
+    final baseName = sourceName.replaceFirst(
+      RegExp(r'\.epub$', caseSensitive: false),
+      '',
+    );
+    final safeBaseName = FolderService.sanitize(
+      baseName.trim().isEmpty ? title : baseName,
+    );
+    final finalBaseName = safeBaseName.isEmpty ? 'Truyen chu' : safeBaseName;
+    return '$finalBaseName$extension';
+  }
+
   Future<String> _resolveManagedPath(String title, String sourcePath) async {
-    final folderName = _managedFolderName(title, sourcePath);
     final novelsPath = await FolderService.getNovelsPath();
-    final folder = Directory('$novelsPath/$folderName');
-    if (!await folder.exists()) {
-      await folder.create(recursive: true);
-    }
-    return '${folder.path}/book.epub';
+    return '$novelsPath/${_managedFileName(title, sourcePath)}';
   }
 
   Future<String> _resolveManagedCoverPath(
@@ -137,7 +140,11 @@ class NovelService {
     String sourcePath,
   ) async {
     final managedPath = await _resolveManagedPath(title, sourcePath);
-    return '${File(managedPath).parent.path}/cover.jpg';
+    final coverName = File(managedPath).uri.pathSegments.last.replaceFirst(
+      RegExp(r'\.epub$', caseSensitive: false),
+      '.cover.jpg',
+    );
+    return '${File(managedPath).parent.path}/$coverName';
   }
 
   Future<void> _copyToManagedStorage(
@@ -152,6 +159,9 @@ class NovelService {
     }
 
     final target = File(targetPath);
+    if (await target.exists()) {
+      throw Exception('File EPUB already exists in local library.');
+    }
     await target.parent.create(recursive: true);
     await source.copy(targetPath);
   }
@@ -232,6 +242,10 @@ class NovelService {
       });
       if (exists) return false;
 
+      if (await File(managedPath).exists() && novel.path != managedPath) {
+        return false;
+      }
+
       await _copyToManagedStorage(novel.path, managedPath);
 
       // Trích xuất ảnh bìa
@@ -282,11 +296,19 @@ class NovelService {
       for (final novel in removedNovels) {
         try {
           if (_isManagedNovelPath(novel.path)) {
-            final folder = Directory(File(novel.path).parent.path);
-            if (await folder.exists()) {
-              await folder.delete(recursive: true);
+            final novelFile = File(novel.path);
+            if (await _isDirectNovelFilePath(novel.path)) {
+              if (await novelFile.exists()) {
+                await novelFile.delete();
+              }
+            } else {
+              final folder = Directory(novelFile.parent.path);
+              if (await folder.exists()) {
+                await folder.delete(recursive: true);
+              }
             }
-          } else if (novel.coverPath.isNotEmpty) {
+          }
+          if (novel.coverPath.isNotEmpty) {
             final coverFile = File(novel.coverPath);
             if (await coverFile.exists()) {
               await coverFile.delete();

@@ -58,7 +58,9 @@ class _SearchPageState extends State<SearchPage> {
       _applyCatalog(cached, loading: false);
     }
 
-    final mangas = await DriveService.instance.getMangas(forceRefresh: forceRefresh);
+    final mangas = await DriveService.instance.getMangas(
+      forceRefresh: forceRefresh,
+    );
     if (mangas.isNotEmpty) {
       await CatalogCacheService.instance.saveCatalog(mangas);
     }
@@ -193,9 +195,9 @@ class _SearchPageState extends State<SearchPage> {
                         }).toList(),
                       ),
                       const SizedBox(height: 20),
-                      const Text(
+                      Text(
                         'Trạng thái',
-                        style: TextStyle(color: Colors.white70),
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 10),
                       Wrap(
@@ -359,12 +361,16 @@ class _SearchPageState extends State<SearchPage> {
                     onRefresh: () => _loadMangas(forceRefresh: true),
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 200),
+                      children: [
+                        const SizedBox(height: 200),
                         Center(
                           child: Text(
                             'Không tìm thấy truyện nào',
-                            style: TextStyle(color: Colors.white70),
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.color,
+                            ),
                           ),
                         ),
                       ],

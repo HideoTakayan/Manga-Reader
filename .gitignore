@@ -119,3 +119,6 @@ macos/Runner/GoogleService-Info.plist
 /scratch/
 CODE_REVIEW_AFTER_ROLLBACK.md
 implementation_plan_for_codex.md
+node_modules/
+firebase-debug.log
+firestore-debug.log

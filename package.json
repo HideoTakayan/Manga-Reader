@@ -1,0 +1,33 @@
+{
+  "name": "manga-reader",
+  "version": "1.0.0",
+  "description": "**Manga Reader** là ứng dụng di động đa nền tảng (Android/iOS) được thiết kế để giải quyết bài toán đọc truyện tranh trực tuyến với trải nghiệm người dùng cao cấp (Premium UX), loại bỏ quảng cáo và sự phụ thuộc vào các server truyện lậu thiếu ổn định. Hệ thống áp dụng mô hình **Serverless**, tận dụng tối đa hệ sinh thái **Google Cloud** (Google Drive, Firebase) để vận hành với chi phí tối thiểu nhưng hiệu năng tối đa.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "npx firebase emulators:exec --only firestore \"npx mocha test/firestore.test.js\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HideoTakayan/Manga-Reader.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/HideoTakayan/Manga-Reader/issues"
+  },
+  "homepage": "https://github.com/HideoTakayan/Manga-Reader#readme",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase-tools": "^15.19.0",
+    "mocha": "^11.7.6"
+  },
+  "dependencies": {
+    "firebase": "^12.14.0"
+  }
+}

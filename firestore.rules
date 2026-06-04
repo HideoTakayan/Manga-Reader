@@ -1,335 +1,515 @@
-rules_version = '2';
+  rules_version = '2';
 
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return signedIn() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return signedIn() && request.auth.token.email in ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
-    }
-
-    function isSafeProfileUpdate() {
-      let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64'];
-      let diffKeys = request.resource.data.diff(resource.data).affectedKeys();
-      let hasValidKeys = diffKeys.hasOnly(allowedKeys);
-      let isValidUid = !diffKeys.hasAny(['uid']) || request.resource.data.uid == request.auth.uid;
-      let isValidEmail = !diffKeys.hasAny(['email']) || (request.auth.token.email != null && request.resource.data.email == request.auth.token.email);
-      return hasValidKeys && isValidUid && isValidEmail;
-    }
-
-    function isSafeProfileCreate() {
-      let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'createdAt', 'following', 'followers', 'isOnline', 'lastSeen'];
-      let payload = request.resource.data;
-
-      return payload.keys().hasOnly(allowedKeys)
-        && payload.keys().hasAll(['uid', 'email'])
-        && payload.uid == request.auth.uid
-        && request.auth.token.email is string
-        && payload.email == request.auth.token.email
-        && payload.uid is string
-        && payload.email is string
-        && (!payload.keys().hasAny(['name']) || payload.name is string)
-        && (!payload.keys().hasAny(['bio']) || payload.bio is string)
-        && (!payload.keys().hasAny(['avatar']) || payload.avatar is string)
-        && (!payload.keys().hasAny(['authProvider']) || payload.authProvider in ['email', 'google', 'google+email'])
-        && (!payload.keys().hasAny(['isOnline']) || payload.isOnline is bool)
-        && (!payload.keys().hasAny(['following']) || payload.following is list)
-        && (!payload.keys().hasAny(['followers']) || payload.followers is list)
-        && (!payload.keys().hasAny(['hasPassword']) || payload.hasPassword is bool)
-        && (!payload.keys().hasAny(['readNotificationIds']) || payload.readNotificationIds is list)
-        && (!payload.keys().hasAny(['createdAt']) || payload.createdAt == request.time)
-        && (!payload.keys().hasAny(['lastSeen']) || payload.lastSeen == null || payload.lastSeen is timestamp);
-    }
-
-    function canSendForumMessage() {
-      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      let isExisting = exists(userPath);
-      let userDoc = isExisting ? get(userPath) : null;
-      let isNotBanned = isExisting && (!userDoc.data.keys().hasAny(['isBanned']) || userDoc.data.isBanned != true);
-      let isNotMuted = isExisting && (!userDoc.data.keys().hasAny(['mutedUntil']) || userDoc.data.mutedUntil == null || userDoc.data.mutedUntil <= request.time);
-      return signedIn() && isExisting && isNotBanned && isNotMuted;
-    }
-
-    function onlyMangaStatsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
-    }
-
-    function onlyMangaStatsCreated() {
-      return request.resource.data.keys()
-        .hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
-    }
-
-    function onlyChapterStatsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['viewCount']);
-    }
-
-    function onlyChapterStatsCreated() {
-      return request.resource.data.keys().hasOnly(['viewCount']);
-    }
-
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isSafeProfileCreate();
-      allow update: if (isOwner(userId) && isSafeProfileUpdate()) ||
-        (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'isBanned', 'mutedUntil', 'mutedReason', 'mutedBy', 'moderationUpdatedAt'
-        ]));
-      allow delete: if isAdmin();
-
-      match /history/{mangaId} {
-        allow read, write: if isOwner(userId) || isAdmin();
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      function signedIn() {
+        return request.auth != null;
       }
 
-      match /following/{mangaId} {
-        allow read, write: if isOwner(userId) || isAdmin();
+      function isOwner(userId) {
+        return signedIn() && request.auth.uid == userId;
       }
 
-      match /forum_notifications/{notificationId} {
-        allow read: if isOwner(userId) || isAdmin();
-        allow delete: if isOwner(userId) || isAdmin();
-        allow update: if isAdmin() || (isOwner(userId) 
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
-          && request.resource.data.isRead is bool);
-        allow create: if signedIn()
-          && request.auth.uid != userId
-          && request.resource.data.keys().hasOnly([
-            'type', 'recipientId', 'actorId', 'actorName', 'actorAvatar',
-            'postId', 'commentId', 'postPreview', 'title', 'body', 'route', 'createdAt', 'isRead', 'replyToCommentId'
-          ])
-          && (!request.resource.data.keys().hasAny(['commentId']) || request.resource.data.commentId is string)
-          && (!request.resource.data.keys().hasAny(['replyToCommentId']) || request.resource.data.replyToCommentId is string)
-          && request.resource.data.recipientId == userId
-          && request.resource.data.actorId == request.auth.uid
-          && request.resource.data.type in ['forum_like', 'forum_comment', 'forum_reply']
-          && request.resource.data.postId is string
-          && request.resource.data.postId.size() > 0
-          && request.resource.data.title is string
-          && request.resource.data.title.size() <= 150
-          && request.resource.data.body is string
-          && request.resource.data.body.size() <= 500
-          && request.resource.data.postPreview is string
-          && request.resource.data.postPreview.size() <= 200
-          && request.resource.data.actorName is string
-          && request.resource.data.actorName.size() <= 100
-          && request.resource.data.actorAvatar is string
-          && request.resource.data.actorAvatar.size() <= 500
-          && request.resource.data.createdAt == request.time
-          && request.resource.data.route == ('/forum/detail/' + request.resource.data.postId)
-          && request.resource.data.isRead == false
+      function isValidContent(data, maxLength, allowImage) {
+        return data.body is string
+          && data.body.size() <= maxLength
+          && (!data.keys().hasAny(['gifUrl']) || data.gifUrl is string)
+          && (!data.keys().hasAny(['imageUrl']) || data.imageUrl is string)
           && (
-              (request.resource.data.type in ['forum_like', 'forum_comment'] && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId) ||
-              (request.resource.data.type == 'forum_reply' && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.replyToCommentId)).data.authorId == userId)
-            );
+            data.body.size() > 0
+            || (data.keys().hasAny(['gifUrl']) && data.gifUrl.size() > 0)
+            || (allowImage && data.keys().hasAny(['imageUrl']) && data.imageUrl.size() > 0)
+          );
       }
-    }
 
-    match /comics/{mangaId} {
-      allow read: if true;
-      allow create: if isAdmin() || (signedIn() && onlyMangaStatsCreated());
-      allow update: if isAdmin() || (signedIn() && onlyMangaStatsChanged());
-      allow delete: if isAdmin();
+      function isAdmin() {
+        return signedIn() && request.auth.token.email is string && request.auth.token.email in ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
+      }
 
-      match /chapters/{chapterId} {
+      function isSafeProfileUpdate() {
+        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64'];
+        let diffKeys = request.resource.data.diff(resource.data).affectedKeys();
+        let hasValidKeys = diffKeys.hasOnly(allowedKeys);
+        let isValidUid = !diffKeys.hasAny(['uid']) || request.resource.data.uid == request.auth.uid;
+        let isValidEmail = !diffKeys.hasAny(['email']) || (request.auth.token.email != null && request.resource.data.email == request.auth.token.email);
+        return hasValidKeys && isValidUid && isValidEmail;
+      }
+
+      function isSafeProfileCreate() {
+        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'createdAt', 'following', 'followers', 'isOnline', 'lastSeen'];
+        let payload = request.resource.data;
+
+        return payload.keys().hasOnly(allowedKeys)
+          && payload.keys().hasAll(['uid', 'email'])
+          && payload.uid == request.auth.uid
+          && request.auth.token.email is string
+          && payload.email == request.auth.token.email
+          && payload.uid is string
+          && payload.email is string
+          && (!payload.keys().hasAny(['name']) || payload.name is string)
+          && (!payload.keys().hasAny(['bio']) || payload.bio is string)
+          && (!payload.keys().hasAny(['avatar']) || payload.avatar is string)
+          && (!payload.keys().hasAny(['authProvider']) || payload.authProvider in ['email', 'google', 'google+email'])
+          && (!payload.keys().hasAny(['isOnline']) || payload.isOnline is bool)
+          && (!payload.keys().hasAny(['following']) || payload.following is list)
+          && (!payload.keys().hasAny(['followers']) || payload.followers is list)
+          && (!payload.keys().hasAny(['hasPassword']) || payload.hasPassword is bool)
+          && (!payload.keys().hasAny(['readNotificationIds']) || payload.readNotificationIds is list)
+          && (!payload.keys().hasAny(['createdAt']) || payload.createdAt == request.time)
+          && (!payload.keys().hasAny(['lastSeen']) || payload.lastSeen == null || payload.lastSeen is timestamp);
+      }
+
+      function canInteractInForum() {
+        let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+        let isExisting = exists(userPath);
+        let userDoc = isExisting ? get(userPath) : null;
+        let isNotBanned = isExisting && (!userDoc.data.keys().hasAny(['isBanned']) || userDoc.data.isBanned != true);
+        let isNotMuted = isExisting && (!userDoc.data.keys().hasAny(['mutedUntil']) || userDoc.data.mutedUntil == null || userDoc.data.mutedUntil <= request.time);
+        return signedIn() && isExisting && isNotBanned && isNotMuted;
+      }
+
+      function isValidForumNotificationId(notificationId) {
+        let data = request.resource.data;
+        return (
+            data.type == 'forum_like'
+            && notificationId == ('post_like_' + data.postId + '_' + data.actorId)
+          )
+          || (
+            data.type == 'forum_comment'
+            && data.keys().hasAny(['commentId'])
+            && notificationId == ('post_comment_' + data.postId + '_' + data.commentId)
+          )
+          || (
+            data.type == 'forum_reply'
+            && data.keys().hasAny(['commentId'])
+            && notificationId == ('post_reply_' + data.postId + '_' + data.commentId)
+          )
+          || (
+            data.type == 'forum_comment_like'
+            && data.keys().hasAny(['commentId'])
+            && notificationId == ('comment_like_' + data.postId + '_' + data.commentId + '_' + data.actorId)
+          );
+      }
+
+      function isValidReactionCreate() {
+        return request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+      }
+
+      function onlyMangaStatsChanged() {
+        let diff = request.resource.data.diff(resource.data);
+        let isAllowedKeys = diff.affectedKeys().hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
+        let previousViewCount = resource.data.keys().hasAny(['viewCount']) ? resource.data.viewCount : 0;
+        let previousLikeCount = resource.data.keys().hasAny(['likeCount']) ? resource.data.likeCount : 0;
+        let previousRatingSum = resource.data.keys().hasAny(['ratingSum']) ? resource.data.ratingSum : 0;
+        let previousRatingCount = resource.data.keys().hasAny(['ratingCount']) ? resource.data.ratingCount : 0;
+        let ratingChanged = diff.affectedKeys().hasAny(['ratingSum', 'ratingCount']);
+        let ratingDelta = ratingChanged ? request.resource.data.ratingSum - previousRatingSum : 0;
+        let isViewValid = !diff.affectedKeys().hasAny(['viewCount']) || (request.resource.data.viewCount == previousViewCount + 1 && request.resource.data.viewCount >= 0);
+        let isLikeValid = !diff.affectedKeys().hasAny(['likeCount']) || ((request.resource.data.likeCount == previousLikeCount + 1 || request.resource.data.likeCount == previousLikeCount - 1) && request.resource.data.likeCount >= 0);
+        let isRatingValid = !ratingChanged || (
+          diff.affectedKeys().hasAll(['ratingSum', 'ratingCount'])
+          && request.resource.data.ratingCount == previousRatingCount + 1
+          && ratingDelta >= 1
+          && ratingDelta <= 5
+          && request.resource.data.ratingSum >= 0
+        );
+        return isAllowedKeys && isViewValid && isLikeValid && isRatingValid;
+      }
+
+      function onlyMangaStatsCreated() {
+        let keys = request.resource.data.keys();
+        let isAllowedKeys = keys.hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
+        let hasStats = keys.hasAny(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
+        let isViewValid = !keys.hasAny(['viewCount']) || request.resource.data.viewCount >= 0;
+        let isLikeValid = !keys.hasAny(['likeCount']) || request.resource.data.likeCount >= 0;
+        let ratingCreated = keys.hasAny(['ratingSum', 'ratingCount']);
+        let isRatingValid = !ratingCreated || (
+          keys.hasAll(['ratingSum', 'ratingCount'])
+          && request.resource.data.ratingCount == 1
+          && request.resource.data.ratingSum >= 1
+          && request.resource.data.ratingSum <= 5
+        );
+        return isAllowedKeys && hasStats && isViewValid && isLikeValid && isRatingValid;
+      }
+
+      function onlyChapterStatsChanged() {
+        let diff = request.resource.data.diff(resource.data);
+        let isAllowedKeys = diff.affectedKeys().hasOnly(['viewCount']);
+        let previousViewCount = resource.data.keys().hasAny(['viewCount']) ? resource.data.viewCount : 0;
+        let isViewValid = !diff.affectedKeys().hasAny(['viewCount']) || (request.resource.data.viewCount == previousViewCount + 1 && request.resource.data.viewCount >= 0);
+        return isAllowedKeys && isViewValid;
+      }
+
+      function onlyChapterStatsCreated() {
+        let keys = request.resource.data.keys();
+        return keys.hasOnly(['viewCount'])
+          && keys.hasAny(['viewCount'])
+          && request.resource.data.viewCount >= 0;
+      }
+
+      match /users/{userId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isSafeProfileCreate();
+        allow update: if (isOwner(userId) && isSafeProfileUpdate()) ||
+          (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isBanned', 'mutedUntil', 'mutedReason', 'mutedBy', 'moderationUpdatedAt'
+          ]));
+        allow delete: if isAdmin();
+
+        match /history/{mangaId} {
+          allow read, write: if isOwner(userId) || isAdmin();
+        }
+
+        match /following/{mangaId} {
+          allow read, write: if isOwner(userId) || isAdmin();
+        }
+
+        match /forum_notifications/{notificationId} {
+          allow read: if isOwner(userId) || isAdmin();
+          allow delete: if isOwner(userId) || isAdmin();
+          allow update: if isAdmin() || (isOwner(userId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+            && request.resource.data.isRead is bool);
+          allow create: if signedIn()
+            && request.auth.uid != userId
+            && request.resource.data.keys().hasOnly([
+              'type', 'recipientId', 'actorId', 'actorName', 'actorAvatar',
+              'postId', 'commentId', 'postPreview', 'title', 'body', 'route', 'createdAt', 'isRead', 'replyToCommentId'
+            ])
+            && (!request.resource.data.keys().hasAny(['commentId']) || request.resource.data.commentId is string)
+            && (!request.resource.data.keys().hasAny(['replyToCommentId']) || request.resource.data.replyToCommentId is string)
+            && request.resource.data.recipientId == userId
+            && request.resource.data.actorId == request.auth.uid
+            && request.resource.data.type in ['forum_like', 'forum_comment', 'forum_reply', 'forum_comment_like']
+            && isValidForumNotificationId(notificationId)
+            && request.resource.data.postId is string
+            && request.resource.data.postId.size() > 0
+            && request.resource.data.title is string
+            && request.resource.data.title.size() <= 150
+            && request.resource.data.body is string
+            && request.resource.data.body.size() <= 500
+            && request.resource.data.postPreview is string
+            && request.resource.data.postPreview.size() <= 200
+            && request.resource.data.actorName is string
+            && request.resource.data.actorName.size() <= 100
+            && request.resource.data.actorAvatar is string
+            && request.resource.data.actorAvatar.size() <= 500
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.route == ('/forum/detail/' + request.resource.data.postId)
+            && request.resource.data.isRead == false
+            && (
+                (request.resource.data.type in ['forum_like', 'forum_comment'] && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId) ||
+                (request.resource.data.type == 'forum_reply' && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.replyToCommentId)).data.authorId == userId) ||
+                (request.resource.data.type == 'forum_comment_like' && request.resource.data.keys().hasAny(['commentId']) && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorId == userId)
+              );
+        }
+      }
+
+      match /comics/{mangaId} {
         allow read: if true;
-        allow create: if isAdmin() || (signedIn() && onlyChapterStatsCreated());
-        allow update: if isAdmin() || (signedIn() && onlyChapterStatsChanged());
+        allow create: if isAdmin() || (signedIn() && onlyMangaStatsCreated());
+        allow update: if isAdmin() || (signedIn() && onlyMangaStatsChanged());
+        allow delete: if isAdmin();
+
+        match /chapters/{chapterId} {
+          allow read: if true;
+          allow create: if isAdmin() || (signedIn() && onlyChapterStatsCreated());
+          allow update: if isAdmin() || (signedIn() && onlyChapterStatsChanged());
+          allow delete: if isAdmin();
+        }
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if signedIn()
+          && (
+            (resource.data.keys().hasAny(['type']) && resource.data.type == 'system')
+            || (
+              resource.data.keys().hasAny(['mangaId'])
+              && resource.data.mangaId is string
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(resource.data.mangaId))
+            )
+            || (
+              resource.data.keys().hasAny(['comicId'])
+              && resource.data.comicId is string
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(resource.data.comicId))
+            )
+          );
+        allow create, update, delete: if isAdmin();
+      }
+
+      match /app_settings/{settingId} {
+        allow read: if true;
+        allow create, update: if isAdmin()
+          && settingId == 'home_banner'
+          && request.resource.data.keys().hasOnly(['mangaIds', 'updatedAt'])
+          && request.resource.data.mangaIds is list
+          && request.resource.data.mangaIds.size() <= 20
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isAdmin() && settingId == 'home_banner';
+      }
+
+      match /reports/{reportId} {
+        allow read: if isAdmin();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly([
+            'id', 'mangaId', 'mangaTitle', 'chapterId', 'chapterTitle',
+            'userId', 'reason', 'description', 'status', 'readerType',
+            'pageIndex', 'totalPages', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.id == reportId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.mangaId is string
+          && request.resource.data.mangaId.size() > 0
+          && request.resource.data.mangaTitle is string
+          && request.resource.data.mangaTitle.size() > 0
+          && request.resource.data.mangaTitle.size() <= 200
+          && request.resource.data.chapterId is string
+          && request.resource.data.chapterId.size() > 0
+          && request.resource.data.chapterId.size() <= 200
+          && request.resource.data.chapterTitle is string
+          && request.resource.data.chapterTitle.size() <= 200
+          && request.resource.data.reason in ['Lỗi ảnh', 'Sai chương', 'Thiếu trang', 'Khác']
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 1000
+          && request.resource.data.readerType in ['manga', 'pdf']
+          && request.resource.data.pageIndex is int
+          && request.resource.data.pageIndex >= 0
+          && request.resource.data.totalPages is int
+          && request.resource.data.totalPages >= 0
+          && (request.resource.data.totalPages == 0 || request.resource.data.pageIndex < request.resource.data.totalPages)
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'resolvedBy', 'resolvedAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'status', 'resolvedBy', 'resolvedAt', 'updatedAt'
+          ])
+          && request.resource.data.status == 'resolved'
+          && request.resource.data.resolvedBy == request.auth.uid
+          && request.resource.data.resolvedAt == request.time
+          && request.resource.data.updatedAt == request.time;
         allow delete: if isAdmin();
       }
-    }
 
-    match /notifications/{notificationId} {
-      allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
-    }
+      // =========================================================
+      // RULES CHO FORUM (PHASE 2)
+      // =========================================================
 
-    // =========================================================
-    // RULES CHO FORUM (PHASE 2)
-    // =========================================================
-
-    match /forumPosts/{postId} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly([
-          'type', 'authorId', 'authorName', 'authorAvatar', 'body', 
-          'gifUrl', 'imageUrl', 'sharedMangaId', 'sharedMangaTitle', 
-          'sharedMangaCoverUrl', 'sharedMangaAuthor', 'likeCount', 
-          'commentCount', 'viewCount', 'reportCount', 'isDeleted', 
-          'createdAt', 'updatedAt'
-        ])
-        && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.type in ['discussion', 'manga_share']
-        && request.resource.data.body is string
-        && request.resource.data.body.size() <= 2000
-        && (
-          request.resource.data.body.size() > 0 
-          || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
-          || (request.resource.data.keys().hasAny(['imageUrl']) && request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0)
-        )
-        && request.resource.data.likeCount == 0
-        && request.resource.data.commentCount == 0
-        && request.resource.data.viewCount == 0
-        && request.resource.data.reportCount == 0
-        && request.resource.data.isDeleted == false
-        && (
-          request.resource.data.type == 'discussion'
-          || (
-            request.resource.data.type == 'manga_share'
-            && request.resource.data.sharedMangaId is string
-            && request.resource.data.sharedMangaId.size() > 0
-            && request.resource.data.sharedMangaTitle is string
-            && request.resource.data.sharedMangaTitle.size() > 0
-            && request.resource.data.sharedMangaTitle.size() <= 200
-            && request.resource.data.sharedMangaCoverUrl is string
-            && request.resource.data.sharedMangaCoverUrl.size() > 0
-          )
-        );
-
-      allow update: if 
-        // Owner update content fields only
-        (isOwner(resource.data.authorId)
-          && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['body', 'gifUrl', 'imageUrl', 'updatedAt', 'isDeleted']))
-        ||
-        // Any signed-in user can update stats, only if post is not deleted
-        (signedIn()
-          && resource.data.isDeleted == false
-          && request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount', 'likeCount', 'viewCount'])
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount', 'likeCount', 'viewCount'])
-          && (
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount']) ||
-            (request.resource.data.commentCount == (resource.data.commentCount + 1) || request.resource.data.commentCount == (resource.data.commentCount - 1))
-          )
-          && (!request.resource.data.keys().hasAny(['commentCount']) || request.resource.data.commentCount >= 0)
-          && (
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeCount']) ||
-            (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
-          )
-          && (
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['viewCount']) ||
-            (request.resource.data.viewCount == (resource.data.viewCount + 1))
-          )
-        )
-        ||
-        isAdmin();
-
-      match /reactions/{userId} {
-        allow read: if signedIn();
-        allow create: if isOwner(userId) && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false;
-        allow delete: if isOwner(userId);
-        allow update: if false;
-      }
-
-      match /comments/{commentId} {
+      match /forumPosts/{postId} {
         allow read: if true;
-        allow create: if signedIn()
-          && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+        allow create: if canInteractInForum()
           && request.resource.data.keys().hasOnly([
-            'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
-            'likeCount', 'isDeleted', 'createdAt', 'updatedAt',
-            'replyToCommentId', 'replyToAuthorName', 'replyToUserId'
+            'type', 'authorId', 'authorName', 'authorAvatar', 'body',
+            'gifUrl', 'imageUrl', 'sharedMangaId', 'sharedMangaTitle',
+            'sharedMangaCoverUrl', 'sharedMangaAuthor', 'likeCount',
+            'commentCount', 'viewCount', 'reportCount', 'isDeleted',
+            'createdAt', 'updatedAt'
           ])
           && request.resource.data.authorId == request.auth.uid
-          && request.resource.data.body is string
-          && request.resource.data.body.size() > 0 
-          && request.resource.data.body.size() <= 1000
-          && request.resource.data.likeCount == 0
-          && request.resource.data.isDeleted == false;
-
-        allow update: if 
-          (isOwner(resource.data.authorId)
-            && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['body', 'isDeleted', 'updatedAt']))
-          ||
-          (signedIn()
-            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
-            && resource.data.isDeleted == false
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
-            && (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
+          && (
+            isValidContent(request.resource.data, 2000, true)
+            || (
+              request.resource.data.type == 'manga_share'
+              && request.resource.data.body is string
+              && request.resource.data.body.size() <= 2000
+              && (!request.resource.data.keys().hasAny(['gifUrl']) || request.resource.data.gifUrl is string)
+              && (!request.resource.data.keys().hasAny(['imageUrl']) || request.resource.data.imageUrl is string)
+            )
           )
-          || isAdmin();
+          && request.resource.data.type in ['discussion', 'manga_share']
+          && (
+            request.resource.data.body.size() > 0
+            || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
+            || (request.resource.data.keys().hasAny(['imageUrl']) && request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0)
+            || request.resource.data.type == 'manga_share'
+          )
+          && request.resource.data.likeCount == 0
+          && request.resource.data.commentCount == 0
+          && request.resource.data.viewCount == 0
+          && request.resource.data.reportCount == 0
+          && request.resource.data.isDeleted == false
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && (
+            request.resource.data.type == 'discussion'
+            || (
+              request.resource.data.type == 'manga_share'
+              && request.resource.data.sharedMangaId is string
+              && request.resource.data.sharedMangaId.size() > 0
+              && request.resource.data.sharedMangaTitle is string
+              && request.resource.data.sharedMangaTitle.size() > 0
+              && request.resource.data.sharedMangaTitle.size() <= 200
+              && request.resource.data.sharedMangaCoverUrl is string
+              && request.resource.data.sharedMangaCoverUrl.size() > 0
+            )
+          );
+
+        allow update: if
+          // Owner update content fields only (must not be deleted)
+            (isOwner(resource.data.authorId)
+              && resource.data.isDeleted == false
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['body', 'imageUrl', 'gifUrl', 'updatedAt'])
+              && isValidContent(request.resource.data, 2000, true)
+              && request.resource.data.updatedAt == request.time)
+          ||
+          // Owner soft-delete only (false -> true)
+          (isOwner(resource.data.authorId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'updatedAt'])
+            && request.resource.data.isDeleted == true
+            && resource.data.isDeleted == false
+            && request.resource.data.updatedAt == request.time)
+          ||
+          // Any signed-in user can update stats, only if post is not deleted
+          (signedIn()
+            && resource.data.isDeleted == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount', 'likeCount', 'viewCount'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount', 'likeCount', 'viewCount'])
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['commentCount']) ||
+              (request.resource.data.commentCount == (resource.data.commentCount + 1) || request.resource.data.commentCount == (resource.data.commentCount - 1))
+            )
+            && (!request.resource.data.keys().hasAny(['commentCount']) || request.resource.data.commentCount >= 0)
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['likeCount']) ||
+              (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
+            )
+            && (!request.resource.data.keys().hasAny(['likeCount']) || request.resource.data.likeCount >= 0)
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['viewCount']) ||
+              (request.resource.data.viewCount == (resource.data.viewCount + 1))
+            )
+            && (!request.resource.data.keys().hasAny(['viewCount']) || request.resource.data.viewCount >= 0)
+          )
+          ||
+          isAdmin();
 
         match /reactions/{userId} {
           allow read: if signedIn();
           allow create: if isOwner(userId)
-            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
-            && get(/databases/$(database)/documents/forumPosts/$(postId)/comments/$(commentId)).data.isDeleted == false;
+            && canInteractInForum()
+            && isValidReactionCreate()
+            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false;
           allow delete: if isOwner(userId);
           allow update: if false;
         }
+
+        match /comments/{commentId} {
+          allow read: if true;
+          allow create: if canInteractInForum()
+            && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+            && request.resource.data.keys().hasOnly([
+              'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 'imageUrl',
+              'likeCount', 'isDeleted', 'createdAt', 'updatedAt',
+              'replyToCommentId', 'replyToAuthorName', 'replyToUserId'
+            ])
+            && request.resource.data.authorId == request.auth.uid
+            && isValidContent(request.resource.data, 1000, true)
+            && request.resource.data.likeCount == 0
+            && request.resource.data.isDeleted == false
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.updatedAt == request.time;
+
+          allow update: if
+            // Owner update content (must not be deleted)
+            (isOwner(resource.data.authorId)
+              && resource.data.isDeleted == false
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['body', 'gifUrl', 'imageUrl', 'updatedAt'])
+              && isValidContent(request.resource.data, 1000, true)
+              && request.resource.data.updatedAt == request.time)
+            ||
+            // Owner soft-delete only (false -> true)
+            (isOwner(resource.data.authorId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'updatedAt'])
+              && request.resource.data.isDeleted == true
+              && resource.data.isDeleted == false
+              && request.resource.data.updatedAt == request.time)
+            ||
+            (signedIn()
+              && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+              && resource.data.isDeleted == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+              && (request.resource.data.likeCount == (resource.data.likeCount + 1) || request.resource.data.likeCount == (resource.data.likeCount - 1))
+              && request.resource.data.likeCount >= 0
+            )
+            || isAdmin();
+
+          match /reactions/{userId} {
+            allow read: if signedIn();
+            allow create: if isOwner(userId) && canInteractInForum()
+              && isValidReactionCreate()
+              && get(/databases/$(database)/documents/forumPosts/$(postId)).data.isDeleted == false
+              && get(/databases/$(database)/documents/forumPosts/$(postId)/comments/$(commentId)).data.isDeleted == false;
+            allow delete: if isOwner(userId);
+            allow update: if false;
+          }
+        }
+      }
+
+      match /forumMessages/{messageId} {
+        allow read: if true;
+        allow create: if canInteractInForum()
+          && request.resource.data.keys().hasOnly([
+            'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 'imageUrl',
+            'isDeleted', 'createdAt', 'authorIsAdmin', 'replyToMessageId', 'replyToAuthorName', 'replyToBody'
+          ])
+          && request.resource.data.authorId == request.auth.uid
+          && isValidContent(request.resource.data, 1000, true)
+          && (!request.resource.data.keys().hasAny(['authorIsAdmin']) || request.resource.data.authorIsAdmin == isAdmin())
+          && request.resource.data.isDeleted == false
+          && request.resource.data.createdAt == request.time;
+
+        allow update: if
+          (isOwner(resource.data.authorId) || isAdmin())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted'])
+          && request.resource.data.isDeleted == true
+          && resource.data.isDeleted == false;
+      }
+
+      match /forumReports/{reportId} {
+        allow read: if isAdmin();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly([
+            'id', 'reporterId', 'targetType', 'targetId', 'postId',
+            'reason', 'createdAt', 'status'
+          ])
+          && request.resource.data.id == reportId
+          && reportId == request.auth.uid + '_' + request.resource.data.targetType + '_' + request.resource.data.targetId
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.targetType in ['post', 'comment', 'message']
+          && request.resource.data.reason is string
+          && request.resource.data.reason.size() > 0
+          && request.resource.data.reason.size() <= 1000
+          && request.resource.data.targetId is string
+          && request.resource.data.targetId.size() > 0
+          && request.resource.data.postId is string
+          && (request.resource.data.targetType == 'message' || request.resource.data.postId.size() > 0)
+          && (request.resource.data.targetType != 'post' || request.resource.data.postId == request.resource.data.targetId)
+          && (request.resource.data.targetType != 'message' || request.resource.data.postId == '')
+          && (request.resource.data.targetType != 'post' || (
+                exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)) &&
+                get(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)).data.isDeleted == false
+            ))
+          && (request.resource.data.targetType != 'comment' || (
+                exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)) &&
+                get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)).data.isDeleted == false
+            ))
+          && (request.resource.data.targetType != 'message' || (
+                exists(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)) &&
+                get(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)).data.isDeleted == false
+            ));
+        allow update, delete: if isAdmin();
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
       }
     }
-
-    match /forumMessages/{messageId} {
-      allow read: if true;
-      allow create: if canSendForumMessage()
-        && request.resource.data.keys().hasOnly([
-          'authorId', 'authorName', 'authorAvatar', 'body', 'gifUrl', 
-          'isDeleted', 'createdAt', 'authorIsAdmin'
-        ])
-        && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.body is string
-        && request.resource.data.body.size() <= 1000
-        && (
-          request.resource.data.body.size() > 0 
-          || (request.resource.data.keys().hasAny(['gifUrl']) && request.resource.data.gifUrl is string && request.resource.data.gifUrl.size() > 0)
-        )
-        && (!request.resource.data.keys().hasAny(['authorIsAdmin']) || request.resource.data.authorIsAdmin == isAdmin())
-        && request.resource.data.isDeleted == false;
-
-      allow update: if 
-        (isOwner(resource.data.authorId) || isAdmin())
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted'])
-        && request.resource.data.isDeleted == true
-        && resource.data.isDeleted == false;
-    }
-
-    match /forumReports/{reportId} {
-      allow read: if isAdmin();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly([
-          'id', 'reporterId', 'targetType', 'targetId', 'postId', 
-          'reason', 'createdAt', 'status'
-        ])
-        && request.resource.data.id == reportId
-        && reportId == request.auth.uid + '_' + request.resource.data.targetType + '_' + request.resource.data.targetId
-        && request.resource.data.reporterId == request.auth.uid
-        && request.resource.data.status == 'pending'
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.targetType in ['post', 'comment', 'message']
-        && request.resource.data.reason is string
-        && request.resource.data.reason.size() > 0
-        && request.resource.data.reason.size() <= 1000
-        && request.resource.data.targetId is string
-        && request.resource.data.targetId.size() > 0
-        && request.resource.data.postId is string
-        && (request.resource.data.targetType == 'message' || request.resource.data.postId.size() > 0)
-        && (request.resource.data.targetType != 'post' || request.resource.data.postId == request.resource.data.targetId)
-        && (request.resource.data.targetType != 'message' || request.resource.data.postId == '')
-        && (request.resource.data.targetType != 'post' || (
-              exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)) &&
-              get(/databases/$(database)/documents/forumPosts/$(request.resource.data.targetId)).data.isDeleted == false
-           ))
-        && (request.resource.data.targetType != 'comment' || (
-              exists(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)) &&
-              get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.targetId)).data.isDeleted == false
-           ))
-        && (request.resource.data.targetType != 'message' || (
-              exists(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)) &&
-              get(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)).data.isDeleted == false
-           ));
-      allow update, delete: if isAdmin();
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
   }
-}

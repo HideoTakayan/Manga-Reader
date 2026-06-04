@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/forum_post.dart';
-import '../models/forum_comment.dart';
+import 'package:manga_reader/features/forum/models/forum_post.dart';
+import 'package:manga_reader/features/forum/models/forum_comment.dart';
 import '../models/forum_message.dart';
 import '../models/forum_report.dart';
 
@@ -91,6 +91,10 @@ abstract class ForumRepository {
     required String authorAvatar,
     required String body,
     String? gifUrl,
+    File? imageFile,
+    String? replyToMessageId,
+    String? replyToAuthorName,
+    String? replyToBody,
   });
 
   // Moderation

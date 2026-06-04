@@ -202,12 +202,14 @@ class FolderService {
   }
 
   static Future<String> getNovelFilePath(String title) async {
-    final folder = await getNovelFolderByTitle(title);
-    return '$folder/book.epub';
+    final safeTitle = sanitize(title);
+    final finalTitle = safeTitle.isEmpty ? 'Truyen chu' : safeTitle;
+    return '${await getNovelsPath()}/$finalTitle.epub';
   }
 
   static Future<String> getNovelCoverPath(String title) async {
-    final folder = await getNovelFolderByTitle(title);
-    return '$folder/cover.jpg';
+    final safeTitle = sanitize(title);
+    final finalTitle = safeTitle.isEmpty ? 'Truyen chu' : safeTitle;
+    return '${await getNovelsPath()}/$finalTitle.cover.jpg';
   }
 }

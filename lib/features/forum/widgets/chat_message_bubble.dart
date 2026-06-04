@@ -11,6 +11,7 @@ class ChatMessageBubble extends StatelessWidget {
   final void Function(Duration)? onMute;
   final VoidCallback? onUnmute;
   final VoidCallback? onReport;
+  final VoidCallback? onReply;
 
   const ChatMessageBubble({
     super.key,
@@ -19,6 +20,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onMute,
     this.onUnmute,
     this.onReport,
+    this.onReply,
   });
 
   @override
@@ -28,7 +30,7 @@ class ChatMessageBubble extends StatelessWidget {
     final currentUserIsAdmin = AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email);
 
     return GestureDetector(
-      onLongPress: (!isMe && !message.isDeleted) ? () => _showOptionsMenu(context, currentUserIsAdmin) : null,
+      onLongPress: !message.isDeleted ? () => _showOptionsMenu(context, currentUserIsAdmin, isMe) : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
@@ -120,6 +122,68 @@ class ChatMessageBubble extends StatelessWidget {
                         ? CrossAxisAlignment.end
                         : CrossAxisAlignment.start,
                     children: [
+                      if (message.replyToMessageId != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border(
+                              left: BorderSide(
+                                color: isMe ? Colors.white : Theme.of(context).primaryColor,
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                message.replyToAuthorName ?? 'Ai đó',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isMe ? Colors.white70 : Theme.of(context).primaryColor,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                message.replyToBody ?? 'Hình ảnh/GIF',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isMe ? Colors.white70 : Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (message.imageUrl != null && !message.isDeleted)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: (message.body.isNotEmpty || message.gifUrl != null) ? 8.0 : 0,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: CachedNetworkImage(
+                              imageUrl: message.imageUrl!,
+                              width: 200,
+                              fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                height: 150,
+                                width: 200,
+                                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) =>
+                                  const Icon(Icons.error),
+                            ),
+                          ),
+                        ),
                       if (message.gifUrl != null && !message.isDeleted)
                         Padding(
                           padding: EdgeInsets.only(
@@ -183,7 +247,7 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  void _showOptionsMenu(BuildContext context, bool isAdmin) {
+  void _showOptionsMenu(BuildContext context, bool isAdmin, bool isMe) {
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -192,14 +256,23 @@ class ChatMessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.report, color: Colors.orange),
-                title: const Text('Báo cáo vi phạm'),
+                leading: const Icon(Icons.reply),
+                title: const Text('Trả lời tin nhắn này'),
                 onTap: () {
                   Navigator.pop(context);
-                  onReport?.call();
+                  onReply?.call();
                 },
               ),
-              if (isAdmin) ...[
+              if (!isMe)
+                ListTile(
+                  leading: const Icon(Icons.report, color: Colors.orange),
+                  title: const Text('Báo cáo vi phạm'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onReport?.call();
+                  },
+                ),
+              if (isAdmin || isMe) ...[
                 const Divider(),
                 ListTile(
                   leading: const Icon(Icons.delete, color: Colors.red),
@@ -209,6 +282,8 @@ class ChatMessageBubble extends StatelessWidget {
                     onDelete?.call();
                   },
                 ),
+              ],
+              if (isAdmin && !isMe) ...[
                 const Divider(),
                 ListTile(
                   leading: const Icon(Icons.timer_off),

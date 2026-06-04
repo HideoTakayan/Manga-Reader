@@ -20,6 +20,18 @@ class ImageUploadService {
       maxWidth: 1200,
     );
   }
+  static Future<String> uploadChatImage(
+    File imageFile,
+    String uid,
+  ) async {
+    return _uploadImage(
+      imageFile: imageFile,
+      folder: 'manga_reader/chats',
+      publicIdPrefix: 'chat_$uid',
+      maxSizeLimit: 3 * 1024 * 1024, // 3MB
+      maxWidth: 1200,
+    );
+  }
 
   static Future<String> uploadAvatarImage(File imageFile, String uid) async {
     return _uploadImage(

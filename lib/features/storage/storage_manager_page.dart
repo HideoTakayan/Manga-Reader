@@ -128,9 +128,23 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     );
     if (confirm != true) return;
 
-    for (final chapter in broken) {
-      await DownloadService.instance.deleteDownload(chapter.chapterId);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      for (final chapter in broken) {
+        await DownloadService.instance.deleteDownload(chapter.chapterId);
+      }
+    } finally {
+      if (mounted) {
+        Navigator.pop(context); // Tắt vòng xoay
+      }
     }
+    
     if (!mounted) return;
     _reload();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -193,11 +207,25 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     );
     if (confirm != true) return;
 
-    for (final row in deletable) {
-      await DownloadService.instance.deleteDownload(
-        row['chapterId']?.toString() ?? '',
-      );
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      for (final row in deletable) {
+        await DownloadService.instance.deleteDownload(
+          row['chapterId']?.toString() ?? '',
+        );
+      }
+    } finally {
+      if (mounted) {
+        Navigator.pop(context); // Tắt vòng xoay
+      }
     }
+    
     if (!mounted) return;
     _reload();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -287,10 +315,24 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     );
     if (confirm != true) return;
 
-    await DownloadService.instance.deleteMangaDownloads(
-      group.mangaId,
-      group.mangaTitle,
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
     );
+
+    try {
+      await DownloadService.instance.deleteMangaDownloads(
+        group.mangaId,
+        group.mangaTitle,
+      );
+    } finally {
+      if (mounted) {
+        Navigator.pop(context); // Tắt vòng xoay
+      }
+    }
+    
     if (!mounted) return;
     _reload();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -320,7 +362,9 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Không thể tải dữ liệu: ${snapshot.error}'));
+            return Center(
+              child: Text('Không thể tải dữ liệu: ${snapshot.error}'),
+            );
           }
 
           final data = snapshot.data ?? _StorageSnapshot.empty();
@@ -335,7 +379,10 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                     color: theme.iconTheme.color?.withValues(alpha: 0.3),
                   ),
                   const SizedBox(height: 12),
-                  Text('Chưa có chapter tải xuống', style: theme.textTheme.titleMedium),
+                  Text(
+                    'Chưa có chapter tải xuống',
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => context.push('/downloads'),
@@ -360,7 +407,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Theo truyện',
+                  'Truyện đã tải',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -375,7 +422,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                       await DownloadService.instance.deleteDownload(
                         chapter.chapterId,
                       );
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       _reload();
                       messenger.showSnackBar(
                         SnackBar(
@@ -518,6 +565,8 @@ class _MangaStorageCard extends StatelessWidget {
         subtitle: Text(
           '${group.chapterCount} chapter • ${_formatBytes(group.totalBytes)}'
           '${group.brokenCount > 0 ? ' • ${group.brokenCount} lỗi' : ''}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         trailing: IconButton(
           tooltip: 'Xóa tải xuống truyện này',
@@ -542,6 +591,8 @@ class _MangaStorageCard extends StatelessWidget {
                 chapter.exists
                     ? '${_formatBytes(chapter.sizeBytes)} • ${_formatDate(chapter.downloadedAt)}'
                     : 'Không tìm thấy file local',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               trailing: Wrap(
                 spacing: 0,

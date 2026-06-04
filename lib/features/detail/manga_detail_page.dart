@@ -7,6 +7,7 @@ import '../../data/models.dart';
 import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../services/history_service.dart';
+import '../../services/interaction_service.dart';
 import '../../services/library_service.dart';
 import '../../services/library_status_service.dart';
 import '../../services/download_service.dart';
@@ -175,7 +176,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       final mangas = await DriveService.instance.getMangas(forceRefresh: true);
       final manga = mangas.firstWhere(
         (c) => c.id == widget.mangaId,
-        orElse: () => throw Exception('Manga not found on server'),
+        orElse: () => throw Exception('Không tìm thấy truyện trên máy chủ'),
       );
 
       final chapters = await DriveService.instance.getChapters(widget.mangaId);
@@ -404,7 +405,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             if (value == 'download_all') {
                               _downloadManyChapters(chapters);
                             } else if (value == 'download_latest_10') {
-                              _downloadManyChapters(chapters.take(10).toList());
+                              _downloadManyChapters(_latestChapters(chapters));
                             } else if (value == 'delete_all') {
                               _deleteAllDownloads(chapters);
                             }
@@ -463,15 +464,23 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
                 // 5. Danh sách các chương (Hiển thị dạng List)
-                ChapterListSliver(
-                  displayChapters: displayChapters,
-                  mangaId: widget.mangaId,
-                  manga: manga,
-                  localMangaInfo: _manga != null
-                      ? _cloudToLocal(_manga!)
-                      : null,
-                  theme: theme,
-                  onChapterRead: _fetchData,
+                StreamBuilder<Map<String, int>>(
+                  stream: InteractionService.instance.streamChapterViews(
+                    widget.mangaId,
+                  ),
+                  builder: (context, snapshot) {
+                    return ChapterListSliver(
+                      displayChapters: displayChapters,
+                      mangaId: widget.mangaId,
+                      manga: manga,
+                      localMangaInfo: _manga != null
+                          ? _cloudToLocal(_manga!)
+                          : null,
+                      chapterViews: snapshot.data ?? const {},
+                      theme: theme,
+                      onChapterRead: _fetchData,
+                    );
+                  },
                 ),
 
                 // Khoảng trống dưới cùng để không bị che bởi Bottom Dock
@@ -1004,9 +1013,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     await LibraryStatusService.instance.setTags(widget.mangaId, tags);
     await _fetchLocalReaderData();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Đã cập nhật tag')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Đã cập nhật tag')));
   }
 
   IconData _statusIcon(MangaReadingStatus? status) {
@@ -1099,6 +1108,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         ),
       );
     }
+  }
+
+  List<CloudChapter> _latestChapters(List<CloudChapter> chapters) {
+    if (chapters.length <= 10) return chapters;
+    return chapters.sublist(chapters.length - 10);
   }
 
   Future<void> _deleteAllDownloads(List<CloudChapter> chapters) async {

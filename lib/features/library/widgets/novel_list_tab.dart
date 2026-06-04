@@ -118,7 +118,9 @@ class _NovelListTabState extends State<NovelListTab>
         itemBuilder: (context, index) {
           final novel = _novels[index];
           final isMissingLegacy = novel.path.startsWith('MISSING_FILE_Legacy|');
-          final exists = isMissingLegacy ? false : File(novel.path).existsSync();
+          final exists = isMissingLegacy
+              ? false
+              : File(novel.path).existsSync();
           return _NovelTile(
             novel: novel,
             fileExists: exists,
@@ -127,7 +129,9 @@ class _NovelListTabState extends State<NovelListTab>
               if (isMissingLegacy) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Sách "${novel.title}" ở bản cũ không còn tồn tại trên máy.'),
+                    content: Text(
+                      'Sách "${novel.title}" ở bản cũ không còn tồn tại trên máy.',
+                    ),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
@@ -183,8 +187,8 @@ class _NovelTile extends StatelessWidget {
               color: isMissingLegacy
                   ? Colors.redAccent.withValues(alpha: 0.5)
                   : (fileExists
-                      ? Colors.white12
-                      : Colors.orange.withValues(alpha: 0.5)),
+                        ? Colors.white12
+                        : Colors.orange.withValues(alpha: 0.5)),
             ),
           ),
           child: Padding(
@@ -202,8 +206,14 @@ class _NovelTile extends StatelessWidget {
                       colors: isMissingLegacy
                           ? [Colors.red[900]!, Colors.red[700]!]
                           : (fileExists
-                              ? [const Color(0xFF1A3A6B), const Color(0xFF2A5D9F)]
-                              : [const Color(0xFF4A2800), const Color(0xFF7A4500)]),
+                                ? [
+                                    const Color(0xFF1A3A6B),
+                                    const Color(0xFF2A5D9F),
+                                  ]
+                                : [
+                                    const Color(0xFF4A2800),
+                                    const Color(0xFF7A4500),
+                                  ]),
                     ),
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
@@ -214,7 +224,8 @@ class _NovelTile extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: novel.coverPath.isNotEmpty &&
+                  child:
+                      novel.coverPath.isNotEmpty &&
                           File(novel.coverPath).existsSync() &&
                           !isMissingLegacy
                       ? ClipRRect(
@@ -230,13 +241,13 @@ class _NovelTile extends StatelessWidget {
                           isMissingLegacy
                               ? Icons.error_outline
                               : (fileExists
-                                  ? Icons.menu_book_rounded
-                                  : Icons.broken_image_outlined),
+                                    ? Icons.menu_book_rounded
+                                    : Icons.broken_image_outlined),
                           color: isMissingLegacy
                               ? Colors.red[200]
                               : (fileExists
-                                  ? Colors.blue[200]
-                                  : Colors.orange[300]),
+                                    ? Colors.blue[200]
+                                    : Colors.orange[300]),
                           size: 26,
                         ),
                 ),
@@ -250,7 +261,9 @@ class _NovelTile extends StatelessWidget {
                         style: TextStyle(
                           color: isMissingLegacy
                               ? Colors.red[300]
-                              : (fileExists ? Colors.white : Colors.orange[300]),
+                              : (fileExists
+                                    ? Colors.white
+                                    : Colors.orange[300]),
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -262,8 +275,10 @@ class _NovelTile extends StatelessWidget {
                         isMissingLegacy
                             ? '❌ Sách cũ bị lỗi không mở được (Giữ lâu để xóa)'
                             : (fileExists
-                                ? 'EPUB • Giữ lâu để xóa'
-                                : '⚠️ File không còn tồn tại'),
+                                  ? 'EPUB • Giữ lâu để xóa'
+                                  : '⚠️ File không còn tồn tại'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white38,
                           fontSize: 11,
@@ -277,8 +292,8 @@ class _NovelTile extends StatelessWidget {
                   color: isMissingLegacy
                       ? Colors.red.withValues(alpha: 0.4)
                       : (fileExists
-                          ? Colors.white24
-                          : Colors.orange.withValues(alpha: 0.4)),
+                            ? Colors.white24
+                            : Colors.orange.withValues(alpha: 0.4)),
                 ),
               ],
             ),

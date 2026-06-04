@@ -120,8 +120,10 @@ class FirebaseForumRepository implements ForumRepository {
     String? gifUrl,
   }) async {
     final trimmedBody = body.trim();
-    if (trimmedBody.isEmpty && gifUrl == null) {
-      throw Exception('Nội dung không được để trống.');
+    if (sharedMangaId.trim().isEmpty ||
+        sharedMangaTitle.trim().isEmpty ||
+        sharedMangaCoverUrl.trim().isEmpty) {
+      throw Exception('Thiếu thông tin truyện để chia sẻ.');
     }
     if (trimmedBody.length > 2000) {
       throw Exception('Nội dung quá dài (tối đa 2000 ký tự).');
@@ -218,23 +220,28 @@ class FirebaseForumRepository implements ForumRepository {
       replyToUserId: replyToUserId,
     );
 
-    final postSnapshot = await postRef.get();
-    if (!postSnapshot.exists) return;
-    final postData = postSnapshot.data() as Map<String, dynamic>;
-    if (postData['isDeleted'] == true) {
-      throw Exception('Không thể bình luận. Bài viết này đã bị xóa.');
-    }
-
-    final postAuthorId = postData['authorId'] as String;
-    final postBody = postData['body'] as String? ?? '';
-    final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
-
-    String preview = postBody.isNotEmpty
-        ? postBody
-        : (sharedMangaTitle ?? 'Bài viết');
-    if (preview.length > 50) preview = '${preview.substring(0, 50)}...';
+    late String postAuthorId;
+    late String preview;
 
     await _firestore.runTransaction((transaction) async {
+      final postSnapshot = await transaction.get(postRef);
+      if (!postSnapshot.exists) {
+        throw Exception('Bài viết không tồn tại.');
+      }
+      final postData = postSnapshot.data() as Map<String, dynamic>;
+      if (postData['isDeleted'] == true) {
+        throw Exception('Không thể bình luận. Bài viết này đã bị xóa.');
+      }
+
+      postAuthorId = postData['authorId'] as String;
+      final postBody = postData['body'] as String? ?? '';
+      final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
+
+      preview = postBody.isNotEmpty
+          ? postBody
+          : (sharedMangaTitle ?? 'Bài viết');
+      if (preview.length > 50) preview = '${preview.substring(0, 50)}...';
+
       transaction.set(commentRef, comment.toFirestore());
       transaction.update(postRef, {'commentCount': FieldValue.increment(1)});
     });
@@ -289,24 +296,26 @@ class FirebaseForumRepository implements ForumRepository {
     final postRef = _firestore.collection('forumPosts').doc(postId);
     final reactionRef = postRef.collection('reactions').doc(uid);
 
-    final postSnapshot = await postRef.get();
-    if (!postSnapshot.exists) return;
-    final postData = postSnapshot.data() as Map<String, dynamic>;
-    if (postData['isDeleted'] == true) {
-      throw Exception('Không thể thích. Bài viết này đã bị xóa.');
-    }
-    final postAuthorId = postData['authorId'] as String;
-    final postBody = postData['body'] as String? ?? '';
-    final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
-
-    String preview = postBody.isNotEmpty
-        ? postBody
-        : (sharedMangaTitle ?? 'Bài viết');
-    if (preview.length > 50) preview = '${preview.substring(0, 50)}...';
-
     bool isNewLike = false;
+    late String postAuthorId;
+    late String preview;
 
     await _firestore.runTransaction((transaction) async {
+      final postSnapshot = await transaction.get(postRef);
+      if (!postSnapshot.exists) return;
+      final postData = postSnapshot.data() as Map<String, dynamic>;
+      if (postData['isDeleted'] == true) {
+        throw Exception('Không thể thích. Bài viết này đã bị xóa.');
+      }
+      postAuthorId = postData['authorId'] as String;
+      final postBody = postData['body'] as String? ?? '';
+      final sharedMangaTitle = postData['sharedMangaTitle'] as String?;
+
+      preview = postBody.isNotEmpty
+          ? postBody
+          : (sharedMangaTitle ?? 'Bài viết');
+      if (preview.length > 50) preview = '${preview.substring(0, 50)}...';
+
       final reactionSnapshot = await transaction.get(reactionRef);
       if (reactionSnapshot.exists) {
         transaction.delete(reactionRef);
@@ -442,12 +451,11 @@ class FirebaseForumRepository implements ForumRepository {
     }
 
     final snapshot = await query.get();
-    final reports = snapshot.docs.map((doc) => ForumReport.fromFirestore(doc)).toList();
+    final reports = snapshot.docs
+        .map((doc) => ForumReport.fromFirestore(doc))
+        .toList();
 
-    return (
-      reports,
-      snapshot.docs.isNotEmpty ? snapshot.docs.last : null,
-    );
+    return (reports, snapshot.docs.isNotEmpty ? snapshot.docs.last : null);
   }
 
   @override
@@ -500,13 +508,22 @@ class FirebaseForumRepository implements ForumRepository {
     required String authorAvatar,
     required String body,
     String? gifUrl,
+    File? imageFile,
+    String? replyToMessageId,
+    String? replyToAuthorName,
+    String? replyToBody,
   }) async {
     final trimmedBody = body.trim();
-    if (trimmedBody.isEmpty && gifUrl == null) {
+    if (trimmedBody.isEmpty && gifUrl == null && imageFile == null) {
       throw Exception('Nội dung tin nhắn không được để trống.');
     }
     if (trimmedBody.length > 1000) {
       throw Exception('Tin nhắn quá dài (tối đa 1000 ký tự).');
+    }
+
+    String? imageUrl;
+    if (imageFile != null) {
+      imageUrl = await ImageUploadService.uploadChatImage(imageFile, uid);
     }
 
     final messageRef = _firestore.collection('forumMessages').doc();
@@ -517,8 +534,14 @@ class FirebaseForumRepository implements ForumRepository {
       authorAvatar: authorAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
-      authorIsAdmin: AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email),
+      imageUrl: imageUrl,
       createdAt: DateTime.now(), // Overwritten by server timestamp
+      authorIsAdmin: AdminConfig.isAdmin(
+        FirebaseAuth.instance.currentUser?.email,
+      ),
+      replyToMessageId: replyToMessageId,
+      replyToAuthorName: replyToAuthorName,
+      replyToBody: replyToBody,
     );
 
     await messageRef.set(message.toFirestore());

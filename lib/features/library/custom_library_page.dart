@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/library_service.dart';
 import '../../services/library_status_service.dart';
 import '../../services/local_scan_service.dart';
 import '../../services/novel_service.dart';
 import '../../data/database_helper.dart';
+import '../../data/models.dart';
 import '../../services/ui_service.dart';
 import '../../services/download_service.dart';
 import '../../data/drive_service.dart';
@@ -28,6 +30,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
       []; // Filter theo trạng thái: Đang tiến hành / Hoàn thành / Drop
   final List<MangaReadingStatus> _selectedReadingStatuses = [];
   final List<String> _selectedTags = [];
+  LibrarySortMode _sortMode = LibrarySortMode.updatedDesc;
+  LibraryViewMode _viewMode = LibraryViewMode.grid;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
 
@@ -37,6 +41,47 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
   // Counter dùng để force rebuild NovelListTab khi import EPUB mới
   // (AutomaticKeepAliveClientMixin giữ state nên setState() trên parent không đủ)
   int _novelRefreshKey = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLibraryDisplayPrefs();
+  }
+
+  Future<void> _loadLibraryDisplayPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _sortMode = LibrarySortMode.values.firstWhere(
+        (mode) => mode.name == prefs.getString('library_sort_mode'),
+        orElse: () => LibrarySortMode.updatedDesc,
+      );
+      _viewMode = LibraryViewMode.values.firstWhere(
+        (mode) => mode.name == prefs.getString('library_view_mode'),
+        orElse: () => LibraryViewMode.grid,
+      );
+    });
+  }
+
+  Future<void> _setSortMode(
+    LibrarySortMode mode,
+    StateSetter setModalState,
+  ) async {
+    setState(() => _sortMode = mode);
+    setModalState(() {});
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('library_sort_mode', mode.name);
+  }
+
+  Future<void> _setViewMode(
+    LibraryViewMode mode,
+    StateSetter setModalState,
+  ) async {
+    setState(() => _viewMode = mode);
+    setModalState(() {});
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('library_view_mode', mode.name);
+  }
 
   @override
   void dispose() {
@@ -219,17 +264,45 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             ],
                           ],
                         ),
-                        const Center(
-                          child: Text(
-                            'Chưa khả dụng',
-                            style: TextStyle(color: Colors.grey),
-                          ),
+                        ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            _buildSortItem(
+                              'Mới cập nhật',
+                              Icons.update,
+                              LibrarySortMode.updatedDesc,
+                              setModalState,
+                            ),
+                            _buildSortItem(
+                              'Tên A-Z',
+                              Icons.sort_by_alpha,
+                              LibrarySortMode.titleAsc,
+                              setModalState,
+                            ),
+                            _buildSortItem(
+                              'Trạng thái đọc',
+                              Icons.bookmark_outline,
+                              LibrarySortMode.readingStatus,
+                              setModalState,
+                            ),
+                          ],
                         ),
-                        const Center(
-                          child: Text(
-                            'Chưa khả dụng',
-                            style: TextStyle(color: Colors.grey),
-                          ),
+                        ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            _buildViewItem(
+                              'Lưới bìa',
+                              Icons.grid_view,
+                              LibraryViewMode.grid,
+                              setModalState,
+                            ),
+                            _buildViewItem(
+                              'Danh sách',
+                              Icons.view_list,
+                              LibraryViewMode.list,
+                              setModalState,
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -261,6 +334,40 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
         });
         setModalState(() {}); // Refresh checkbox trong modal
       },
+    );
+  }
+
+  Widget _buildSortItem(
+    String title,
+    IconData icon,
+    LibrarySortMode mode,
+    StateSetter setModalState,
+  ) {
+    final selected = _sortMode == mode;
+    return ListTile(
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      leading: Icon(icon, color: selected ? Colors.redAccent : Colors.white70),
+      trailing: selected
+          ? const Icon(Icons.check, color: Colors.redAccent)
+          : null,
+      onTap: () => _setSortMode(mode, setModalState),
+    );
+  }
+
+  Widget _buildViewItem(
+    String title,
+    IconData icon,
+    LibraryViewMode mode,
+    StateSetter setModalState,
+  ) {
+    final selected = _viewMode == mode;
+    return ListTile(
+      title: Text(title, style: const TextStyle(color: Colors.white)),
+      leading: Icon(icon, color: selected ? Colors.redAccent : Colors.white70),
+      trailing: selected
+          ? const Icon(Icons.check, color: Colors.redAccent)
+          : null,
+      onTap: () => _setViewMode(mode, setModalState),
     );
   }
 
@@ -381,62 +488,83 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
 
                 Navigator.pop(ctx);
 
-                // Xóa khỏi thư viện: lấy categories hiện tại → loại bỏ currentCategory → set lại
-                if (removeFromLibrary) {
-                  for (var id in _selectedMangaIds) {
-                    final cats = await LibraryService.instance
-                        .streamMangaCategories(id)
-                        .first;
-                    final newCats = cats
-                        .where((c) => c != currentCategory)
-                        .toList();
-                    await LibraryService.instance.setMangaCategories(
-                      id,
-                      newCats,
-                    );
-                  }
-                }
+                if (!context.mounted) return;
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.redAccent)),
+                );
 
-                // Xóa file tải: lấy tên truyện từ SQLite → gọi deleteMangaDownloads
-                // (lấy tên vì DownloadService dùng tên để tìm đường dẫn folder)
-                if (deleteDownloads) {
-                  int successCount = 0;
-                  for (final mangaId in _selectedMangaIds) {
-                    String? title;
-                    final localManga = await DatabaseHelper.instance
-                        .getLocalManga(mangaId);
-                    if (localManga != null) {
-                      title = localManga.title;
-                    } else {
-                      // Fallback: tìm tên từ bảng downloads nếu không có trong local manga
-                      final downloads = await DatabaseHelper.instance
-                          .getDownloadsByManga(mangaId);
-                      if (downloads.isNotEmpty) {
-                        title = _readString(downloads.first, 'mangaTitle');
-                        if (title.isEmpty) title = null;
+                try {
+                  // Xóa khỏi thư viện: lấy categories hiện tại → loại bỏ currentCategory → set lại
+                  if (removeFromLibrary) {
+                    for (var id in _selectedMangaIds) {
+                      final cats = await LibraryService.instance
+                          .streamMangaCategories(id)
+                          .first;
+                      final newCats = cats
+                          .where((c) => c != currentCategory)
+                          .toList();
+                      await LibraryService.instance.setMangaCategories(
+                        id,
+                        newCats,
+                      );
+                    }
+                  }
+
+                  // Xóa file tải: lấy tên truyện từ SQLite → gọi deleteMangaDownloads
+                  // (lấy tên vì DownloadService dùng tên để tìm đường dẫn folder)
+                  if (deleteDownloads) {
+                    int successCount = 0;
+                    for (final mangaId in _selectedMangaIds) {
+                      String? title;
+                      final localManga = await DatabaseHelper.instance
+                          .getLocalManga(mangaId);
+                      if (localManga != null) {
+                        title = localManga.title;
+                      } else {
+                        // Fallback: tìm tên từ bảng downloads nếu không có trong local manga
+                        final downloads = await DatabaseHelper.instance
+                            .getDownloadsByManga(mangaId);
+                        if (downloads.isNotEmpty) {
+                          title = _readString(downloads.first, 'mangaTitle');
+                          if (title.isEmpty) title = null;
+                        }
+                      }
+                      if (title != null) {
+                        await DownloadService.instance.deleteMangaDownloads(
+                          mangaId,
+                          title,
+                        );
+                        successCount++;
                       }
                     }
-                    if (title != null) {
-                      await DownloadService.instance.deleteMangaDownloads(
-                        mangaId,
-                        title,
+                    if (mounted && successCount > 0) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Đã xóa dữ liệu tải xuống của $successCount truyện',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
                       );
-                      successCount++;
                     }
                   }
-                  if (mounted && successCount > 0) {
+                } catch (e) {
+                  if (context.mounted) {
                     messenger.showSnackBar(
                       SnackBar(
-                        content: Text(
-                          'Đã xóa dữ liệu tải xuống của $successCount truyện',
-                        ),
-                        backgroundColor: Colors.green,
+                        content: Text('Lỗi khi xóa: $e'),
+                        backgroundColor: Colors.redAccent,
                       ),
                     );
                   }
+                } finally {
+                  if (context.mounted) {
+                    Navigator.pop(context); // Tắt vòng xoay
+                  }
+                  _clearSelection();
                 }
-
-                _clearSelection();
               },
               child: const Text(
                 'OK',
@@ -619,6 +747,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       selectedStatuses: _selectedStatuses,
                       selectedReadingStatuses: _selectedReadingStatuses,
                       selectedTags: _selectedTags,
+                      sortMode: _sortMode,
+                      viewMode: _viewMode,
                       selectedMangaIds: _selectedMangaIds,
                       onToggleSelect: (id) {
                         setState(() {
@@ -721,43 +851,74 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 );
                                 if (confirm != true) return;
 
-                                int totalChapters = 0;
-                                for (final mangaId in _selectedMangaIds) {
+                                if (!context.mounted) return;
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.green)),
+                                );
+
+                                try {
+                                  int totalChapters = 0;
                                   final mangas = await DriveService.instance
                                       .getMangas();
-                                  final manga = mangas.firstWhere(
-                                    (m) => m.id == mangaId,
-                                    orElse: () =>
-                                        throw Exception('Manga not found'),
-                                  );
-                                  final chapters = await DriveService.instance
-                                      .getChapters(mangaId);
-                                  for (final chapter in chapters) {
-                                    await DownloadService.instance.addToQueue(
-                                      chapterId: chapter.id,
-                                      mangaId: mangaId,
-                                      mangaTitle: manga.title,
-                                      chapterTitle: chapter.title,
-                                      fileType: chapter.fileType,
+                                  for (final mangaId in _selectedMangaIds) {
+                                    final manga = mangas.firstWhere(
+                                      (m) => m.id == mangaId,
+                                      orElse: () => throw Exception(
+                                        'Không tìm thấy truyện',
+                                      ),
                                     );
-                                    totalChapters++;
+                                    final chapters = await DriveService.instance
+                                        .getChapters(mangaId);
+                                    for (final chapter in chapters) {
+                                      await DownloadService.instance.addToQueue(
+                                        chapterId: chapter.id,
+                                        mangaId: mangaId,
+                                        mangaTitle: manga.title,
+                                        chapterTitle: chapter.title,
+                                        fileType: chapter.fileType,
+                                        mangaInfo: Manga(
+                                          id: manga.id,
+                                          title: manga.title,
+                                          coverUrl: manga.coverFileId,
+                                          author: manga.author,
+                                          description: manga.description,
+                                          genres: manga.genres,
+                                        ),
+                                      );
+                                      totalChapters++;
+                                    }
                                   }
-                                }
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Đã thêm $totalChapters chương vào hàng đợi tải',
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Đã thêm $totalChapters chương vào hàng đợi tải',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                        action: SnackBarAction(
+                                          label: 'Xem',
+                                          textColor: Colors.white,
+                                          onPressed: () =>
+                                              context.push('/downloads'),
+                                        ),
                                       ),
-                                      backgroundColor: Colors.green,
-                                      action: SnackBarAction(
-                                        label: 'Xem',
-                                        textColor: Colors.white,
-                                        onPressed: () =>
-                                            context.push('/downloads'),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Lỗi khi tải: $e'),
+                                        backgroundColor: Colors.redAccent,
                                       ),
-                                    ),
-                                  );
+                                    );
+                                  }
+                                } finally {
+                                  if (context.mounted) {
+                                    Navigator.pop(context); // Tắt vòng xoay
+                                  }
                                   _clearSelection();
                                 }
                               },

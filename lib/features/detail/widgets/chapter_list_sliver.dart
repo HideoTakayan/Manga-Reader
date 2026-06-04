@@ -3,13 +3,13 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models_cloud.dart';
 import '../../../data/models.dart';
 import '../../../services/download_service.dart';
-import '../../../services/interaction_service.dart';
 
 class ChapterListSliver extends StatelessWidget {
   final List<CloudChapter> displayChapters;
   final String mangaId;
   final CloudManga manga;
   final Manga? localMangaInfo;
+  final Map<String, int> chapterViews;
   final ThemeData theme;
   final VoidCallback onChapterRead;
 
@@ -19,6 +19,7 @@ class ChapterListSliver extends StatelessWidget {
     required this.mangaId,
     required this.manga,
     required this.localMangaInfo,
+    required this.chapterViews,
     required this.theme,
     required this.onChapterRead,
   });
@@ -72,32 +73,22 @@ class ChapterListSliver extends StatelessWidget {
                       style: theme.textTheme.bodySmall,
                     ),
                     const SizedBox(height: 2),
-                    // Sử dụng StreamBuilder để cập nhật lượt xem thời gian thực cho từng chapter
-                    StreamBuilder<Map<String, int>>(
-                      stream: InteractionService.instance.streamChapterViews(
-                        mangaId,
-                      ),
-                      builder: (context, snapshot) {
-                        final viewsMap = snapshot.data ?? {};
-                        final views = viewsMap[ch.id] ?? ch.viewCount;
-
-                        return Row(
-                          children: [
-                            Icon(
-                              Icons.remove_red_eye,
-                              size: 10,
-                              color: theme.textTheme.bodySmall?.color,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '$views',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    // chapterViews is streamed once by the parent to avoid one Firestore listener per row.
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.remove_red_eye,
+                          size: 10,
+                          color: theme.textTheme.bodySmall?.color,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${chapterViews[ch.id] ?? ch.viewCount}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -261,10 +252,24 @@ class ChapterListSliver extends StatelessWidget {
                               );
 
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Đã thêm vào hàng đợi tải'),
+                                final router = GoRouter.of(context);
+                                final messenger = ScaffoldMessenger.of(context);
+                                messenger.hideCurrentSnackBar();
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                      'Đã thêm vào hàng đợi tải',
+                                    ),
                                     backgroundColor: Colors.green,
+                                    duration: const Duration(seconds: 3),
+                                    action: SnackBarAction(
+                                      label: 'Xem',
+                                      textColor: Colors.white,
+                                      onPressed: () {
+                                        messenger.hideCurrentSnackBar();
+                                        router.push('/downloads');
+                                      },
+                                    ),
                                   ),
                                 );
                               }

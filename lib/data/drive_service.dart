@@ -38,12 +38,15 @@ class DriveService {
   final List<String> _fileCacheOrder = []; // Theo dõi thứ tự để xóa cái cũ nhất
   static const int _maxCacheSize = 5;
 
+  final Map<String, Future<Uint8List?>> _activeDownloadFutures = {};
+  final Map<String, Future<bool>> _activeFileDownloads = {};
+
   // Xóa file cũ nhất trong cache khi vượt giới hạn.
   void _trimFileCache() {
     while (_fileCacheOrder.length > _maxCacheSize) {
       final oldestKey = _fileCacheOrder.removeAt(0);
       _fileCache.remove(oldestKey);
-      print('🗑️ Đã giải phóng cache: $oldestKey');
+      print('Đã giải phóng cache: $oldestKey');
     }
   }
 
@@ -209,13 +212,13 @@ class DriveService {
           }
         } catch (e) {
           retryCount++;
-          print('⚠️ Lỗi tải catalog (Lần $retryCount): $e');
+          print('Lỗi tải catalog (Lần $retryCount): $e');
 
           // Mất mạng hẳn thì không retry vô ích
           if (e.toString().contains('SocketException') ||
               e.toString().contains('Failed host lookup') ||
               e.toString().contains('HandshakeException')) {
-            print('🚫 Mất kết nối mạng. Dừng thử lại.');
+            print('Mất kết nối mạng. Dừng thử lại.');
             break;
           }
 
@@ -375,21 +378,23 @@ class DriveService {
 
     if (_cachedMangas == null) await getMangas();
 
-    // Xóa khỏi cache trước để UI phản hồi nhanh
-    _cachedMangas?.removeWhere((m) => m.id == mangaId);
-
     try {
       try {
         await _driveApi!.files.delete(mangaId);
       } catch (e) {
-        print('Warning: Lỗi khi xoá thư mục trên Drive: $e');
-        // Vẫn tiếp tục để cập nhật catalog ngay cả khi folder đã mất
+        if (e is drive.DetailedApiRequestError && e.status == 404) {
+          print('Folder đã bị xoá trước đó (404), tiếp tục cập nhật catalog.');
+        } else {
+          print('Lỗi nghiêm trọng khi xoá thư mục trên Drive: $e');
+          rethrow;
+        }
       }
 
       if (_cachedMangas != null) {
+        _cachedMangas!.removeWhere((m) => m.id == mangaId);
         await _saveCatalogToDrive(_cachedMangas!);
       }
-      print('✅ Đã xóa Manga $mangaId và cập nhật catalog');
+      print('Đã xóa Manga $mangaId và cập nhật catalog');
     } catch (e) {
       print('Lỗi quy trình xóa manga: $e');
       rethrow;
@@ -446,7 +451,7 @@ class DriveService {
           } else {
             // Không có info.json → tạo bản ghi mặc định để không bị bỏ sót
             print(
-              '⚠️ Thiếu info.json cho ${folder.name}, đang tạo file mặc định...',
+              'Thiếu info.json cho ${folder.name}, đang tạo file mặc định...',
             );
             final defaultManga = CloudManga(
               id: folder.id!,
@@ -479,7 +484,7 @@ class DriveService {
       mangas.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       await _saveCatalogToDrive(mangas);
       _cachedMangas = mangas;
-      print('✅ Đã tái tạo catalog với ${mangas.length} truyện');
+      print('Đã tái tạo catalog với ${mangas.length} truyện');
     } catch (e) {
       print('Lỗi tái tạo catalog: $e');
       rethrow;
@@ -534,7 +539,16 @@ class DriveService {
     }
 
     final currentMangas = await getMangas();
-    final currentManga = currentMangas.firstWhere((c) => c.id == mangaId);
+    CloudManga? currentManga;
+    for (final manga in currentMangas) {
+      if (manga.id == mangaId) {
+        currentManga = manga;
+        break;
+      }
+    }
+    if (currentManga == null) {
+      throw Exception('Không tìm thấy truyện trong catalog để cập nhật.');
+    }
     String coverFileId = currentManga.coverFileId;
 
     // Upload bìa mới nếu có, xóa bìa cũ để tiết kiệm dung lượng
@@ -550,7 +564,12 @@ class DriveService {
       try {
         await _driveApi!.files.delete(currentManga.coverFileId);
       } catch (e) {
-        print('Lỗi khi xoá ảnh bìa cũ: $e');
+        if (e is drive.DetailedApiRequestError && e.status == 404) {
+          print('Ảnh bìa cũ không tồn tại (404), tiếp tục upload.');
+        } else {
+          print('Lỗi mạng/quyền khi xoá ảnh bìa cũ: $e');
+          rethrow;
+        }
       }
 
       final coverResult = await _driveApi!.files.create(
@@ -603,19 +622,11 @@ class DriveService {
 
     // Gửi thông báo nếu trạng thái truyện thay đổi
     if (currentManga.status != status) {
-      String msg =
-          'Truyện "${currentManga.title}" đã chuyển sang trạng thái $status';
-      if (status.toLowerCase().contains('hoàn thành')) {
-        msg =
-            'Truyện "${currentManga.title}" đã Hoàn Thành. Mời bạn vào đọc trọn bộ!';
-      } else if (status.toLowerCase().contains('ngừng') ||
-          status.toLowerCase().contains('drop')) {
-        msg = 'Truyện "${currentManga.title}" đã bị tạm ngưng.';
-      }
       await NotificationService.instance.notifySubscribers(
         mangaId: mangaId,
-        title: 'Cập nhật trạng thái',
-        body: msg,
+        title: '$title đã đổi trạng thái',
+        body: 'Trạng thái mới: $status',
+        type: 'status_update',
       );
     }
   }
@@ -701,8 +712,8 @@ class DriveService {
       );
     }
 
-    // Làm sạch tên file trước khi upload (bỏ ký tự đặc biệt)
-    final safeTitle = title.replaceAll(RegExp(r'[^a-zA-Z0-9\s\-]'), '').trim();
+    // Làm sạch tên file trước khi upload (bỏ ký tự đặc biệt, giữ lại Unicode)
+    final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
     final ext = path.extension(file.path);
     final fileName = '$safeTitle$ext';
 
@@ -713,11 +724,7 @@ class DriveService {
     final media = drive.Media(file.openRead(), file.lengthSync());
     await _driveApi!.files.create(fileMeta, uploadMedia: media);
 
-    await NotificationService.instance.notifySubscribers(
-      mangaId: mangaId,
-      title: 'Chương mới!',
-      body: 'Chương "$title" vừa được cập nhật. Đọc ngay!',
-    );
+    // Đã loại bỏ notifySubscribers ở đây để tránh trùng lặp với chapter_manager_page
   }
 
   // Xóa một chapter khỏi Drive theo fileId.
@@ -728,7 +735,15 @@ class DriveService {
         'Không thể kết nối đến Google Drive. Vui lòng đăng nhập.',
       );
     }
-    await _driveApi!.files.delete(chapterId);
+    try {
+      await _driveApi!.files.delete(chapterId);
+    } catch (e) {
+      if (e is drive.DetailedApiRequestError && e.status == 404) {
+        print('Chapter đã bị xoá trước đó (404).');
+        return;
+      }
+      rethrow;
+    }
   }
 
   // Cập nhật thứ tự chapter mới (Admin kéo thả để sắp xếp lại).
@@ -800,7 +815,7 @@ class DriveService {
         '?fields=id,name,parents,mimeType,size'
         '&supportsAllDrives=true&key=${DriveConfig.apiKey}',
       );
-      final res = await http.get(url);
+      final res = await http.get(url).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         return {
@@ -818,6 +833,151 @@ class DriveService {
     }
   }
 
+  /// Tải tệp tin trực tiếp vào tệp (.part) với hỗ trợ thử lại và hủy
+  Future<bool> downloadFileToFile(
+    String fileId,
+    File file, {
+    Function(int received, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final lockKey = file.path;
+    if (_activeFileDownloads.containsKey(lockKey)) {
+      print('File đang được tải, tái sử dụng Future: $lockKey');
+      return _activeFileDownloads[lockKey]!;
+    }
+
+    final downloadFuture = _performDownloadFileToFile(
+      fileId,
+      file,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+    );
+    _activeFileDownloads[lockKey] = downloadFuture;
+
+    try {
+      return await downloadFuture;
+    } finally {
+      _activeFileDownloads.remove(lockKey);
+    }
+  }
+
+  Future<bool> _performDownloadFileToFile(
+    String fileId,
+    File file, {
+    Function(int received, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    int retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      if (isCancelled != null && isCancelled()) {
+        return false;
+      }
+
+      IOSink? sink;
+      final client = http.Client();
+      try {
+        if (retryCount > 0) {
+          print('Retry download to file ($retryCount/$maxRetries): $fileId');
+        }
+
+        if (!await file.parent.exists()) {
+          await file.parent.create(recursive: true);
+        }
+
+        sink = file.openWrite();
+
+        final apiMediaUrl = Uri.parse(
+          'https://www.googleapis.com/drive/v3/files/$fileId'
+          '?alt=media&key=${DriveConfig.apiKey}',
+        );
+
+        http.StreamedResponse response = await client
+            .send(http.Request('GET', apiMediaUrl))
+            .timeout(const Duration(seconds: 300));
+
+        if (response.statusCode != 200 ||
+            (response.headers['content-type']?.toLowerCase().contains(
+                  'text/html',
+                ) ??
+                false)) {
+          final publicUrl = Uri.parse(
+            'https://drive.google.com/uc?export=download&id=$fileId',
+          );
+          response = await client
+              .send(http.Request('GET', publicUrl))
+              .timeout(const Duration(seconds: 300));
+        }
+
+        if (response.statusCode == 404) {
+          print('File not found on Drive: $fileId');
+          return false;
+        }
+
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+
+        if (response.headers['content-type']?.toLowerCase().contains(
+              'text/html',
+            ) ??
+            false) {
+          throw Exception(
+            'Drive returned an HTML page instead of chapter bytes',
+          );
+        }
+
+        final total = response.contentLength ?? 0;
+        int received = 0;
+
+        await for (final chunk in response.stream) {
+          if (isCancelled != null && isCancelled()) {
+            throw Exception('Đã hủy tải truyện');
+          }
+          sink.add(chunk);
+          received += chunk.length;
+          if (onProgress != null && total > 0) {
+            onProgress(received, total);
+          }
+        }
+        await sink.flush();
+        await sink.close();
+
+        print('Tải file hoàn tất (sink): $fileId ($received bytes)');
+        if (onProgress != null && total == 0) onProgress(100, 100);
+
+        return true;
+      } catch (e) {
+        final errorText = e.toString().toLowerCase();
+        if (errorText.contains('cancelled') || errorText.contains('đã hủy tải truyện')) {
+          print('Hủy tải xuống: $fileId');
+          return false;
+        }
+        print('Lỗi tải file to sink (Attempt ${retryCount + 1}): $e');
+        retryCount++;
+
+        final errorStr = e.toString().toLowerCase();
+        if (errorStr.contains('not found') || errorStr.contains('404')) {
+          return false;
+        }
+
+        if (retryCount >= maxRetries) {
+          return false;
+        }
+        await Future.delayed(Duration(seconds: retryCount * 2));
+      } finally {
+        client.close();
+        if (sink != null) {
+          try {
+            await sink.close();
+          } catch (_) {}
+        }
+      }
+    }
+    return false;
+  }
+
   // Tải file từ Drive về dạng bytes. Không cần theo dõi tiến độ.
   Future<Uint8List?> downloadFile(String fileId) async {
     return downloadFileWithProgress(fileId);
@@ -831,11 +991,30 @@ class DriveService {
   }) async {
     // Trả về ngay từ cache nếu đã tải trước đó
     if (_fileCache.containsKey(fileId)) {
-      print('⚡ Lấy từ Cache: $fileId');
+      print('Lấy từ cache: $fileId');
       if (onProgress != null) onProgress(100, 100);
       return _fileCache[fileId];
     }
 
+    if (_activeDownloadFutures.containsKey(fileId)) {
+      print('Đang tải rồi, tái sử dụng Future: $fileId');
+      return _activeDownloadFutures[fileId];
+    }
+
+    final downloadFuture = _performDownloadFileWithProgress(fileId, onProgress: onProgress);
+    _activeDownloadFutures[fileId] = downloadFuture;
+
+    try {
+      return await downloadFuture;
+    } finally {
+      _activeDownloadFutures.remove(fileId);
+    }
+  }
+
+  Future<Uint8List?> _performDownloadFileWithProgress(
+    String fileId, {
+    Function(int received, int total)? onProgress,
+  }) async {
     int retryCount = 0;
     const maxRetries = 3;
 
@@ -844,7 +1023,7 @@ class DriveService {
         if (retryCount > 0) {
           print('🔄 Retry download ($retryCount/$maxRetries): $fileId');
         } else {
-          print('📥 Đang tải file: $fileId');
+          print('Đang tải file: $fileId');
         }
 
         final client = http.Client();
@@ -859,7 +1038,10 @@ class DriveService {
               .timeout(const Duration(seconds: 300));
 
           if (response.statusCode != 200 ||
-              (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+              (response.headers['content-type']?.toLowerCase().contains(
+                    'text/html',
+                  ) ??
+                  false)) {
             final publicUrl = Uri.parse(
               'https://drive.google.com/uc?export=download&id=$fileId',
             );
@@ -869,7 +1051,7 @@ class DriveService {
           }
 
           if (response.statusCode == 404) {
-            print('❌ File not found on Drive: $fileId');
+            print('File not found on Drive: $fileId');
             return null;
           }
 
@@ -877,8 +1059,13 @@ class DriveService {
             throw Exception('HTTP ${response.statusCode}');
           }
 
-          if (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false) {
-            throw Exception('Drive returned an HTML page instead of chapter bytes');
+          if (response.headers['content-type']?.toLowerCase().contains(
+                'text/html',
+              ) ??
+              false) {
+            throw Exception(
+              'Drive returned an HTML page instead of chapter bytes',
+            );
           }
 
           final total = response.contentLength ?? 0;
@@ -904,7 +1091,7 @@ class DriveService {
             _fileCacheOrder.add(fileId);
             _trimFileCache();
           } else {
-            print('⚠️ Tải xong nhưng không Cache RAM vì file > 20MB: $fileId');
+            print('Tải xong nhưng không cache RAM vì file > 20MB: $fileId');
           }
 
           return result;
@@ -912,18 +1099,18 @@ class DriveService {
           client.close();
         }
       } catch (e) {
-        print('⚠️ Lỗi tải file (Attempt ${retryCount + 1}): $e');
+        print('Lỗi tải file (Attempt ${retryCount + 1}): $e');
         retryCount++;
 
         // Không retry nếu file không tồn tại trên Drive
         final errorStr = e.toString().toLowerCase();
         if (errorStr.contains('not found') || errorStr.contains('404')) {
-          print('❌ File not found on Drive, stopping retries.');
+          print('File not found on Drive, stopping retries.');
           return null;
         }
 
         if (retryCount >= maxRetries) {
-          print('❌ Download failed ultimately after $maxRetries attempts.');
+          print('Download failed ultimately after $maxRetries attempts.');
           return null;
         }
 
@@ -933,8 +1120,4 @@ class DriveService {
     }
     return null;
   }
-
-
-
-
 }

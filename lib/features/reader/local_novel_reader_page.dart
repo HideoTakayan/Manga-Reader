@@ -4,21 +4,38 @@ import 'package:flutter/material.dart';
 import '../../services/novel_service.dart';
 import 'novel_reader_widget.dart';
 
-class LocalNovelReaderPage extends StatelessWidget {
+class LocalNovelReaderPage extends StatefulWidget {
   final LocalNovel novel;
   const LocalNovelReaderPage({super.key, required this.novel});
 
   @override
+  State<LocalNovelReaderPage> createState() => _LocalNovelReaderPageState();
+}
+
+class _LocalNovelReaderPageState extends State<LocalNovelReaderPage> {
+  late Future<Uint8List> _bytesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytesFuture = File(widget.novel.path).readAsBytes();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<Uint8List>(
-      future: File(novel.path).readAsBytes(),
+      future: _bytesFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Scaffold(
             backgroundColor: Colors.black,
             appBar: AppBar(
               backgroundColor: Colors.black,
-              title: Text(novel.title, overflow: TextOverflow.ellipsis),
+              title: Text(
+                widget.novel.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             body: const Center(
               child: Padding(
@@ -36,14 +53,26 @@ class LocalNovelReaderPage extends StatelessWidget {
         if (!snapshot.hasData) {
           return const Scaffold(
             backgroundColor: Colors.black,
-            body: Center(child: CircularProgressIndicator(color: Colors.amber)),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Colors.amber),
+                  SizedBox(height: 16),
+                  Text(
+                    'Đang đọc file EPUB...',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 
         return NovelReaderWidget(
-          title: novel.title,
+          title: widget.novel.title,
           epubBytes: snapshot.data!,
-          storageKey: novel.path,
+          storageKey: widget.novel.path,
         );
       },
     );

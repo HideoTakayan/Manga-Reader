@@ -66,7 +66,19 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
 
   Future<void> _submitPost() async {
     final body = _bodyController.text.trim();
-    if (body.isEmpty && _gifUrl == null && _imageFile == null) return;
+    final isMangaShare = widget.type == 'manga_share';
+    if (!isMangaShare &&
+        body.isEmpty &&
+        _gifUrl == null &&
+        _imageFile == null) {
+      return;
+    }
+    if (isMangaShare &&
+        body.isEmpty &&
+        _gifUrl == null &&
+        _selectedManga == null) {
+      return;
+    }
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -140,9 +152,14 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
           TextButton(
             onPressed:
                 _isSubmitting ||
-                    (_bodyController.text.trim().isEmpty &&
+                    (widget.type == 'discussion' &&
+                        _bodyController.text.trim().isEmpty &&
                         _gifUrl == null &&
-                        _imageFile == null)
+                        _imageFile == null) ||
+                    (widget.type == 'manga_share' &&
+                        _bodyController.text.trim().isEmpty &&
+                        _gifUrl == null &&
+                        _selectedManga == null)
                 ? null
                 : _submitPost,
             child: _isSubmitting

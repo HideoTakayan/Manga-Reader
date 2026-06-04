@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../data/database_helper.dart';
 import '../../data/models_cloud.dart';
 import '../../features/shared/drive_image.dart';
@@ -26,7 +29,7 @@ class ReaderPage extends ConsumerStatefulWidget {
 // SingleTickerProviderStateMixin: cung cấp vsync cho AnimationController
 // → tiết kiệm tài nguyên, chỉ dùng khi có đúng 1 AnimationController
 class _ReaderPageState extends ConsumerState<ReaderPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late PageController _pageController;
   late ScrollController _scrollController;
   final FocusNode _focusNode = FocusNode();
@@ -41,12 +44,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   Timer? _holdTimer;
   Timer? _progressSaveTimer;
-  Timer? _autoScrollTimer;
+  Ticker? _autoScrollTicker;
+  Duration? _lastAutoScrollTick;
   bool _isAutoScrolling = false;
-  static const double _autoScrollPixelsPerSecond = 42.0;
+  int _autoPageTurnRunId = 0;
+  double? _lastVerticalProgressSaveOffset;
+  int? _lastVerticalProgressSavePage;
+  static const double _autoScrollPixelsPerSecond = 132.0;
+  static const double _verticalProgressSaveDelta = 160.0;
+  static const Duration _autoPageTurnInterval = Duration(
+    milliseconds: 1200,
+  ); // Đợi 1200ms + 280ms anim = ~1.5s
   static const Duration _holdDuration = Duration(milliseconds: 1500);
 
   late AnimationController _holdProgressController;
+  final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
 
   DateTime? _lastChapterChange;
   static const Duration _chapterChangeCooldown = Duration(seconds: 2);
@@ -110,10 +122,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             0,
             pageCount - 1,
           );
-    _scheduleVerticalProgressSave(pixels, estimatedPage);
+          
+    if (_currentPageNotifier.value != estimatedPage) {
+      _currentPageNotifier.value = estimatedPage;
+    }
+    
+    _scheduleVerticalProgressSaveIfNeeded(pixels, estimatedPage);
   }
 
-  void _scheduleVerticalProgressSave(double offset, int pageIndex) {
+  void _scheduleVerticalProgressSaveIfNeeded(double offset, int pageIndex) {
+    final previousOffset = _lastVerticalProgressSaveOffset;
+    final previousPage = _lastVerticalProgressSavePage;
+    final movedEnough =
+        previousOffset == null ||
+        (offset - previousOffset).abs() >= _verticalProgressSaveDelta;
+    final pageChanged = previousPage == null || previousPage != pageIndex;
+
+    if (!movedEnough && !pageChanged) return;
+
+    _lastVerticalProgressSaveOffset = offset;
+    _lastVerticalProgressSavePage = pageIndex;
     _progressSaveTimer?.cancel();
     _progressSaveTimer = Timer(const Duration(milliseconds: 600), () {
       if (!mounted) return;
@@ -133,33 +161,181 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _startAutoScroll() {
     final state = ref.read(readerProvider);
-    if (state.readingMode != ReadingMode.vertical) return;
-    if (!_scrollController.hasClients) return;
+    if (state.isPdf) return;
+    if (state.readingMode == ReadingMode.vertical &&
+        !_scrollController.hasClients) {
+      return;
+    }
+    if (state.readingMode == ReadingMode.horizontal &&
+        !_pageController.hasClients) {
+      return;
+    }
 
     setState(() => _isAutoScrolling = true);
-    _autoScrollTimer?.cancel();
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 40), (_) {
+    _autoScrollTicker?.dispose();
+    _autoScrollTicker = null;
+    _lastAutoScrollTick = null;
+    _autoPageTurnRunId++;
+
+    if (state.readingMode == ReadingMode.horizontal) {
+      _scheduleHorizontalAutoPageTurn(_autoPageTurnRunId);
+      return;
+    }
+
+    _autoScrollTicker = createTicker((elapsed) {
       if (!mounted || !_scrollController.hasClients) {
         _stopAutoScroll();
         return;
       }
+
+      final lastTick = _lastAutoScrollTick;
+      _lastAutoScrollTick = elapsed;
+      if (lastTick == null) return;
+
       final position = _scrollController.position;
       if (position.pixels >= position.maxScrollExtent) {
         _stopAutoScroll();
         return;
       }
-      final nextOffset = position.pixels + (_autoScrollPixelsPerSecond * 0.04);
+
+      final deltaSeconds =
+          (elapsed - lastTick).inMicroseconds / Duration.microsecondsPerSecond;
+      final safeDeltaSeconds = deltaSeconds.clamp(0.0, 0.05).toDouble();
+      final nextOffset =
+          position.pixels + (_autoScrollPixelsPerSecond * safeDeltaSeconds);
       _scrollController.jumpTo(nextOffset.clamp(0.0, position.maxScrollExtent));
+    });
+    _autoScrollTicker?.start();
+  }
+
+  void _scheduleHorizontalAutoPageTurn(int runId) {
+    Future.delayed(_autoPageTurnInterval, () async {
+      if (!mounted || !_isAutoScrolling || runId != _autoPageTurnRunId) {
+        return;
+      }
+      await _advanceHorizontalAutoPage(runId);
     });
   }
 
+  Future<void> _advanceHorizontalAutoPage(int runId) async {
+    if (!mounted || !_pageController.hasClients) {
+      _stopAutoScroll();
+      return;
+    }
+
+    final state = ref.read(readerProvider);
+    final notifier = ref.read(readerProvider.notifier);
+    if (state.readingMode != ReadingMode.horizontal || state.isPdf) {
+      _stopAutoScroll();
+      return;
+    }
+
+    final pageCount = state.pages.length;
+    if (pageCount <= 0) {
+      _stopAutoScroll();
+      return;
+    }
+    if (state.isLoadingNextChapter) {
+      _scheduleHorizontalAutoPageTurn(runId);
+      return;
+    }
+
+    final currentPage = state.currentPageIndex.clamp(0, pageCount - 1);
+    if (currentPage < pageCount - 1) {
+      await _pageController.animateToPage(
+        currentPage + 1,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+      if (mounted && _isAutoScrolling && runId == _autoPageTurnRunId) {
+        _scheduleHorizontalAutoPageTurn(runId);
+      }
+      return;
+    }
+
+    if (notifier.getNextChapterId() != null && !_isChapterTransitionLocked) {
+      final changedChapter = await _triggerNextChapter(
+        resumeHorizontalAuto: true,
+      );
+      if (!changedChapter &&
+          mounted &&
+          _isAutoScrolling &&
+          runId == _autoPageTurnRunId) {
+        _scheduleHorizontalAutoPageTurn(runId);
+      }
+      return;
+    }
+
+    _stopAutoScroll();
+  }
+
   void _stopAutoScroll() {
-    _autoScrollTimer?.cancel();
-    _autoScrollTimer = null;
+    _autoScrollTicker?.dispose();
+    _autoScrollTicker = null;
+    _lastAutoScrollTick = null;
+    _autoPageTurnRunId++;
     if (mounted && _isAutoScrolling) {
       setState(() => _isAutoScrolling = false);
     } else {
       _isAutoScrolling = false;
+    }
+  }
+
+  Future<void> _toggleFollowWithFeedback(
+    ReaderState state,
+    ReaderNotifier notifier,
+  ) async {
+    if (state.isFollowed) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1C1E),
+          title: const Text(
+            'Hủy Theo Dõi?',
+            style: TextStyle(color: Colors.white),
+          ),
+          content: const Text(
+            'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Hủy', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                'Đồng ý',
+                style: TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return;
+    }
+
+    try {
+      final isNowFollowed = await notifier.toggleFollow();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isNowFollowed ? 'Đã theo dõi thành công!' : 'Đã hủy theo dõi',
+          ),
+          backgroundColor: isNowFollowed ? Colors.green : null,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
@@ -218,14 +394,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _holdProgressController.reset();
   }
 
-  void _triggerNextChapter() {
-    if (_isChapterTransitionLocked) return;
+  Future<bool> _triggerNextChapter({bool resumeHorizontalAuto = false}) async {
+    if (_isChapterTransitionLocked) return false;
     if (_lastChapterChange != null &&
         DateTime.now().difference(_lastChapterChange!) <
             _chapterChangeCooldown) {
-      return;
+      return false;
     }
 
+    final previousChapterId = ref.read(readerProvider).currentChapter?.id;
     setState(() {
       _isChapterTransitionLocked = true;
       _isHoldingForNextChapter = false;
@@ -233,19 +410,48 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _lastChapterChange = DateTime.now();
     HapticFeedback.mediumImpact();
 
-    ref.read(readerProvider.notifier).loadNextChapter().then((_) {
+    var changedChapter = false;
+    try {
+      await ref.read(readerProvider.notifier).loadNextChapter();
+      if (!mounted) return false;
+
+      final nextState = ref.read(readerProvider);
+      changedChapter =
+          previousChapterId != null &&
+          previousChapterId != nextState.currentChapter?.id;
+
+      if (nextState.readingMode == ReadingMode.vertical &&
+          _scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      } else if (nextState.readingMode == ReadingMode.horizontal) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_pageController.hasClients) {
+            _pageController.jumpToPage(0);
+          }
+          if (resumeHorizontalAuto &&
+              _isAutoScrolling &&
+              changedChapter &&
+              ref.read(readerProvider).readingMode == ReadingMode.horizontal &&
+              !ref.read(readerProvider).isPdf) {
+            _scheduleHorizontalAutoPageTurn(_autoPageTurnRunId);
+          }
+        });
+      }
+    } finally {
       if (mounted) {
         setState(() {
           _isChapterTransitionLocked = false;
           _isInNextChapterZone = false;
         });
         _cancelHoldTimer();
-        _scrollController.jumpTo(0);
       }
-    });
+    }
+
+    return changedChapter;
   }
 
-  void _triggerPrevChapter() {
+  Future<void> _triggerPrevChapter() async {
     if (_isChapterTransitionLocked) return;
 
     if (_lastChapterChange != null &&
@@ -263,7 +469,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     HapticFeedback.mediumImpact();
 
-    ref.read(readerProvider.notifier).loadPrevChapter().then((_) {
+    try {
+      await ref.read(readerProvider.notifier).loadPrevChapter();
+    } finally {
       if (mounted) {
         setState(() {
           _isChapterTransitionLocked = false;
@@ -271,14 +479,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         });
         _cancelHoldTimer();
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scrollController.hasClients) {
+          if (!mounted) return;
+          final nextState = ref.read(readerProvider);
+          if (nextState.readingMode == ReadingMode.vertical &&
+              _scrollController.hasClients) {
             _scrollController.jumpTo(
               _scrollController.position.maxScrollExtent - 200,
             );
+          } else if (nextState.readingMode == ReadingMode.horizontal &&
+              _pageController.hasClients &&
+              nextState.pages.isNotEmpty) {
+            _pageController.jumpToPage(nextState.pages.length - 1);
           }
         });
       }
-    });
+    }
   }
 
   @override
@@ -287,7 +502,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _scrollController.removeListener(_onVerticalScroll);
     _cancelHoldTimer();
     _progressSaveTimer?.cancel();
-    _autoScrollTimer?.cancel();
+    _autoScrollTicker?.dispose();
     _holdProgressController.dispose();
     _pageController.dispose();
     _scrollController.dispose();
@@ -349,13 +564,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _jumpToPage(int pageIndex) {
     final state = ref.read(readerProvider);
     if (!state.isPdf && state.pages.isEmpty) return;
-    
+
     final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
     if (pageCount <= 0) return;
-    
+
     final target = pageIndex.clamp(0, pageCount - 1);
     ref.read(readerProvider.notifier).onPageChanged(target);
-    
+
     // PDF handles jumping via initialPage passing to PdfReaderView
     if (state.isPdf) return;
 
@@ -419,12 +634,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     return '/reader/$chapterId?mangaId=${Uri.encodeComponent(mangaId)}';
   }
 
+  void _reloadCurrentChapter(ReaderNotifier notifier) {
+    final state = ref.read(readerProvider);
+    final chapterId = state.currentChapter?.id ?? widget.chapterId;
+    final mangaId = state.mangaId ?? widget.mangaId;
+    notifier.init(chapterId, mangaId: mangaId);
+  }
+
   void _precacheNearbyPages(ReaderState state) {
     if (!mounted || state.pages.isEmpty) return;
     final start = (state.currentPageIndex - 2).clamp(0, state.pages.length - 1);
     final end = (state.currentPageIndex + 2).clamp(0, state.pages.length - 1);
     for (var i = start; i <= end; i++) {
-      precacheImage(MemoryImage(state.pages[i]), context);
+      precacheImage(FileImage(File(state.pages[i])), context);
     }
   }
 
@@ -447,14 +669,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     ref.listen<ReaderState>(readerProvider, (prev, next) {
       if (_isAutoScrolling &&
-          (next.readingMode != ReadingMode.vertical ||
-              prev?.currentChapter?.id != next.currentChapter?.id)) {
+          (next.isPdf ||
+              (prev?.currentChapter?.id != next.currentChapter?.id &&
+                  next.readingMode != ReadingMode.horizontal))) {
         _stopAutoScroll();
       }
 
       if (prev?.currentPageIndex != next.currentPageIndex ||
           prev?.pages.length != next.pages.length) {
         _precacheNearbyPages(next);
+        if (next.currentPageIndex != _currentPageNotifier.value) {
+          _currentPageNotifier.value = next.currentPageIndex;
+        }
       }
 
       if (prev?.currentPageIndex != next.currentPageIndex &&
@@ -499,7 +725,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       final screenWidth = MediaQuery.of(context).size.width;
                       final tapX = details.globalPosition.dx;
 
-                      if (state.readingMode == ReadingMode.horizontal && !state.isPdf) {
+                      if (state.readingMode == ReadingMode.horizontal &&
+                          !state.isPdf) {
                         if (tapX < screenWidth * 0.3) {
                           if (state.direction == ReaderDirection.rtl) {
                             if (state.currentPageIndex <
@@ -555,18 +782,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ? PdfReaderView(
                             pdfBytes: state.pdfBytes!,
                             initialPage: state.currentPageIndex,
-                            onDocumentLoaded: (count) {
-                              notifier.setPdfPageCount(count);
+                            onDocumentLoaded: (pageCount) {
+                              notifier.setPdfPageCount(pageCount);
                             },
                             onPageChanged: (pageIndex) {
                               notifier.onPageChanged(pageIndex);
-                              _scheduleVerticalProgressSave(0.0, pageIndex);
+                              _scheduleVerticalProgressSaveIfNeeded(
+                                0.0,
+                                pageIndex,
+                              );
                             },
                             onToggleControls: notifier.toggleControls,
                           )
                         : state.readingMode == ReadingMode.horizontal
-                            ? _buildHorizontalView(state, notifier)
-                            : _buildVerticalView(state, notifier),
+                        ? _buildHorizontalView(state, notifier)
+                        : _buildVerticalView(state, notifier),
                   ),
 
                   if (state.showControls)
@@ -710,6 +940,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.report_problem,
+                                color: Colors.orangeAccent,
+                                size: 24,
+                              ),
+                              tooltip: 'Báo lỗi',
+                              onPressed: () => _showReportDialog(state),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
                             const SizedBox(width: 10),
                             IconButton(
                               icon: const Icon(
@@ -748,7 +989,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       left: 16,
                       right: 16,
                       bottom: 96,
-                      child: _buildPageSlider(state),
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _currentPageNotifier,
+                        builder: (context, currentPage, _) =>
+                            _buildPageSlider(state, currentPage),
+                      ),
                     ),
 
                   if (state.showControls)
@@ -797,73 +1042,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     ? Colors.red
                                     : Colors.white,
                               ),
-                              onPressed: () async {
-                                if (state.isFollowed) {
-                                  // Hỏi để hủy theo dõi
-                                  final confirm = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      backgroundColor: const Color(0xFF1C1C1E),
-                                      title: const Text(
-                                        'Hủy Theo Dõi?',
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                                      content: const Text(
-                                        'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
-                                        style: TextStyle(color: Colors.white70),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, false),
-                                          child: const Text(
-                                            'Hủy',
-                                            style: TextStyle(
-                                              color: Colors.white54,
-                                            ),
-                                          ),
-                                        ),
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context, true),
-                                          child: const Text(
-                                            'Đồng ý',
-                                            style: TextStyle(
-                                              color: Colors.redAccent,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-
-                                  if (confirm == true) {
-                                    await notifier.toggleFollow();
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Đã hủy theo dõi'),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                } else {
-                                  // Chỉ theo dõi
-                                  await notifier.toggleFollow();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Đã theo dõi thành công!',
-                                        ),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
+                              onPressed: () =>
+                                  _toggleFollowWithFeedback(state, notifier),
                             ),
 
                             IconButton(
@@ -895,20 +1075,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
                             IconButton(
                               tooltip: _isAutoScrolling
-                                  ? 'Tắt auto-scroll'
-                                  : 'Auto-scroll',
+                                  ? 'Tắt tự động đọc'
+                                  : state.readingMode == ReadingMode.horizontal
+                                  ? 'Tự lật trang'
+                                  : 'Tự cuộn',
                               icon: Icon(
                                 _isAutoScrolling
                                     ? Icons.pause_circle
                                     : Icons.play_circle,
-                                color: state.readingMode == ReadingMode.vertical
-                                    ? Colors.white
-                                    : Colors.white30,
+                                color: state.isPdf
+                                    ? Colors.white30
+                                    : Colors.white,
                               ),
-                              onPressed:
-                                  state.readingMode == ReadingMode.vertical
-                                  ? _toggleAutoScroll
-                                  : null,
+                              onPressed: state.isPdf ? null : _toggleAutoScroll,
                             ),
 
                             IconButton(
@@ -939,11 +1118,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   // MemoryImage(Uint8List): ảnh đã decode (unzip .cbz) sẵn trong provider
   // PhotoViewComputedScale.contained: hiện đủ cả trang trong màn hình
   // maxScale: covered * 2 → zoom tối đa 2x
-  Widget _buildPageSlider(ReaderState state) {
+  Widget _buildPageSlider(ReaderState state, int currentPage) {
     final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
     if (pageCount <= 0) return const SizedBox.shrink();
     final hasMultiplePages = pageCount > 1;
-    final currentPage = state.currentPageIndex.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
+    final clampedPage = currentPage.clamp(
+      0,
+      pageCount > 0 ? pageCount - 1 : 0,
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.72),
@@ -958,7 +1140,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             Row(
               children: [
                 Text(
-                  'Trang ${state.currentPageIndex + 1}/$pageCount',
+                  'Trang ${clampedPage + 1}/$pageCount',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -985,7 +1167,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ),
               ),
               child: Slider(
-                value: hasMultiplePages ? currentPage.toDouble() : 0,
+                value: hasMultiplePages ? clampedPage.toDouble() : 0,
                 min: 0,
                 max: hasMultiplePages ? (pageCount - 1).toDouble() : 1,
                 divisions: hasMultiplePages ? pageCount - 1 : null,
@@ -1027,8 +1209,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: () =>
-                  notifier.init(widget.chapterId, mangaId: widget.mangaId),
+              onPressed: () => _reloadCurrentChapter(notifier),
               icon: const Icon(Icons.refresh),
               label: const Text('Thử lại'),
             ),
@@ -1036,6 +1217,150 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         ),
       ),
     );
+  }
+
+  void _showReportDialog(ReaderState state) {
+    if (state.mangaId == null || state.manga == null) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bạn cần đăng nhập để báo lỗi.')),
+      );
+      return;
+    }
+
+    String selectedReason = 'Lỗi ảnh';
+    final descController = TextEditingController();
+    final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
+    final currentPage = pageCount <= 0
+        ? 0
+        : state.currentPageIndex.clamp(0, pageCount - 1);
+    final readerType = state.isPdf ? 'pdf' : 'manga';
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1C1C1E),
+              title: const Text(
+                'Báo lỗi chương',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Loại lỗi:',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButton<String>(
+                      value: selectedReason,
+                      dropdownColor: const Color(0xFF2C2C2E),
+                      style: const TextStyle(color: Colors.white),
+                      isExpanded: true,
+                      items: ['Lỗi ảnh', 'Sai chương', 'Thiếu trang', 'Khác']
+                          .map(
+                            (r) => DropdownMenuItem(value: r, child: Text(r)),
+                          )
+                          .toList(),
+                      onChanged: (v) =>
+                          setDialogState(() => selectedReason = v!),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Mô tả thêm (Tùy chọn):',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: descController,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        filled: true,
+                        fillColor: Color(0xFF2C2C2E),
+                        border: OutlineInputBorder(),
+                        hintText: 'Nhập mô tả chi tiết...',
+                        hintStyle: TextStyle(color: Colors.white30),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text(
+                    'Hủy',
+                    style: TextStyle(color: Colors.white54),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final description = descController.text.trim();
+                    Navigator.pop(ctx);
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      final doc = FirebaseFirestore.instance
+                          .collection('reports')
+                          .doc();
+                      await doc.set(
+                        Report(
+                          id: doc.id,
+                          mangaId: state.mangaId!,
+                          mangaTitle: state.manga!.title,
+                          chapterId:
+                              state.currentChapter?.id ?? widget.chapterId,
+                          chapterTitle: state.currentChapter?.title ?? '',
+                          userId: uid,
+                          reason: selectedReason,
+                          description: description,
+                          readerType: readerType,
+                          pageIndex: currentPage,
+                          totalPages: pageCount,
+                          createdAt: DateTime.now(),
+                        ).toMap(),
+                      );
+
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Cảm ơn bạn đã báo lỗi!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Lỗi: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                  ),
+                  child: const Text(
+                    'Gửi',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(descController.dispose);
   }
 
   void _showReaderSettings(
@@ -1246,9 +1571,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(7),
-                                child: Image.memory(
-                                  state.pages[index],
+                                child: Image.file(
+                                  File(state.pages[index]),
                                   fit: BoxFit.cover,
+                                  cacheWidth: 300,
                                   gaplessPlayback: true,
                                 ),
                               ),
@@ -1295,22 +1621,101 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     return PhotoViewGallery.builder(
       scrollPhysics: const BouncingScrollPhysics(),
       builder: (context, index) {
+        if (index == state.pages.length) {
+          return PhotoViewGalleryPageOptions.customChild(
+            child: Center(
+              child: _buildHorizontalChapterTransitionFooter(state, notifier),
+            ),
+            initialScale: PhotoViewComputedScale.contained,
+            minScale: PhotoViewComputedScale.contained,
+            maxScale: PhotoViewComputedScale.contained,
+          );
+        }
+
         return PhotoViewGalleryPageOptions(
-          imageProvider: MemoryImage(state.pages[index]),
+          imageProvider: ResizeImage(
+            FileImage(File(state.pages[index])),
+            width:
+                (MediaQuery.of(context).size.width *
+                        MediaQuery.of(context).devicePixelRatio)
+                    .toInt(),
+          ),
           initialScale: _initialPhotoScale(state.imageFit),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 3,
         );
       },
-      itemCount: state.pages.length,
+      itemCount: state.pages.length + 1,
       pageController: _pageController,
       reverse: state.direction == ReaderDirection.rtl,
-      onPageChanged:
-          notifier.onPageChanged, // Cập nhật currentPageIndex trong provider
+      onPageChanged: (index) {
+        if (index < state.pages.length) {
+          notifier.onPageChanged(index);
+        }
+      },
       loadingBuilder: (context, event) =>
           const Center(child: CircularProgressIndicator()),
       backgroundDecoration: BoxDecoration(
         color: _readerBackgroundColor(state.background),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalChapterTransitionFooter(
+    ReaderState state,
+    ReaderNotifier notifier,
+  ) {
+    final hasNextChapter = notifier.getNextChapterId() != null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.keyboard_double_arrow_right,
+            color: Colors.white54,
+            size: 40,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Hết ${state.currentChapter?.title ?? 'chương'}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          const SizedBox(height: 20),
+          if (state.isLoadingNextChapter)
+            const Column(
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 12),
+                Text(
+                  'Đang tải chương tiếp theo...',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            )
+          else if (hasNextChapter)
+            FilledButton.icon(
+              onPressed: _isChapterTransitionLocked
+                  ? null
+                  : () => _triggerNextChapter(),
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Đọc chương tiếp'),
+            )
+          else
+            const Column(
+              children: [
+                Icon(Icons.check_circle_outline, color: Colors.green, size: 32),
+                SizedBox(height: 8),
+                Text(
+                  'Đây là chương cuối cùng',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }
@@ -1337,11 +1742,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final pageIndex = index - 1;
         return Transform.translate(
           offset: const Offset(0, -0.5), // Khử hở viền 1px
-          child: Image.memory(
-            state.pages[pageIndex],
+          child: Image.file(
+            File(state.pages[pageIndex]),
             fit: _verticalImageFit(state.imageFit),
             width: double.infinity,
             alignment: Alignment.topCenter,
+            cacheWidth:
+                (MediaQuery.of(context).size.width *
+                        MediaQuery.of(context).devicePixelRatio)
+                    .toInt(),
             filterQuality: FilterQuality.none, // Khử anti-aliasing
             errorBuilder: (_, __, ___) => const SizedBox(
               height: 200,
@@ -1796,8 +2205,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           ListTile(
             leading: const Icon(Icons.refresh, color: Colors.white),
             title: const Text('Tải lại', style: TextStyle(color: Colors.white)),
-            onTap: () =>
-                notifier.init(widget.chapterId, mangaId: widget.mangaId),
+            onTap: () {
+              Navigator.pop(context);
+              _reloadCurrentChapter(notifier);
+            },
           ),
           ListTile(
             leading: Icon(
@@ -1993,7 +2404,36 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             color: state.isFollowed ? Colors.red : Colors.white,
                           ),
                           onPressed: () async {
-                            await notifier.toggleFollow();
+                            try {
+                              final isNowFollowed = await notifier
+                                  .toggleFollow();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    isNowFollowed
+                                        ? 'Đã theo dõi thành công!'
+                                        : 'Đã hủy theo dõi',
+                                  ),
+                                  backgroundColor: isNowFollowed
+                                      ? Colors.green
+                                      : null,
+                                ),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    e.toString().replaceFirst(
+                                      'Exception: ',
+                                      '',
+                                    ),
+                                  ),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
                           },
                         ),
 

@@ -120,7 +120,12 @@ class _CategoryItem extends StatelessWidget {
           Icons.menu,
           color: Colors.white54,
         ), // Handle kéo thả
-        title: Text(name, style: const TextStyle(color: Colors.white)),
+        title: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

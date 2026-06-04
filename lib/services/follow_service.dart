@@ -32,18 +32,22 @@ class FollowService {
         .doc(uid)
         .collection('following')
         .doc(mangaId);
-    final doc = await ref.get();
-    if (doc.exists) return;
+    final mangaRef = _db.collection('comics').doc(mangaId);
 
-    await ref.set({
-      'mangaId': mangaId,
-      'title': title,
-      'coverUrl': coverUrl,
-      'followedAt': FieldValue.serverTimestamp(),
+    await _db.runTransaction((transaction) async {
+      final doc = await transaction.get(ref);
+      if (doc.exists) return;
+
+      transaction.set(ref, {
+        'mangaId': mangaId,
+        'title': title,
+        'coverUrl': coverUrl,
+        'followedAt': Timestamp.now(),
+      });
+      transaction.set(mangaRef, {
+        'likeCount': FieldValue.increment(1),
+      }, SetOptions(merge: true));
     });
-    await _db.collection('comics').doc(mangaId).set({
-      'likeCount': FieldValue.increment(1),
-    }, SetOptions(merge: true));
   }
 
   Future<void> unfollowManga(String mangaId) async {
@@ -54,13 +58,22 @@ class FollowService {
         .doc(uid)
         .collection('following')
         .doc(mangaId);
-    final doc = await ref.get();
-    if (!doc.exists) return;
+    final mangaRef = _db.collection('comics').doc(mangaId);
 
-    await ref.delete();
-    await _db.collection('comics').doc(mangaId).set({
-      'likeCount': FieldValue.increment(-1),
-    }, SetOptions(merge: true));
+    await _db.runTransaction((transaction) async {
+      final doc = await transaction.get(ref);
+      if (!doc.exists) return;
+
+      final mangaDoc = await transaction.get(mangaRef);
+      final likeCount = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
+
+      transaction.delete(ref);
+      if (likeCount > 0) {
+        transaction.set(mangaRef, {
+          'likeCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
+      }
+    });
   }
 
   Future<void> toggleFollow(
@@ -76,27 +89,43 @@ class FollowService {
         .doc(uid)
         .collection('following')
         .doc(mangaId);
+    final mangaRef = _db.collection('comics').doc(mangaId);
+
     final doc = await ref.get();
+    if (!doc.exists && (title == null || coverUrl == null)) {
+      throw Exception('Thiếu thông tin để theo dõi');
+    }
 
     if (doc.exists) {
-      await ref.delete();
-      await _db.collection('comics').doc(mangaId).set({
-        'likeCount': FieldValue.increment(-1),
-      }, SetOptions(merge: true));
-    } else {
-      // Chưa theo dõi → theo dõi (title + coverUrl bắt buộc vì cần lưu metadata)
-      if (title == null || coverUrl == null) {
-        throw Exception('Thiếu thông tin để theo dõi');
-      }
-      await ref.set({
-        'mangaId': mangaId,
-        'title': title,
-        'coverUrl': coverUrl,
-        'followedAt': FieldValue.serverTimestamp(),
+      await _db.runTransaction((transaction) async {
+        final followDoc = await transaction.get(ref);
+        if (!followDoc.exists) return;
+
+        final mangaDoc = await transaction.get(mangaRef);
+        final likeCount = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
+
+        transaction.delete(ref);
+        if (likeCount > 0) {
+          transaction.set(mangaRef, {
+            'likeCount': FieldValue.increment(-1),
+          }, SetOptions(merge: true));
+        }
       });
-      await _db.collection('comics').doc(mangaId).set({
-        'likeCount': FieldValue.increment(1),
-      }, SetOptions(merge: true));
+    } else {
+      await _db.runTransaction((transaction) async {
+        final followDoc = await transaction.get(ref);
+        if (followDoc.exists) return;
+
+        transaction.set(ref, {
+          'mangaId': mangaId,
+          'title': title,
+          'coverUrl': coverUrl,
+          'followedAt': Timestamp.now(),
+        });
+        transaction.set(mangaRef, {
+          'likeCount': FieldValue.increment(1),
+        }, SetOptions(merge: true));
+      });
     }
   }
 }

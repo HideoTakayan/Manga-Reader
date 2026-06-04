@@ -141,7 +141,7 @@ class DownloadService {
       _downloadController.stream;
 
   // Số lượng tải xuống đồng thời tối đa
-  static const int _maxConcurrentDownloads = 2;
+  static const int _maxConcurrentDownloads = 4;
   int _activeDownloads = 0;
 
   /// Thêm chương vào hàng đợi tải xuống
@@ -206,24 +206,18 @@ class DownloadService {
       '🔄 Queue Check: Active=$_activeDownloads/$_maxConcurrentDownloads, Queue=${_downloadQueue.length}',
     );
 
-    if (_activeDownloads >= _maxConcurrentDownloads) return;
+    while (_activeDownloads < _maxConcurrentDownloads) {
+      DownloadTask? queuedTask;
+      for (final task in _downloadQueue.values) {
+        if (task.status == DownloadStatus.queued) {
+          queuedTask = task;
+          break;
+        }
+      }
 
-    // Tìm tác vụ đầu tiên đang chờ trong hàng đợi
-    final queuedTask = _downloadQueue.values.firstWhere(
-      (task) => task.status == DownloadStatus.queued,
-      orElse: () => DownloadTask(
-        chapterId: '',
-        mangaId: '',
-        mangaTitle: '',
-        chapterTitle: '',
-        fileType: '',
-      ),
-    );
-
-    if (queuedTask.chapterId.isEmpty) return;
-
-    // Bắt đầu tải
-    _downloadChapter(queuedTask);
+      if (queuedTask == null) return;
+      _downloadChapter(queuedTask);
+    }
   }
 
   /// Tải một chương
@@ -232,18 +226,21 @@ class DownloadService {
     task.status = DownloadStatus.downloading;
     _notifyListeners();
 
-    await NotificationService.instance.initLocalNotifications();
     final notifId = task.chapterId.hashCode;
-    if (!task.isSilent) {
-      await NotificationService.instance.showDownloadProgress(
-        notifId,
-        0,
-        'Đang chuẩn bị...',
-        task.chapterTitle,
-      );
-    }
 
     try {
+      final canShowNotification = task.isSilent
+          ? false
+          : await _initNotificationsSafely();
+      if (canShowNotification) {
+        await _showDownloadProgressSafely(
+          notifId,
+          0,
+          'Đang chuẩn bị...',
+          task.chapterTitle,
+        );
+      }
+
       debugPrint('📥 Bắt đầu tải: ${task.chapterTitle}');
       // 1. Tạo thư mục đích (Theo tên truyện)
       final mangaFolderPath = await FolderService.getMangaPathByTitle(
@@ -275,11 +272,30 @@ class DownloadService {
       }
       // -----------------------------------------------
 
-      // 2. Tải tệp từ Google Drive (có tiến trình + thông báo)
-      DateTime lastNotifTime = DateTime.now();
+      // 2. Chuẩn bị file đích
+      final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
+      final safeChapterId = FolderService.sanitize(task.chapterId);
+      final baseFileName = safeChapterTitle.isEmpty
+          ? safeChapterId
+          : '${safeChapterTitle}_$safeChapterId';
+      String fileName = baseFileName;
+      if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
+        fileName = '$fileName.${task.fileType}';
+      }
+      final filePath = '$mangaFolderPath/$fileName';
+      final file = File(filePath);
+      final partFile = File('$filePath.part');
 
-      final fileBytes = await DriveService.instance.downloadFileWithProgress(
+      // 3. Tải tệp từ Google Drive stream trực tiếp xuống đĩa
+      DateTime lastNotifTime = DateTime.now();
+      DateTime lastUiUpdateTime = DateTime.now();
+
+      final success = await DriveService.instance.downloadFileToFile(
         task.chapterId,
+        partFile,
+        isCancelled: () =>
+            task.status == DownloadStatus.paused ||
+            task.status == DownloadStatus.cancelled,
         onProgress: (received, total) async {
           if (total <= 0) return;
           final progress = received / total;
@@ -287,48 +303,63 @@ class DownloadService {
           task.progress = progress;
           task.downloadedBytes = received;
           task.totalBytes = total;
-          _notifyListeners();
 
-          if (!task.isSilent &&
-              DateTime.now().difference(lastNotifTime).inMilliseconds > 800) {
-            await NotificationService.instance.showDownloadProgress(
+          final now = DateTime.now();
+          if (now.difference(lastUiUpdateTime).inMilliseconds > 250 ||
+              received == total) {
+            _notifyListeners();
+            lastUiUpdateTime = now;
+          }
+
+          if (canShowNotification &&
+              now.difference(lastNotifTime).inMilliseconds > 800) {
+            await _showDownloadProgressSafely(
               notifId,
               (progress * 100).toInt(),
               'Đang tải: ${task.chapterTitle}',
               '${_formatBytes(received)} / ${_formatBytes(total)}',
             );
-            lastNotifTime = DateTime.now();
+            lastNotifTime = now;
           }
         },
       );
 
-      if (fileBytes == null) {
-        throw Exception('Không thể tải file từ Google Drive');
+      if (!success) {
+        if (await partFile.exists()) await partFile.delete();
+        if (task.status == DownloadStatus.paused ||
+            task.status == DownloadStatus.cancelled) {
+          // Xử lý ở logic bên dưới
+        } else {
+          throw Exception('Không thể tải file từ Google Drive');
+        }
+      } else {
+        if (await partFile.exists()) {
+          await partFile.rename(filePath);
+        }
       }
 
-      // 3. Lưu tệp vào máy (Tên chương đã được làm sạch)
       if (task.status == DownloadStatus.cancelled) {
-        await NotificationService.instance.cancelNotification(notifId);
+        if (await file.exists()) await file.delete();
+        if (await partFile.exists()) await partFile.delete();
+        _notifyListeners();
+        if (canShowNotification) {
+          await _cancelNotificationSafely(notifId);
+        }
         return;
       }
 
       if (task.status == DownloadStatus.paused) {
+        if (await file.exists()) await file.delete();
+        if (await partFile.exists()) await partFile.delete();
         task.progress = 0.0;
         task.downloadedBytes = null;
         task.totalBytes = null;
         _notifyListeners();
-        await NotificationService.instance.cancelNotification(notifId);
+        if (canShowNotification) {
+          await _cancelNotificationSafely(notifId);
+        }
         return;
       }
-
-      final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
-      String fileName = safeChapterTitle;
-      if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
-        fileName = '$fileName.${task.fileType}';
-      }
-      final filePath = '$mangaFolderPath/$fileName';
-      final file = File(filePath);
-      await file.writeAsBytes(fileBytes);
 
       // 4. Lưu thông tin vào cơ sở dữ liệu
       await DatabaseHelper.instance.saveDownload(
@@ -337,7 +368,7 @@ class DownloadService {
         mangaTitle: task.mangaTitle,
         chapterTitle: task.chapterTitle,
         localPath: filePath,
-        fileSize: fileBytes.length,
+        fileSize: await file.length(),
       );
 
       await DownloadCache.instance.addChapter(task.chapterId, task.mangaId);
@@ -345,11 +376,11 @@ class DownloadService {
       task.status = DownloadStatus.completed;
       task.progress = 1.0;
       debugPrint(
-        '✅ Tải xong: ${task.chapterTitle} (${_formatBytes(fileBytes.length)})',
+        '✅ Tải xong: ${task.chapterTitle} (${_formatBytes(task.totalBytes ?? task.downloadedBytes ?? 0)})',
       );
 
-      if (!task.isSilent) {
-        await NotificationService.instance.showDownloadComplete(
+      if (canShowNotification) {
+        await _showDownloadCompleteSafely(
           notifId,
           'Tải xong',
           task.chapterTitle,
@@ -367,7 +398,7 @@ class DownloadService {
       task.errorMessage = e.toString();
 
       if (!task.isSilent) {
-        await NotificationService.instance.showDownloadComplete(
+        await _showDownloadCompleteSafely(
           notifId,
           'Lỗi tải',
           task.chapterTitle,
@@ -379,6 +410,60 @@ class DownloadService {
       _notifyListeners();
 
       _processQueue();
+    }
+  }
+
+  Future<bool> _initNotificationsSafely() async {
+    try {
+      await NotificationService.instance.initLocalNotifications();
+      return true;
+    } catch (e) {
+      debugPrint('⚠️ Không thể khởi tạo thông báo tải xuống: $e');
+      return false;
+    }
+  }
+
+  Future<void> _showDownloadProgressSafely(
+    int id,
+    int progress,
+    String title,
+    String body,
+  ) async {
+    try {
+      await NotificationService.instance.showDownloadProgress(
+        id,
+        progress,
+        title,
+        body,
+      );
+    } catch (e) {
+      debugPrint('⚠️ Không thể cập nhật thông báo tải xuống: $e');
+    }
+  }
+
+  Future<void> _showDownloadCompleteSafely(
+    int id,
+    String title,
+    String body, {
+    bool isError = false,
+  }) async {
+    try {
+      await NotificationService.instance.showDownloadComplete(
+        id,
+        title,
+        body,
+        isError: isError,
+      );
+    } catch (e) {
+      debugPrint('⚠️ Không thể hiển thị thông báo tải xong: $e');
+    }
+  }
+
+  Future<void> _cancelNotificationSafely(int id) async {
+    try {
+      await NotificationService.instance.cancelNotification(id);
+    } catch (e) {
+      debugPrint('⚠️ Không thể hủy thông báo tải xuống: $e');
     }
   }
 
@@ -488,6 +573,16 @@ class DownloadService {
     debugPrint('🗑️ Đã xóa hàng đợi');
   }
 
+  bool _isMangaInQueue(String mangaId) {
+    if (mangaId.isEmpty) return false;
+    return _downloadQueue.values.any(
+      (task) =>
+          task.mangaId == mangaId &&
+          (task.status == DownloadStatus.queued ||
+              task.status == DownloadStatus.downloading),
+    );
+  }
+
   /// Xóa chương đã tải
   Future<void> deleteDownload(String chapterId) async {
     try {
@@ -520,7 +615,10 @@ class DownloadService {
       final remaining = mangaId.isEmpty
           ? const <Map<String, dynamic>>[]
           : await DatabaseHelper.instance.getDownloadsByManga(mangaId);
-      if (mangaId.isNotEmpty && remaining.isEmpty) {
+      
+      final bool hasQueuedTasks = _isMangaInQueue(mangaId);
+
+      if (mangaId.isNotEmpty && remaining.isEmpty && !hasQueuedTasks) {
         debugPrint('🧹 Không còn chương nào, tiến hành xóa folder truyện...');
         final mangaTitle = _readString(downloadInfo, 'mangaTitle');
         if (mangaTitle.isEmpty) {
@@ -603,6 +701,20 @@ class DownloadService {
 
   Future<void> restoreQueue() async {
     try {
+      try {
+        final downloadDir = Directory(FolderService.downloadPath);
+        if (await downloadDir.exists()) {
+          await for (final entity in downloadDir.list(recursive: true)) {
+            if (entity is File && entity.path.endsWith('.part')) {
+              await entity.delete();
+              debugPrint('🧹 Deleted orphaned .part file: ${entity.path}');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error cleaning up .part files: $e');
+      }
+
       final prefs = await SharedPreferences.getInstance();
       final List<String>? jsonList = prefs.getStringList(_queuePrefsKey);
 
@@ -663,6 +775,17 @@ class DownloadService {
   Future<void> deleteMangaDownloads(String mangaId, String mangaTitle) async {
     try {
       debugPrint('🗑️ Đang xóa toàn bộ download manga: $mangaTitle');
+
+      // 0. Hủy tất cả các tác vụ đang tải hoặc chờ tải của truyện này
+      if (mangaId.isNotEmpty) {
+        final tasksToCancel = _downloadQueue.values
+            .where((t) => t.mangaId == mangaId)
+            .map((t) => t.chapterId)
+            .toList();
+        for (final cid in tasksToCancel) {
+          await cancelDownload(cid);
+        }
+      }
 
       // 1. Xóa khỏi Cơ sở dữ liệu
       await DatabaseHelper.instance.deleteDownloadsByManga(mangaId);

@@ -260,10 +260,22 @@ class _MangaDownloadGroup extends StatelessWidget {
                         ),
                       );
                       if (confirm == true) {
-                        for (final task in tasks) {
-                          await DownloadService.instance.cancelDownload(
-                            task.chapterId,
-                          );
+                        if (!context.mounted) return;
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => const Center(child: CircularProgressIndicator()),
+                        );
+                        try {
+                          for (final task in tasks) {
+                            await DownloadService.instance.cancelDownload(
+                              task.chapterId,
+                            );
+                          }
+                        } finally {
+                          if (context.mounted) {
+                            Navigator.pop(context); // Tắt vòng xoay
+                          }
                         }
                       }
                     },

@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import '../../services/notification_service.dart';
 import 'metadata_validator.dart';
 import 'package:path/path.dart' as path;
 
@@ -120,7 +120,11 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.manga.title),
+        title: Text(
+          widget.manga.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         actions: [
@@ -245,12 +249,36 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                   style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ),
-                              ElevatedButton(
+                              TextButton(
                                 onPressed: () => Navigator.pop(context, true),
-                                style: ElevatedButton.styleFrom(
+                                style: TextButton.styleFrom(
                                   backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(128, 48),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 12,
+                                  ),
+                                  shape: const StadiumBorder(),
                                 ),
-                                child: const Text('Xóa'),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Xóa',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -312,7 +340,10 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         onPressed: () async {
           await showDialog(
             context: context,
-            builder: (_) => _AddChapterDialog(mangaId: widget.manga.id),
+            builder: (_) => _AddChapterDialog(
+              mangaId: widget.manga.id,
+              mangaTitle: widget.manga.title,
+            ),
           );
           _refresh();
         },
@@ -348,8 +379,16 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                   isError ? Icons.error_outline : Icons.warning_amber,
                   color: isError ? Colors.red : Colors.orange,
                 ),
-                title: Text(issue.title),
-                subtitle: Text(issue.message),
+                title: Text(
+                  issue.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  issue.message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               );
             },
           ),
@@ -363,7 +402,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 // Sau upload thành công: ghi thông báo realtime vào Firestore collection 'notifications'.
 class _AddChapterDialog extends StatefulWidget {
   final String mangaId;
-  const _AddChapterDialog({required this.mangaId});
+  final String mangaTitle;
+  const _AddChapterDialog({required this.mangaId, required this.mangaTitle});
 
   @override
   State<_AddChapterDialog> createState() => _AddChapterDialogState();
@@ -397,7 +437,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
 
   // Validate → upload qua DriveService → ghi thông báo vào Firestore → đóng dialog.
   Future<void> _submit() async {
-    if (_titleController.text.isEmpty && _files.length == 1) {
+    // Khi chỉ upload 1 file, tên chương là bắt buộc.
+    // Khi upload nhiều file, tên tự động lấy từ tên file nên không cần validate.
+    if (_files.length == 1 && _titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên chương')));
@@ -412,29 +454,31 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
 
     setState(() => _isUploading = true);
     try {
-      // Upload file lên folder manga trên Drive, đồng thời gửi push notification qua FCM
+      // Upload file lên folder manga trên Drive.
+      String? uploadedChapterTitle;
       for (final file in _files) {
         final fallbackTitle = path.basenameWithoutExtension(file.path);
+        final chapterTitle =
+            _files.length == 1 && _titleController.text.trim().isNotEmpty
+            ? _titleController.text.trim()
+            : fallbackTitle;
         await DriveService.instance.addChapter(
           mangaId: widget.mangaId,
-          title: _files.length == 1 && _titleController.text.trim().isNotEmpty
-              ? _titleController.text.trim()
-              : fallbackTitle,
+          title: chapterTitle,
           file: file,
         );
+        uploadedChapterTitle ??= chapterTitle;
       }
 
       // Ghi thêm bản ghi vào Firestore để màn hình thông báo trong app đọc lại được lịch sử
-      await FirebaseFirestore.instance.collection('notifications').add({
-        'type': 'new_chapter', // Loại thông báo để app phân biệt xử lý
-        'mangaId': widget.mangaId,
-        'title': 'Truyện có chương mới!',
-        'body': _files.length == 1
-            ? 'Đã cập nhật ${_titleController.text.trim().isEmpty ? path.basenameWithoutExtension(_files.first.path) : _titleController.text.trim()}'
-            : 'Đã cập nhật ${_files.length} chương mới',
-        'timestamp': FieldValue.serverTimestamp(),
-        'sender': 'admin',
-      });
+      await NotificationService.instance.notifySubscribers(
+        type: 'new_chapter',
+        mangaId: widget.mangaId,
+        title: '${widget.mangaTitle} có chương mới',
+        body: _files.length == 1
+            ? (uploadedChapterTitle ?? 'Chương mới')
+            : '${_files.length} chương mới',
+      );
 
       if (mounted) Navigator.pop(context);
     } catch (e) {

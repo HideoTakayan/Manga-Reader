@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../data/drive_service.dart';
 import '../../data/models_cloud.dart';
+import '../../services/notification_service.dart';
 import '../shared/drive_image.dart';
 
 // Dialog sửa thông tin bộ truyện: tên, tác giả, mô tả, thể loại, trạng thái, ảnh bìa.
@@ -107,22 +107,17 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
       // Chỉ ghi khi thực sự có thay đổi — tránh spam thông báo khi Admin bấm Lưu mà không sửa gì.
       List<String> changes = [];
       if (_newCoverFile != null) changes.add('Ảnh bìa mới');
-      if (_status != widget.manga.status) changes.add('Trạng thái: $_status');
       if (_titleController.text.trim() != widget.manga.title) {
         changes.add('Đổi tên truyện');
       }
 
       if (changes.isNotEmpty) {
-        await FirebaseFirestore.instance.collection('notifications').add({
-          'type':
-              'info_update', // Phân biệt với 'new_chapter' để app xử lý hiển thị khác
-          'mangaId': widget.manga.id,
-          'mangaTitle': _titleController.text.trim(),
-          'title': '${_titleController.text.trim()} vừa cập nhật thông tin',
-          'body': 'Cập nhật: ${changes.join(', ')}',
-          'timestamp': FieldValue.serverTimestamp(),
-          'sender': 'admin',
-        });
+        await NotificationService.instance.notifySubscribers(
+          type: 'info_update',
+          mangaId: widget.manga.id,
+          title: '${_titleController.text.trim()} vừa cập nhật thông tin',
+          body: 'Cập nhật: ${changes.join(', ')}',
+        );
       }
 
       if (mounted) {

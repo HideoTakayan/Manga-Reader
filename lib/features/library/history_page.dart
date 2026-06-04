@@ -238,7 +238,7 @@ class _HistoryPageState extends State<HistoryPage> {
               orElse: () => CloudManga(
                 id: item.mangaId,
                 title: 'Truyện không tồn tại',
-                author: 'Unknown',
+                author: 'Không rõ tác giả',
                 description: '',
                 coverFileId: '',
                 genres: [],

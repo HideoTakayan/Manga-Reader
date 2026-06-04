@@ -63,94 +63,96 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
         child: StatefulBuilder(
           builder: (context, setStateSheet) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  "Chỉnh sửa thông tin",
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 20),
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await ImagePicker().pickImage(
-                      source: ImageSource.gallery,
-                    );
-                    if (picked != null) {
-                      setStateSheet(() => newAvatar = File(picked.path));
-                    }
-                  },
-                  child: CircleAvatar(
-                    radius: 45,
-                    backgroundColor: Colors.grey[700],
-                    backgroundImage: newAvatar != null
-                        ? FileImage(newAvatar!)
-                        : _getUserAvatar(doc),
-                    child: (newAvatar == null && _getUserAvatar(doc) == null)
-                        ? const Icon(
-                            Icons.camera_alt,
-                            size: 30,
-                            color: Colors.white70,
-                          )
-                        : null,
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "Chỉnh sửa thông tin",
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: nameController,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  decoration: InputDecoration(
-                    labelText: 'Tên hiển thị',
-                    labelStyle: Theme.of(context).textTheme.bodyMedium,
-                    filled: true,
-                    fillColor: Theme.of(context).scaffoldBackgroundColor,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 20),
+                  GestureDetector(
+                    onTap: () async {
+                      final picked = await ImagePicker().pickImage(
+                        source: ImageSource.gallery,
+                      );
+                      if (picked != null) {
+                        setStateSheet(() => newAvatar = File(picked.path));
+                      }
+                    },
+                    child: CircleAvatar(
+                      radius: 45,
+                      backgroundColor: Colors.grey[700],
+                      backgroundImage: newAvatar != null
+                          ? FileImage(newAvatar!)
+                          : _getUserAvatar(doc),
+                      child: (newAvatar == null && _getUserAvatar(doc) == null)
+                          ? const Icon(
+                              Icons.camera_alt,
+                              size: 30,
+                              color: Colors.white70,
+                            )
+                          : null,
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: bioController,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  decoration: InputDecoration(
-                    labelText: 'Mô tả',
-                    labelStyle: Theme.of(context).textTheme.bodyMedium,
-                    filled: true,
-                    fillColor: Theme.of(context).scaffoldBackgroundColor,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nameController,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    decoration: InputDecoration(
+                      labelText: 'Tên hiển thị',
+                      labelStyle: Theme.of(context).textTheme.bodyMedium,
+                      filled: true,
+                      fillColor: Theme.of(context).scaffoldBackgroundColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(
-                      ctx,
-                    ); // Đóng sheet trước khi lưu để tránh bị block
-                    await _saveProfile(
-                      nameController.text,
-                      bioController.text,
-                      newAvatar,
-                    );
-                  },
-                  icon: const Icon(Icons.save),
-                  label: const Text("Lưu thay đổi"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 14,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: bioController,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                    decoration: InputDecoration(
+                      labelText: 'Mô tả',
+                      labelStyle: Theme.of(context).textTheme.bodyMedium,
+                      filled: true,
+                      fillColor: Theme.of(context).scaffoldBackgroundColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(
+                        ctx,
+                      ); // Đóng sheet trước khi lưu để tránh bị block
+                      await _saveProfile(
+                        nameController.text,
+                        bioController.text,
+                        newAvatar,
+                      );
+                    },
+                    icon: const Icon(Icons.save),
+                    label: const Text("Lưu thay đổi"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-              ],
+                  const SizedBox(height: 20),
+                ],
+              ),
             );
           },
         ),

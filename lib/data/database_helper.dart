@@ -25,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 11,
+      version: 13,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -55,7 +55,16 @@ class DatabaseHelper {
       } catch (_) {}
     }
     if (oldVersion < 6) {
+      // _createDownloadTable đã được dời xuống bản 12 hoặc đã xử lý riêng
       await _createDownloadTable(db);
+    }
+    if (oldVersion < 12) {
+      if (await _tableExists(db, 'history') &&
+          !await _columnExists(db, 'history', 'totalPages')) {
+        await db.execute(
+          'ALTER TABLE history ADD COLUMN totalPages INTEGER DEFAULT 1',
+        );
+      }
     }
     if (oldVersion < 7) {
       try {
@@ -80,6 +89,9 @@ class DatabaseHelper {
     }
     if (oldVersion < 11) {
       await _createLibraryStatusTable(db);
+    }
+    if (oldVersion < 13) {
+      await _createReadingActivityTable(db);
     }
   }
 
@@ -111,6 +123,7 @@ class DatabaseHelper {
         chapterId TEXT,
         chapterTitle TEXT,
         lastPageIndex INTEGER,
+        totalPages INTEGER DEFAULT 1,
         updatedAt INTEGER,
         isSynced INTEGER DEFAULT 0,
         PRIMARY KEY (userId, comicId)
@@ -242,6 +255,33 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _createReadingActivityTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS reading_activity (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        mangaId TEXT NOT NULL,
+        chapterId TEXT NOT NULL,
+        chapterTitle TEXT,
+        pageIndex INTEGER DEFAULT 0,
+        totalPages INTEGER DEFAULT 1,
+        progressPercent REAL DEFAULT 0,
+        dateKey TEXT NOT NULL,
+        readAt INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_reading_activity_user_date
+      ON reading_activity (userId, dateKey DESC)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_reading_activity_manga
+      ON reading_activity (userId, mangaId, readAt DESC)
+    ''');
+  }
+
   Future<void> _createCatalogCacheTable(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS catalog_cache (
@@ -326,6 +366,7 @@ class DatabaseHelper {
         chapterId TEXT,
         chapterTitle TEXT,
         lastPageIndex INTEGER,
+        totalPages INTEGER DEFAULT 1,
         updatedAt INTEGER,
         isSynced INTEGER DEFAULT 0,
         PRIMARY KEY (userId, comicId)
@@ -337,6 +378,7 @@ class DatabaseHelper {
     await _createReaderProgressTables(db);
     await _createCatalogCacheTable(db);
     await _createLibraryStatusTable(db);
+    await _createReadingActivityTable(db);
   }
 
   // ── TRUYỆN CỤC BỘ ──────────────────────────────────────────────────────────
@@ -385,6 +427,7 @@ class DatabaseHelper {
       'chapterId': map['chapterId'],
       'chapterTitle': map['chapterTitle'],
       'lastPageIndex': map['lastPageIndex'],
+      'totalPages': map['totalPages'],
       'updatedAt': map['updatedAt'],
       'isSynced': 0,
     };
@@ -439,6 +482,63 @@ class DatabaseHelper {
     }
   }
 
+  Future<void> saveReadingActivity(ReadingActivity activity) async {
+    final db = await instance.database;
+    final existing = await db.query(
+      'reading_activity',
+      where: 'id = ?',
+      whereArgs: [activity.id],
+      limit: 1,
+    );
+
+    if (existing.isEmpty) {
+      await db.insert(
+        'reading_activity',
+        activity.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return;
+    }
+
+    final current = ReadingActivity.fromMap(existing.first);
+    final merged = {
+      ...activity.toMap(),
+      'pageIndex': activity.pageIndex > current.pageIndex
+          ? activity.pageIndex
+          : current.pageIndex,
+      'totalPages': activity.totalPages > current.totalPages
+          ? activity.totalPages
+          : current.totalPages,
+      'progressPercent': activity.progressPercent > current.progressPercent
+          ? activity.progressPercent
+          : current.progressPercent,
+      'readAt': activity.readAt.isAfter(current.readAt)
+          ? activity.readAt.millisecondsSinceEpoch
+          : current.readAt.millisecondsSinceEpoch,
+    };
+
+    await db.insert(
+      'reading_activity',
+      merged,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<ReadingActivity>> getReadingActivity(
+    String userId, {
+    DateTime? since,
+  }) async {
+    final db = await instance.database;
+    final sinceKey = since == null ? null : ReadingActivity.dateKeyFor(since);
+    final result = await db.query(
+      'reading_activity',
+      where: sinceKey == null ? 'userId = ?' : 'userId = ? AND dateKey >= ?',
+      whereArgs: sinceKey == null ? [userId] : [userId, sinceKey],
+      orderBy: 'readAt DESC',
+    );
+    return result.map((e) => ReadingActivity.fromMap(e)).toList();
+  }
+
   // Lấy lịch sử của một bộ truyện cụ thể — biết user đang đọc dở chương nào.
   Future<ReadingHistory?> getHistoryForManga(
     String userId,
@@ -469,6 +569,11 @@ class DatabaseHelper {
     final db = await instance.database;
     try {
       await db.delete('history', where: 'userId = ?', whereArgs: [userId]);
+      await db.delete(
+        'reading_activity',
+        where: 'userId = ?',
+        whereArgs: [userId],
+      );
     } catch (e) {
       debugPrint('Error clearing history: $e');
     }
@@ -480,6 +585,11 @@ class DatabaseHelper {
       await db.delete(
         'history',
         where: 'userId = ? AND comicId = ?',
+        whereArgs: [userId, mangaId],
+      );
+      await db.delete(
+        'reading_activity',
+        where: 'userId = ? AND mangaId = ?',
         whereArgs: [userId, mangaId],
       );
     } catch (e) {
@@ -563,11 +673,7 @@ class DatabaseHelper {
 
   Future<void> deleteBookmarksForManga(String mangaId) async {
     final db = await instance.database;
-    await db.delete(
-      'bookmarks',
-      where: 'mangaId = ?',
-      whereArgs: [mangaId],
-    );
+    await db.delete('bookmarks', where: 'mangaId = ?', whereArgs: [mangaId]);
   }
 
   Future<void> saveDownload({

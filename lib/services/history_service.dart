@@ -61,6 +61,7 @@ class HistoryService {
           .doc(uid)
           .collection('history')
           .orderBy('updatedAt', descending: true)
+          .limit(50)
           .get();
 
       return snapshot.docs.map((doc) {

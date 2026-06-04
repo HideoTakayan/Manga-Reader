@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 // InteractionService: quản lý lượt xem (viewCount) và lượt thích (likeCount).
@@ -7,6 +8,7 @@ import 'package:flutter/foundation.dart';
 class InteractionService {
   static final InteractionService instance = InteractionService._();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   InteractionService._();
 
   Future<void> incrementMangaView(String mangaId) async {
@@ -62,6 +64,17 @@ class InteractionService {
 
   /// Đánh giá truyện (1-5 sao). Lưu vào Document của manga để tiết kiệm Reads/Writes.
   Future<void> rateManga(String mangaId, int stars) async {
+    if (_auth.currentUser == null) {
+      throw Exception('Bạn cần đăng nhập để đánh giá truyện.');
+    }
+    if (stars < 1 || stars > 5) {
+      throw ArgumentError.value(
+        stars,
+        'stars',
+        'Điểm đánh giá phải từ 1 đến 5.',
+      );
+    }
+
     try {
       final ref = _db.collection('comics').doc(mangaId);
       await ref.set({
@@ -70,6 +83,7 @@ class InteractionService {
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Lỗi khi đánh giá truyện: $e');
+      rethrow;
     }
   }
 

@@ -12,6 +12,8 @@ import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
 import 'edit_manga_dialog.dart';
 import 'chapter_manager_page.dart';
+import 'banner_manager_page.dart';
+import 'reports_list_page.dart';
 import 'users_list_page.dart';
 
 // Trang quản trị dành cho Admin: xem thống kê, thêm/sửa/xóa truyện.
@@ -30,6 +32,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   _driveAccount; // null = chưa đăng nhập Drive (chưa có quyền ghi)
   late StreamSubscription<GoogleSignInAccount?> _authSubscription;
 
+  List<CloudManga> _allMangas = [];
+  List<CloudManga> _filteredMangas = [];
+  final TextEditingController _searchController = TextEditingController();
+  bool _isLoadingMangas = true;
+
   // Whitelist email được vào trang Admin
   final _adminEmails = ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
 
@@ -44,10 +51,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     ) {
       if (mounted) setState(() => _driveAccount = account);
     });
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.trim().toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredMangas = _allMangas;
+      } else {
+        _filteredMangas = _allMangas.where((m) {
+          return m.title.toLowerCase().contains(query) ||
+              m.author.toLowerCase().contains(query);
+        }).toList();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _authSubscription
         .cancel(); // Hủy subscription khi rời trang để tránh memory leak
     super.dispose();
@@ -72,6 +95,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   // Dùng Aggregation Count trước (nhanh, ít đọc), fallback sang get() nếu Firestore rules không cho.
   // userCount = -1 báo hiệu không có quyền đọc → UI hiển thị "N/A".
   Future<void> _loadStats() async {
+    setState(() => _isLoadingMangas = true);
     final mangas = await DriveService.instance.getMangas();
     final mangaCount = mangas.length;
 
@@ -97,8 +121,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
     if (mounted) {
       setState(() {
+        _allMangas = mangas;
+        _isLoadingMangas = false;
         _stats = {'mangas': mangaCount, 'users': userCount, 'chapters': 0};
       });
+      _onSearchChanged(); // Lọc lại danh sách sau khi tải xong
     }
   }
 
@@ -146,6 +173,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             ),
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             actions: [
+              _buildDriveAction(),
               IconButton(
                 icon: Icon(
                   Icons.refresh,
@@ -161,7 +189,48 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDriveStatus(), // Banner trạng thái kết nối Drive
+                  const SizedBox(height: 16),
+                  Text(
+                    'Công cụ quản trị',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _AdminToolButton(
+                          icon: Icons.view_carousel,
+                          label: 'Banner trang chủ',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const BannerManagerPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _AdminToolButton(
+                          icon: Icons.report_problem,
+                          iconColor: Colors.orangeAccent,
+                          label: 'Báo lỗi truyện',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ReportsListPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 24),
                   Row(
                     children: [
@@ -197,7 +266,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     children: [
                       Text(
                         'Quản lý nội dung',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       ElevatedButton.icon(
                         onPressed: () async {
@@ -222,6 +293,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  _buildSearchBar(),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -233,131 +306,139 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  // Banner hiển thị trạng thái kết nối Google Drive (đã đăng nhập OAuth chưa).
-  // Xanh = đã kết nối (có quyền ghi), Đỏ = chưa kết nối (chỉ đọc được).
-  Widget _buildDriveStatus() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: _driveAccount != null
-              ? [
-                  Colors.green.withValues(alpha: 0.2),
-                  Colors.green.withValues(alpha: 0.05),
-                ]
-              : [
-                  Colors.red.withValues(alpha: 0.2),
-                  Colors.red.withValues(alpha: 0.05),
-                ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _driveAccount != null
-              ? Colors.green.withValues(alpha: 0.3)
-              : Colors.red.withValues(alpha: 0.3),
-        ),
+  Widget _buildDriveAction() {
+    final isConnected = _driveAccount != null;
+    return IconButton(
+      tooltip: isConnected
+          ? 'Đã kết nối Drive: ${_driveAccount!.email}'
+          : 'Chưa kết nối Drive',
+      icon: Icon(
+        Icons.cloud_done,
+        color: isConnected ? Colors.greenAccent : Colors.redAccent,
       ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.cloud_queue,
-            color: _driveAccount != null ? Colors.green : Colors.red,
-            size: 32,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Google Drive',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).textTheme.bodyLarge?.color,
+      onPressed: () async {
+        final messenger = ScaffoldMessenger.of(context);
+        if (!isConnected) {
+          try {
+            await DriveService.instance.signIn();
+          } catch (e) {
+            if (context.mounted) {
+              messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+            }
+          }
+        } else {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: Theme.of(context).cardColor,
+              title: const Text('Ngắt kết nối Drive?'),
+              content: Text(
+                'Bạn đang kết nối với email: ${_driveAccount!.email}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Hủy'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text(
+                    'Ngắt kết nối',
+                    style: TextStyle(color: Colors.redAccent),
                   ),
                 ),
+              ],
+            ),
+          );
+          if (confirm == true) {
+            await DriveService.instance.signOut();
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Tìm kiếm truyện theo tên hoặc tác giả...',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: _searchController.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  _searchController.clear();
+                  FocusScope.of(context).unfocus();
+                },
+              )
+            : null,
+        filled: true,
+        fillColor: Theme.of(context).cardColor,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
+      ),
+    );
+  }
+
+  Widget _buildMangaGrid() {
+    if (_isLoadingMangas) {
+      return const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.all(40.0),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (_filteredMangas.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(40.0),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.search_off,
+                  size: 64,
+                  color: Theme.of(
+                    context,
+                  ).iconTheme.color?.withValues(alpha: 0.3),
+                ),
+                const SizedBox(height: 16),
                 Text(
-                  _driveAccount != null
-                      ? 'Kết nối: ${_driveAccount!.email}'
-                      : 'Chưa kết nối',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                  _searchController.text.isEmpty
+                      ? 'Chưa có truyện nào'
+                      : 'Không tìm thấy truyện nào phù hợp',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context).disabledColor,
                   ),
                 ),
               ],
             ),
           ),
-          // Nút Kết nối/Ngắt kết nối Drive OAuth
-          TextButton(
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              if (_driveAccount == null) {
-                try {
-                  await DriveService.instance.signIn();
-                } catch (e) {
-                  if (context.mounted) {
-                    messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
-                  }
-                }
-              } else {
-                await DriveService.instance.signOut();
-              }
-            },
-            child: Text(
-              _driveAccount != null ? 'Ngắt kết nối' : 'Kết nối',
-              style: TextStyle(
-                color: _driveAccount != null
-                    ? Colors.redAccent
-                    : Colors.blueAccent,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.7,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final manga = _filteredMangas[index];
+          return _AdminMangaCard(manga: manga, onRefresh: _loadStats);
+        }, childCount: _filteredMangas.length),
       ),
-    );
-  }
-
-  // Lưới 2 cột hiển thị toàn bộ truyện. Mỗi ô là _AdminMangaCard.
-  // Dùng FutureBuilder vì dữ liệu Drive là bất đồng bộ.
-  Widget _buildMangaGrid() {
-    return FutureBuilder<List<CloudManga>>(
-      future: DriveService.instance.getMangas(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SliverToBoxAdapter(
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        final mangas = snapshot.data ?? [];
-        if (mangas.isEmpty) {
-          return const SliverToBoxAdapter(
-            child: Center(child: Text('Chưa có truyện nào')),
-          );
-        }
-
-        return SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.7,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            delegate: SliverChildBuilderDelegate((context, index) {
-              final manga = mangas[index];
-              return _AdminMangaCard(manga: manga, onRefresh: _loadStats);
-            }, childCount: mangas.length),
-          ),
-        );
-      },
     );
   }
 }
@@ -738,6 +819,35 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
   }
 }
 
+class _AdminToolButton extends StatelessWidget {
+  final IconData icon;
+  final Color? iconColor;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _AdminToolButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, color: iconColor),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Theme.of(context).cardColor,
+        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+}
+
 // Widget card thống kê nhỏ (số truyện, số user).
 // Nhận vào title, value, icon, color để tái sử dụng cho nhiều loại số liệu.
 class _StatCard extends StatelessWidget {
@@ -760,15 +870,23 @@ class _StatCard extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withValues(alpha: 0.15),
+                color.withValues(alpha: 0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
+                color: color.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -777,13 +895,20 @@ class _StatCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 32, color: color),
-              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 28, color: color),
+              ),
+              const SizedBox(height: 12),
               Text(
                 value,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
+                  fontWeight: FontWeight.w900,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
                 ),
               ),
               const SizedBox(height: 4),

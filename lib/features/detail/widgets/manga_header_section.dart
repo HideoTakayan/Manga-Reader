@@ -205,6 +205,7 @@ class _RatingWidget extends StatefulWidget {
 
 class _RatingWidgetState extends State<_RatingWidget> {
   int _userRating = 0;
+  bool _isRating = false;
 
   @override
   void initState() {
@@ -222,11 +223,24 @@ class _RatingWidgetState extends State<_RatingWidget> {
   }
 
   Future<void> _rate(int stars) async {
-    if (_userRating > 0) return; // Chỉ cho rate 1 lần
-    setState(() => _userRating = stars);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('rating_${widget.mangaId}', stars);
-    await InteractionService.instance.rateManga(widget.mangaId, stars);
+    if (_userRating > 0 || _isRating) return; // Chỉ cho rate 1 lần
+    setState(() => _isRating = true);
+
+    try {
+      await InteractionService.instance.rateManga(widget.mangaId, stars);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('rating_${widget.mangaId}', stars);
+      if (mounted) setState(() => _userRating = stars);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không thể lưu đánh giá. Vui lòng thử lại.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRating = false);
+    }
   }
 
   @override

@@ -18,7 +18,7 @@ class TenorService {
         throw Exception('Tenor trending failed: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error fetching GIFs: $e');
+      throw Exception('Lỗi tải danh sách GIF: $e');
     }
   }
 
@@ -38,7 +38,7 @@ class TenorService {
         throw Exception('Tenor search failed: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error searching GIFs: $e');
+      throw Exception('Lỗi tìm kiếm GIF: $e');
     }
   }
 

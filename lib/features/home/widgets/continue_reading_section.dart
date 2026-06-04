@@ -154,13 +154,14 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                                     const SizedBox(height: 4),
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(4),
-                                      child: const LinearProgressIndicator(
-                                        value: 0.5, // Giả lập tiến độ 50%
+                                      child: LinearProgressIndicator(
+                                        value: topItem.totalPages <= 1
+                                            ? 1.0
+                                            : topItem.lastPageIndex / (topItem.totalPages - 1),
                                         backgroundColor: Colors.white24,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.redAccent,
-                                            ),
+                                        valueColor: const AlwaysStoppedAnimation<Color>(
+                                          Colors.redAccent,
+                                        ),
                                         minHeight: 6,
                                       ),
                                     ),

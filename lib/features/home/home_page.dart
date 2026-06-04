@@ -10,7 +10,9 @@ import '../../services/notification_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
+import '../../services/follow_service.dart';
 import 'widgets/continue_reading_section.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Trang chủ — wrapper mỏng chỉ đặt Scaffold, toàn bộ logic nằm trong _HomeContent.
 // Tách ra để theo pattern: StatelessWidget ngoài, StatefulWidget bên trong.
@@ -33,14 +35,20 @@ class _HomeContent extends StatefulWidget {
   State<_HomeContent> createState() => _HomeContentState();
 }
 
+class _HomeData {
+  final List<CloudManga> mangas;
+  final List<String> bannerIds;
+  _HomeData(this.mangas, this.bannerIds);
+}
+
 class _HomeContentState extends State<_HomeContent> {
-  // Future lưu kết quả getMangas() — thay thế toàn bộ khi refresh thay vì await
-  late Future<List<CloudManga>> _mangasFuture;
+  // Future lưu kết quả getMangas() và banner settings
+  late Future<_HomeData> _homeDataFuture;
 
   @override
   void initState() {
     super.initState();
-    _mangasFuture = DriveService.instance.getMangas();
+    _homeDataFuture = _loadData();
 
     // Dùng addPostFrameCallback vì không được gọi side-effect trong initState —
     // widget chưa gắn vào tree, context chưa sẵn sàng.
@@ -54,9 +62,30 @@ class _HomeContentState extends State<_HomeContent> {
       _checkStoragePermission();
     });
 
-    _mangasFuture.then((_) {
+    _homeDataFuture.then((_) {
       NotificationService.instance.checkLocalChapterUpdates();
     });
+  }
+
+  Future<_HomeData> _loadData({bool forceRefresh = false}) async {
+    final mangas = await DriveService.instance.getMangas(
+      forceRefresh: forceRefresh,
+    );
+
+    List<String> bannerIds = [];
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_settings')
+          .doc('home_banner')
+          .get();
+      if (doc.exists) {
+        bannerIds = List<String>.from(doc.data()?['mangaIds'] ?? []);
+      }
+    } catch (e) {
+      debugPrint('Lỗi tải banner: $e');
+    }
+
+    return _HomeData(mangas, bannerIds);
   }
 
   // Nếu chưa có quyền storage → hiện dialog xin quyền.
@@ -108,9 +137,9 @@ class _HomeContentState extends State<_HomeContent> {
   // Pull-to-refresh: tạo Future mới với forceRefresh=true → FutureBuilder tự rebuild
   Future<void> _refresh() async {
     setState(() {
-      _mangasFuture = DriveService.instance.getMangas(forceRefresh: true);
+      _homeDataFuture = _loadData(forceRefresh: true);
     });
-    await _mangasFuture;
+    await _homeDataFuture;
     await NotificationService.instance.checkLocalChapterUpdates();
   }
 
@@ -165,8 +194,19 @@ class _HomeContentState extends State<_HomeContent> {
     return sourceList.take(count).map(_fromCloud).toList();
   }
 
-  // Banner nổi bật (Featured): ngẫu nhiên — giữ nguyên
-  List<Manga> _getRandom(List<Manga> all, int count) {
+  // Banner nổi bật (Featured): Ưu tiên lấy từ Firestore, nếu trống thì lấy ngẫu nhiên
+  List<Manga> _getFeatured(List<Manga> all, List<String> bannerIds, int count) {
+    if (bannerIds.isNotEmpty) {
+      final featured = all.where((m) => bannerIds.contains(m.id)).toList();
+      if (featured.isNotEmpty) {
+        // Giữ đúng thứ tự admin đã chọn
+        featured.sort(
+          (a, b) => bannerIds.indexOf(a.id).compareTo(bannerIds.indexOf(b.id)),
+        );
+        return featured;
+      }
+    }
+
     final list = List<Manga>.from(all)..shuffle();
     return list.take(count).toList();
   }
@@ -269,15 +309,43 @@ class _HomeContentState extends State<_HomeContent> {
         stream: DriveService.instance.onAuthStateChanged,
         initialData: DriveService.instance.currentUser,
         builder: (context, authSnapshot) {
-          // FutureBuilder bên trong: chờ getMangas() hoàn thành mới render nội dung
-          return FutureBuilder<List<CloudManga>>(
-            future: _mangasFuture,
+          // FutureBuilder bên trong: chờ tải xong data mới render nội dung
+          return FutureBuilder<_HomeData>(
+            future: _homeDataFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return _buildShimmerSkeleton(context);
               }
 
-              final cloudMangas = snapshot.data ?? [];
+              if (snapshot.hasError) {
+                return CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverFillRemaining(
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Đã xảy ra lỗi:\n${snapshot.error}',
+                              style: const TextStyle(color: Colors.redAccent),
+                              textAlign: TextAlign.center,
+                            ),
+                            TextButton(
+                              onPressed: _refresh,
+                              child: const Text('Tải lại'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              final homeData = snapshot.data;
+              final cloudMangas = homeData?.mangas ?? [];
+              final bannerIds = homeData?.bannerIds ?? [];
               final allMangas = cloudMangas.map(_fromCloud).toList();
 
               if (allMangas.isEmpty) {
@@ -317,7 +385,7 @@ class _HomeContentState extends State<_HomeContent> {
 
               // Phân loại danh sách cho từng section
               final newUpdates = _getNewUpdates(allMangas);
-              final featured = _getRandom(allMangas, 10); // Banner ngẫu nhiên
+              final featured = _getFeatured(allMangas, bannerIds, 10);
               final hotToday = _getHotToday(
                 cloudMangas,
                 10,
@@ -363,14 +431,12 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                     actions: [
                       // Chuông thông báo: chấm đỏ hiện khi có thông báo chưa đọc
-                      StreamBuilder<List<Map<String, dynamic>>>(
+                      StreamBuilder<List<AppNotification>>(
                         stream: NotificationService.instance
                             .streamUserNotifications(),
                         builder: (context, snapshot) {
                           final notifications = snapshot.data ?? [];
-                          final hasUnread = notifications.any(
-                            (n) => n['isRead'] != true,
-                          );
+                          final hasUnread = notifications.any((n) => !n.isRead);
                           return Stack(
                             alignment: Alignment.center,
                             children: [
@@ -469,6 +535,9 @@ class _MangaReaderCarousel extends StatelessWidget {
   final List<Manga> mangas;
   const _MangaReaderCarousel({required this.mangas});
 
+  static const double _cardWidth = 140;
+  static const double _coverHeight = 165;
+
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
@@ -484,11 +553,13 @@ class _MangaReaderCarousel extends StatelessWidget {
             return GestureDetector(
               onTap: () => context.push('/detail/${c.id}'),
               child: SizedBox(
-                width: 140,
+                width: _cardWidth,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      height: _coverHeight,
+                      width: _cardWidth,
                       child: Stack(
                         children: [
                           Container(
@@ -506,19 +577,15 @@ class _MangaReaderCarousel extends StatelessWidget {
                               child: DriveImage(
                                 fileId: c.coverUrl,
                                 fit: BoxFit.cover,
-                                width: 140,
-                                height: double.infinity,
+                                width: _cardWidth,
+                                height: _coverHeight,
                               ),
                             ),
                           ),
-                          const Positioned(
+                          Positioned(
                             top: 6,
                             right: 6,
-                            child: Icon(
-                              Icons.favorite_border,
-                              color: Colors.white70,
-                              size: 18,
-                            ),
+                            child: _FollowButton(manga: c),
                           ),
                         ],
                       ),
@@ -535,6 +602,8 @@ class _MangaReaderCarousel extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       c.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
@@ -544,6 +613,85 @@ class _MangaReaderCarousel extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+class _FollowButton extends StatefulWidget {
+  final Manga manga;
+  const _FollowButton({required this.manga});
+
+  @override
+  State<_FollowButton> createState() => _FollowButtonState();
+}
+
+class _FollowButtonState extends State<_FollowButton> {
+  final FollowService _followService = FollowService();
+  bool _isToggling = false;
+
+  Future<void> _toggleFollow(bool isFollowing) async {
+    if (_isToggling) return;
+    setState(() => _isToggling = true);
+
+    try {
+      await _followService.toggleFollow(
+        widget.manga.id,
+        title: widget.manga.title,
+        coverUrl: widget.manga.coverUrl,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isFollowing ? 'Đã hủy theo dõi' : 'Đã theo dõi'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể cập nhật theo dõi: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isToggling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: _followService.isFollowing(widget.manga.id),
+      initialData: false,
+      builder: (context, snapshot) {
+        final isFollowing = snapshot.data ?? false;
+        return Material(
+          color: Colors.black.withValues(alpha: 0.28),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: _isToggling ? null : () => _toggleFollow(isFollowing),
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: Center(
+                child: _isToggling
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        isFollowing ? Icons.favorite : Icons.favorite_border,
+                        color: isFollowing ? Colors.redAccent : Colors.white,
+                        size: 18,
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -608,6 +756,8 @@ class _RankList extends StatelessWidget {
           ),
           subtitle: Text(
             'Tác giả: ${c.author}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         );

@@ -24,7 +24,14 @@ class _FollowingPageState extends State<FollowingPage> {
     final allMangas = await DriveService.instance.getMangas(
       forceRefresh: false,
     );
-    return allMangas.where((c) => followedIds.contains(c.id)).toList();
+    final mangaById = {
+      for (final manga in allMangas)
+        if (followedIds.contains(manga.id)) manga.id: manga,
+    };
+    return [
+      for (final id in followedIds)
+        if (mangaById[id] != null) mangaById[id]!,
+    ];
   }
 
   Future<void> _handleRefresh() async {
@@ -64,7 +71,30 @@ class _FollowingPageState extends State<FollowingPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Lỗi kết nối:\n${snapshot.error}',
+              style: const TextStyle(color: Colors.redAccent),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        final docs = [...?snapshot.data?.docs]
+          ..sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>?;
+            final bData = b.data() as Map<String, dynamic>?;
+            final aTime = aData?['followedAt'];
+            final bTime = bData?['followedAt'];
+            final aMillis = aTime is Timestamp
+                ? aTime.millisecondsSinceEpoch
+                : 0;
+            final bMillis = bTime is Timestamp
+                ? bTime.millisecondsSinceEpoch
+                : 0;
+            return bMillis.compareTo(aMillis);
+          });
         if (docs.isEmpty) {
           return const Center(
             child: Text(
@@ -86,6 +116,16 @@ class _FollowingPageState extends State<FollowingPage> {
             if (mangaSnapshot.connectionState == ConnectionState.waiting &&
                 !mangaSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
+            }
+
+            if (mangaSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Lỗi tải truyện:\n${mangaSnapshot.error}',
+                  style: const TextStyle(color: Colors.redAccent),
+                  textAlign: TextAlign.center,
+                ),
+              );
             }
 
             final mangas = mangaSnapshot.data ?? [];

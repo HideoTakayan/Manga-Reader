@@ -47,9 +47,21 @@ class AuthService {
         password: password.trim(),
       );
       final user = credential.user;
-      if (user != null && !user.emailVerified) {
-        await _auth.signOut();
-        throw Exception('Vui lòng xác minh email trước khi đăng nhập.');
+      if (user != null) {
+        // Phục hồi profile nếu bị lỗi mạng lúc đăng ký
+        final doc = await _db.collection('users').doc(user.uid).get();
+        if (!doc.exists) {
+          await _createUserProfile(
+            uid: user.uid,
+            email: user.email!,
+            name: user.displayName ?? 'User',
+          );
+        }
+
+        if (!user.emailVerified) {
+          await _auth.signOut();
+          throw Exception('Vui lòng xác minh email trước khi đăng nhập.');
+        }
       }
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));

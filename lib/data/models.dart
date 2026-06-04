@@ -308,6 +308,7 @@ class ReadingHistory {
   final String chapterId;
   final String? chapterTitle;
   final int lastPageIndex;
+  final int totalPages;
   final DateTime updatedAt;
 
   const ReadingHistory({
@@ -316,6 +317,7 @@ class ReadingHistory {
     required this.chapterId,
     this.chapterTitle,
     required this.lastPageIndex,
+    this.totalPages = 1,
     required this.updatedAt,
   });
 
@@ -326,6 +328,9 @@ class ReadingHistory {
       chapterId: map['chapterId']?.toString() ?? '',
       chapterTitle: map['chapterTitle']?.toString(),
       lastPageIndex: _readInt(map['lastPageIndex']),
+      totalPages: _readInt(map['totalPages']) > 0
+          ? _readInt(map['totalPages'])
+          : 1,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(
         _readInt(map['updatedAt']),
       ),
@@ -340,6 +345,7 @@ class ReadingHistory {
       'chapterId': chapterId,
       'chapterTitle': chapterTitle,
       'lastPageIndex': lastPageIndex,
+      'totalPages': totalPages,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
     };
   }
@@ -394,6 +400,109 @@ class ReaderProgress {
       'progressPercent': progressPercent,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
     };
+  }
+
+  static int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _readDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class ReadingActivity {
+  final String id;
+  final String userId;
+  final String mangaId;
+  final String chapterId;
+  final String? chapterTitle;
+  final int pageIndex;
+  final int totalPages;
+  final double progressPercent;
+  final String dateKey;
+  final DateTime readAt;
+
+  const ReadingActivity({
+    required this.id,
+    required this.userId,
+    required this.mangaId,
+    required this.chapterId,
+    this.chapterTitle,
+    this.pageIndex = 0,
+    this.totalPages = 1,
+    this.progressPercent = 0,
+    required this.dateKey,
+    required this.readAt,
+  });
+
+  factory ReadingActivity.create({
+    required String userId,
+    required String mangaId,
+    required String chapterId,
+    String? chapterTitle,
+    int pageIndex = 0,
+    int totalPages = 1,
+    double progressPercent = 0,
+    DateTime? readAt,
+  }) {
+    final resolvedReadAt = readAt ?? DateTime.now();
+    final key = dateKeyFor(resolvedReadAt);
+    return ReadingActivity(
+      id: '$userId|$mangaId|$chapterId|$key',
+      userId: userId,
+      mangaId: mangaId,
+      chapterId: chapterId,
+      chapterTitle: chapterTitle,
+      pageIndex: pageIndex,
+      totalPages: totalPages > 0 ? totalPages : 1,
+      progressPercent: progressPercent.clamp(0, 1).toDouble(),
+      dateKey: key,
+      readAt: resolvedReadAt,
+    );
+  }
+
+  factory ReadingActivity.fromMap(Map<String, dynamic> map) {
+    return ReadingActivity(
+      id: map['id']?.toString() ?? '',
+      userId: map['userId']?.toString() ?? 'guest',
+      mangaId: map['mangaId']?.toString() ?? '',
+      chapterId: map['chapterId']?.toString() ?? '',
+      chapterTitle: map['chapterTitle']?.toString(),
+      pageIndex: _readInt(map['pageIndex']),
+      totalPages: _readInt(map['totalPages']) > 0
+          ? _readInt(map['totalPages'])
+          : 1,
+      progressPercent: _readDouble(map['progressPercent']).clamp(0, 1),
+      dateKey: map['dateKey']?.toString() ?? '',
+      readAt: DateTime.fromMillisecondsSinceEpoch(_readInt(map['readAt'])),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'userId': userId,
+      'mangaId': mangaId,
+      'chapterId': chapterId,
+      'chapterTitle': chapterTitle,
+      'pageIndex': pageIndex,
+      'totalPages': totalPages,
+      'progressPercent': progressPercent,
+      'dateKey': dateKey,
+      'readAt': readAt.millisecondsSinceEpoch,
+    };
+  }
+
+  static String dateKeyFor(DateTime value) {
+    final local = value.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day';
   }
 
   static int _readInt(dynamic value) {

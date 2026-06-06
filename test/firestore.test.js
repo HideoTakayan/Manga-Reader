@@ -161,6 +161,236 @@ describe("Firestore Rules - Patch A", () => {
         })
       );
     });
+
+    it("Owner CAN soft delete their own comment", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection("forumPosts").doc("post1").set({
+          isDeleted: false,
+        });
+        await context
+          .firestore()
+          .collection("forumPosts")
+          .doc("post1")
+          .collection("comments")
+          .doc("comment1")
+          .set({
+            authorId: "owner_uid",
+            body: "Owner comment",
+            isDeleted: false,
+            updatedAt: Date.now(),
+          });
+      });
+
+      const comment = testEnv
+        .authenticatedContext("owner_uid")
+        .firestore()
+        .collection("forumPosts")
+        .doc("post1")
+        .collection("comments")
+        .doc("comment1");
+
+      await assertSucceeds(
+        comment.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Admin CAN soft delete another user's post and comment", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const post = context.firestore().collection("forumPosts").doc("post1");
+        await post.set({
+          authorId: "other_uid",
+          body: "Other user's post",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+        await post.collection("comments").doc("comment1").set({
+          authorId: "other_uid",
+          body: "Other user's comment",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const db = testEnv
+        .authenticatedContext("admin_uid", { email: "admin@gmail.com" })
+        .firestore();
+      const post = db.collection("forumPosts").doc("post1");
+      const comment = post.collection("comments").doc("comment1");
+
+      await assertSucceeds(
+        post.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+      await assertSucceeds(
+        comment.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("User CANNOT soft delete another user's post or comment", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const post = context.firestore().collection("forumPosts").doc("post1");
+        await post.set({
+          authorId: "owner_uid",
+          body: "Owner post",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+        await post.collection("comments").doc("comment1").set({
+          authorId: "owner_uid",
+          body: "Owner comment",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const db = testEnv.authenticatedContext("other_uid").firestore();
+      const post = db.collection("forumPosts").doc("post1");
+      const comment = post.collection("comments").doc("comment1");
+
+      await assertFails(
+        post.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+      await assertFails(
+        comment.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Owner CAN soft delete a legacy post without isDeleted", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection("forumPosts").doc("legacy_post").set({
+          authorId: "owner_uid",
+          body: "Legacy post",
+          updatedAt: Date.now(),
+        });
+      });
+
+      const post = testEnv
+        .authenticatedContext("owner_uid")
+        .firestore()
+        .collection("forumPosts")
+        .doc("legacy_post");
+
+      await assertSucceeds(
+        post.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Owner CAN soft delete a legacy comment without isDeleted", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const post = context.firestore().collection("forumPosts").doc("post1");
+        await post.set({ commentCount: 1 });
+        await post.collection("comments").doc("legacy_comment").set({
+          authorId: "owner_uid",
+          body: "Legacy comment",
+          updatedAt: Date.now(),
+        });
+      });
+
+      const comment = testEnv
+        .authenticatedContext("owner_uid")
+        .firestore()
+        .collection("forumPosts")
+        .doc("post1")
+        .collection("comments")
+        .doc("legacy_comment");
+
+      await assertSucceeds(
+        comment.update({
+          isDeleted: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Owner CAN run the production comment delete transaction", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const post = context.firestore().collection("forumPosts").doc("post1");
+        await post.set({
+          authorId: "post_owner_uid",
+          commentCount: 1,
+          isDeleted: false,
+        });
+        await post.collection("comments").doc("comment1").set({
+          authorId: "owner_uid",
+          body: "Owner comment",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const db = testEnv.authenticatedContext("owner_uid").firestore();
+      const post = db.collection("forumPosts").doc("post1");
+      const comment = post.collection("comments").doc("comment1");
+
+      await assertSucceeds(
+        db.runTransaction(async (transaction) => {
+          const commentSnapshot = await transaction.get(comment);
+          const postSnapshot = await transaction.get(post);
+          transaction.update(comment, {
+            isDeleted: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.update(post, {
+            commentCount: postSnapshot.data().commentCount - 1,
+          });
+          return commentSnapshot.id;
+        })
+      );
+    });
+
+    it("Admin CAN run the production comment delete transaction", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const post = context.firestore().collection("forumPosts").doc("post1");
+        await post.set({
+          authorId: "other_uid",
+          commentCount: 1,
+          isDeleted: false,
+        });
+        await post.collection("comments").doc("comment1").set({
+          authorId: "other_uid",
+          body: "Other user's comment",
+          isDeleted: false,
+          updatedAt: Date.now(),
+        });
+      });
+
+      const db = testEnv
+        .authenticatedContext("admin_uid", { email: "admin@gmail.com" })
+        .firestore();
+      const post = db.collection("forumPosts").doc("post1");
+      const comment = post.collection("comments").doc("comment1");
+
+      await assertSucceeds(
+        db.runTransaction(async (transaction) => {
+          await transaction.get(comment);
+          const postSnapshot = await transaction.get(post);
+          transaction.update(comment, {
+            isDeleted: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          transaction.update(post, {
+            commentCount: postSnapshot.data().commentCount - 1,
+          });
+        })
+      );
+    });
   });
 
   describe("R3: Validation", () => {

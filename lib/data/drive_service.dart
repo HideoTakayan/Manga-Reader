@@ -10,6 +10,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
 import 'models_cloud.dart';
+import 'content_type.dart';
 import '../config/drive_config.dart';
 import '../services/interaction_service.dart';
 import '../services/notification_service.dart';
@@ -245,6 +246,7 @@ class DriveService {
               viewCount: stats['viewCount'] ?? c.viewCount,
               likeCount: stats['likeCount'] ?? c.likeCount,
               chapterOrder: c.chapterOrder,
+              contentType: c.contentType,
             );
           }
           return c;
@@ -269,6 +271,7 @@ class DriveService {
     required File coverFile,
     required List<String> genres,
     required String status,
+    required MangaContentType contentType,
   }) async {
     if (_driveApi == null) await signIn();
     if (_driveApi == null) {
@@ -313,6 +316,7 @@ class DriveService {
       status: status,
       viewCount: 0,
       likeCount: 0,
+      contentType: contentType,
     );
 
     // Bước 4: Ghi info.json chứa metadata vào folder truyện
@@ -453,6 +457,9 @@ class DriveService {
             print(
               'Thiếu info.json cho ${folder.name}, đang tạo file mặc định...',
             );
+            final inferredContentType = await _inferContentTypeFromFolderFiles(
+              folder.id!,
+            );
             final defaultManga = CloudManga(
               id: folder.id!,
               title: folder.name!,
@@ -461,6 +468,7 @@ class DriveService {
               coverFileId: '',
               updatedAt: folder.modifiedTime ?? DateTime.now(),
               genres: [],
+              contentType: inferredContentType,
               status: 'Không rõ',
             );
 
@@ -488,6 +496,27 @@ class DriveService {
     } catch (e) {
       print('Lỗi tái tạo catalog: $e');
       rethrow;
+    }
+  }
+
+  Future<MangaContentType> _inferContentTypeFromFolderFiles(
+    String folderId,
+  ) async {
+    try {
+      final files = await _driveApi!.files.list(
+        q: "'$folderId' in parents and trashed = false and name != 'info.json'",
+        $fields: 'files(name)',
+        pageSize: 1000,
+      );
+      final hasEpub =
+          files.files?.any(
+            (file) => (file.name ?? '').toLowerCase().endsWith('.epub'),
+          ) ??
+          false;
+      return hasEpub ? MangaContentType.novel : MangaContentType.manga;
+    } catch (e) {
+      print('Không thể suy luận loại nội dung cho $folderId: $e');
+      return MangaContentType.manga;
     }
   }
 
@@ -530,6 +559,7 @@ class DriveService {
     required List<String> genres,
     required String status,
     File? newCoverFile,
+    MangaContentType? contentType,
   }) async {
     if (_driveApi == null) await signIn();
     if (_driveApi == null) {
@@ -591,6 +621,7 @@ class DriveService {
       viewCount: currentManga.viewCount,
       likeCount: currentManga.likeCount,
       chapterOrder: currentManga.chapterOrder,
+      contentType: contentType ?? currentManga.contentType,
     );
 
     // Cập nhật info.json trong folder truyện
@@ -769,6 +800,7 @@ class DriveService {
       viewCount: currentManga.viewCount,
       likeCount: currentManga.likeCount,
       chapterOrder: newOrder,
+      contentType: currentManga.contentType,
     );
 
     // Cập nhật cache RAM trước để UI không thấy lag
@@ -950,7 +982,8 @@ class DriveService {
         return true;
       } catch (e) {
         final errorText = e.toString().toLowerCase();
-        if (errorText.contains('cancelled') || errorText.contains('đã hủy tải truyện')) {
+        if (errorText.contains('cancelled') ||
+            errorText.contains('đã hủy tải truyện')) {
           print('Hủy tải xuống: $fileId');
           return false;
         }
@@ -1001,7 +1034,10 @@ class DriveService {
       return _activeDownloadFutures[fileId];
     }
 
-    final downloadFuture = _performDownloadFileWithProgress(fileId, onProgress: onProgress);
+    final downloadFuture = _performDownloadFileWithProgress(
+      fileId,
+      onProgress: onProgress,
+    );
     _activeDownloadFutures[fileId] = downloadFuture;
 
     try {

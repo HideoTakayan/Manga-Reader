@@ -143,6 +143,7 @@ class DownloadService {
   // Số lượng tải xuống đồng thời tối đa
   static const int _maxConcurrentDownloads = 4;
   int _activeDownloads = 0;
+  final Map<String, Future<void>> _activeTaskFutures = {};
 
   /// Thêm chương vào hàng đợi tải xuống
   Future<void> addToQueue({
@@ -216,7 +217,12 @@ class DownloadService {
       }
 
       if (queuedTask == null) return;
-      _downloadChapter(queuedTask);
+      final taskId = queuedTask.chapterId;
+      final future = _downloadChapter(queuedTask);
+      _activeTaskFutures[taskId] = future;
+      future.whenComplete(() {
+        _activeTaskFutures.remove(taskId);
+      });
     }
   }
 
@@ -472,12 +478,19 @@ class DownloadService {
 
     final task = _downloadQueue[chapterId]!;
 
-    if (task.status == DownloadStatus.downloading) {
-      task.status = DownloadStatus.cancelled;
-    }
+    task.status = DownloadStatus.cancelled;
 
     _downloadQueue.remove(chapterId);
     _notifyListeners();
+
+    final activeFuture = _activeTaskFutures[chapterId];
+    if (activeFuture != null) {
+      try {
+        await activeFuture;
+      } catch (e) {
+        debugPrint('⚠️ Download cancel wait failed for $chapterId: $e');
+      }
+    }
   }
 
   void pauseDownload(String chapterId) {
@@ -615,7 +628,7 @@ class DownloadService {
       final remaining = mangaId.isEmpty
           ? const <Map<String, dynamic>>[]
           : await DatabaseHelper.instance.getDownloadsByManga(mangaId);
-      
+
       final bool hasQueuedTasks = _isMangaInQueue(mangaId);
 
       if (mangaId.isNotEmpty && remaining.isEmpty && !hasQueuedTasks) {

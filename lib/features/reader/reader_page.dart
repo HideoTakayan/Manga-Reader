@@ -122,11 +122,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             0,
             pageCount - 1,
           );
-          
+
     if (_currentPageNotifier.value != estimatedPage) {
       _currentPageNotifier.value = estimatedPage;
     }
-    
+
     _scheduleVerticalProgressSaveIfNeeded(pixels, estimatedPage);
   }
 
@@ -504,6 +504,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _progressSaveTimer?.cancel();
     _autoScrollTicker?.dispose();
     _holdProgressController.dispose();
+    _currentPageNotifier.dispose();
     _pageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -664,6 +665,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         ].whereType<String>().where((value) => value.isNotEmpty).join('_'),
         title:
             state.currentChapter?.title ?? state.manga?.title ?? 'Truyện chữ',
+        realMangaId: state.mangaId,
+        realChapterId: state.currentChapter?.id,
       );
     }
 
@@ -1122,10 +1125,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final pageCount = state.isPdf ? state.pdfPageCount : state.pages.length;
     if (pageCount <= 0) return const SizedBox.shrink();
     final hasMultiplePages = pageCount > 1;
-    final clampedPage = currentPage.clamp(
-      0,
-      pageCount > 0 ? pageCount - 1 : 0,
-    );
+    final clampedPage = currentPage.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.72),
@@ -1236,7 +1236,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final currentPage = pageCount <= 0
         ? 0
         : state.currentPageIndex.clamp(0, pageCount - 1);
-    final readerType = state.isPdf ? 'pdf' : 'manga';
+    final readerType = state.isNovel
+        ? 'novel'
+        : state.isPdf
+        ? 'pdf'
+        : 'manga';
 
     showDialog<void>(
       context: context,

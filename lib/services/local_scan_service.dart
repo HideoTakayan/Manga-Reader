@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import '../data/content_type.dart';
 import '../data/database_helper.dart';
 import '../data/models.dart';
 import 'folder_service.dart';
@@ -40,6 +41,7 @@ class LocalScanService {
   Future<void> _importMangaFromFolder(Directory folder) async {
     final folderName = p.basename(folder.path);
     if (folderName == 'temp_cache' || folderName.startsWith('.')) return;
+    final files = folder.listSync();
 
     // 1. Đọc details.json nếu có — FolderService.saveMangaDetails() đã ghi khi tải
     final detailFile = File('${folder.path}/details.json');
@@ -54,6 +56,16 @@ class LocalScanService {
     }
 
     // 2. Fallback: tạo Manga giả từ tên folder nếu không có/parse lỗi details.json
+    final hasEpub = files.whereType<File>().any(
+      (file) => p.extension(file.path).toLowerCase() == '.epub',
+    );
+    final hasComicFile = files.whereType<File>().any(
+      (file) => [
+        '.cbz',
+        '.zip',
+        '.pdf',
+      ].contains(p.extension(file.path).toLowerCase()),
+    );
     manga ??= Manga(
       id: 'local_${folderName.hashCode}', // Hash ổn định để ID không đổi giữa các lần scan
       title: folderName,
@@ -61,6 +73,9 @@ class LocalScanService {
       author: 'Local Source',
       description: 'Được nhập từ bộ nhớ máy',
       genres: [],
+      contentType: hasEpub && !hasComicFile
+          ? MangaContentType.novel
+          : MangaContentType.manga,
     );
 
     // 3. Dùng cover.jpg local thay vì URL nếu tồn tại
@@ -78,7 +93,6 @@ class LocalScanService {
     } catch (_) {}
 
     // 5. Quét chapters: các file .cbz/.zip/.epub/.pdf trong folder
-    final files = folder.listSync();
     for (var f in files) {
       if (f is File) {
         final ext = p.extension(f.path).toLowerCase();

@@ -492,7 +492,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.redAccent)),
+                  builder: (_) => const Center(
+                    child: CircularProgressIndicator(color: Colors.redAccent),
+                  ),
                 );
 
                 try {
@@ -855,7 +857,11 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 showDialog(
                                   context: context,
                                   barrierDismissible: false,
-                                  builder: (_) => const Center(child: CircularProgressIndicator(color: Colors.green)),
+                                  builder: (_) => const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.green,
+                                    ),
+                                  ),
                                 );
 
                                 try {
@@ -885,6 +891,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                           author: manga.author,
                                           description: manga.description,
                                           genres: manga.genres,
+                                          contentType: manga.contentType,
                                         ),
                                       );
                                       totalChapters++;

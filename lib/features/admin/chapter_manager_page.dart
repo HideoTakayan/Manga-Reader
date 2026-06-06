@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/notification_service.dart';
@@ -23,6 +24,14 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
   bool _isSavingOrder = false;
   bool _hasChanges = false; // true = thứ tự bị thay đổi → hiện nút "Lưu Thứ Tự"
   bool _isAscending = true; // Toggle hướng sort — đảo chiều sau mỗi lần bấm
+
+  String get _unitLabel => widget.manga.contentType.unitLabel;
+  bool get _hasContentTypeMismatch {
+    if (widget.manga.contentType.isNovel) {
+      return _chapters.any((chapter) => chapter.fileType != 'epub');
+    }
+    return _chapters.any((chapter) => chapter.fileType == 'epub');
+  }
 
   @override
   void initState() {
@@ -174,165 +183,187 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
           : _chapters.isEmpty
           ? Center(
               child: Text(
-                'Chưa có chương nào.\nBấm nút bên dưới để thêm!',
+                'Chưa có ${_unitLabel.toLowerCase()} nào.\nBấm nút bên dưới để thêm!',
                 textAlign: TextAlign.center,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               ),
             )
-          // ReorderableListView: danh sách có tay cầm kéo thả — onReorder callback cập nhật _chapters
-          : ReorderableListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _chapters.length,
-              onReorder: (oldIndex, newIndex) {
-                setState(() {
-                  // Fix bug của ReorderableListView: khi kéo xuống, newIndex tăng thừa 1
-                  if (oldIndex < newIndex) newIndex -= 1;
-                  final item = _chapters.removeAt(oldIndex);
-                  _chapters.insert(newIndex, item);
-                  _hasChanges = true;
-                });
-              },
-              itemBuilder: (context, index) {
-                final chapter = _chapters[index];
-                return Container(
-                  // ValueKey bắt buộc với ReorderableListView để identify từng item
-                  key: ValueKey(chapter.id),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.2),
-                    ),
+          : Column(
+              children: [
+                if (_hasContentTypeMismatch)
+                  _ContentTypeMismatchBanner(
+                    contentType: widget.manga.contentType,
                   ),
-                  child: ListTile(
-                    leading: const Icon(Icons.drag_handle, color: Colors.grey),
-                    title: Text(
-                      chapter.title,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    // Hiện định dạng file (ZIP/CBZ) và dung lượng
-                    subtitle: Text(
-                      '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: Colors.redAccent,
-                      ),
-                      onPressed: () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            backgroundColor: Theme.of(context).cardColor,
-                            title: Text(
-                              'Xác nhận xóa',
-                              style: Theme.of(context).textTheme.titleLarge,
+                Expanded(
+                  // ReorderableListView: danh sách có tay cầm kéo thả — onReorder callback cập nhật _chapters
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _chapters.length,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        // Fix bug của ReorderableListView: khi kéo xuống, newIndex tăng thừa 1
+                        if (oldIndex < newIndex) newIndex -= 1;
+                        final item = _chapters.removeAt(oldIndex);
+                        _chapters.insert(newIndex, item);
+                        _hasChanges = true;
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      final chapter = _chapters[index];
+                      return Container(
+                        // ValueKey bắt buộc với ReorderableListView để identify từng item
+                        key: ValueKey(chapter.id),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.grey.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.drag_handle,
+                            color: Colors.grey,
+                          ),
+                          title: Text(
+                            chapter.title,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          // Hiện định dạng file (ZIP/CBZ) và dung lượng
+                          subtitle: Text(
+                            '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.redAccent,
                             ),
-                            content: Text(
-                              'Bạn có chắc muốn xóa "${chapter.title}"?',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: Text(
-                                  'Hủy',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                style: TextButton.styleFrom(
-                                  backgroundColor: Colors.redAccent,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(128, 48),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 18,
-                                    vertical: 12,
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: Theme.of(context).cardColor,
+                                  title: Text(
+                                    'Xác nhận xóa',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
                                   ),
-                                  shape: const StadiumBorder(),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 20,
+                                  content: Text(
+                                    'Bạn có chắc muốn xóa "${chapter.title}"?',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: Text(
+                                        'Hủy',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
                                     ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Xóa',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Colors.redAccent,
+                                        foregroundColor: Colors.white,
+                                        minimumSize: const Size(128, 48),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                          vertical: 12,
+                                        ),
+                                        shape: const StadiumBorder(),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.check,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Xóa',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (confirm == true) {
-                          try {
-                            await DriveService.instance.deleteChapter(
-                              chapter.id,
-                            );
-                            if (mounted) {
-                              messenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('Đã xóa chapter thành công'),
-                                ),
                               );
-                              _refresh();
-                            }
-                          } catch (e) {
-                            // Nếu Drive trả 404 → file đã mất trên Drive nhưng app chưa biết.
-                            // Xử lý như "đã xóa thành công": xóa khỏi list local, không báo lỗi.
-                            final isNotFound =
-                                e.toString().contains('404') ||
-                                e.toString().contains('File not found');
 
-                            if (mounted) {
-                              if (isNotFound) {
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'File không tồn tại trên Drive, đã xóa khỏi danh sách local',
-                                    ),
-                                  ),
-                                );
-                                setState(
-                                  () => _chapters.removeWhere(
-                                    (c) => c.id == chapter.id,
-                                  ),
-                                );
-                              } else {
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text('Lỗi xóa chapter: $e'),
-                                  ),
-                                );
+                              if (confirm == true) {
+                                try {
+                                  await DriveService.instance.deleteChapter(
+                                    chapter.id,
+                                  );
+                                  if (mounted) {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Đã xóa chapter thành công',
+                                        ),
+                                      ),
+                                    );
+                                    _refresh();
+                                  }
+                                } catch (e) {
+                                  // Nếu Drive trả 404 → file đã mất trên Drive nhưng app chưa biết.
+                                  // Xử lý như "đã xóa thành công": xóa khỏi list local, không báo lỗi.
+                                  final isNotFound =
+                                      e.toString().contains('404') ||
+                                      e.toString().contains('File not found');
+
+                                  if (mounted) {
+                                    if (isNotFound) {
+                                      messenger.showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'File không tồn tại trên Drive, đã xóa khỏi danh sách local',
+                                          ),
+                                        ),
+                                      );
+                                      setState(
+                                        () => _chapters.removeWhere(
+                                          (c) => c.id == chapter.id,
+                                        ),
+                                      );
+                                    } else {
+                                      messenger.showSnackBar(
+                                        SnackBar(
+                                          content: Text('Lỗi xóa chapter: $e'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
                               }
-                            }
-                          }
-                        }
-                      },
-                    ),
+                            },
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ],
             ),
 
       // FAB mở _AddChapterDialog, sau khi đóng thì _refresh() để cập nhật danh sách
@@ -343,11 +374,14 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
             builder: (_) => _AddChapterDialog(
               mangaId: widget.manga.id,
               mangaTitle: widget.manga.title,
+              contentType: widget.manga.contentType,
             ),
           );
           _refresh();
         },
-        label: const Text('Thêm Chapter'),
+        label: Text(
+          widget.manga.contentType.isNovel ? 'Thêm EPUB' : 'Thêm Chapter',
+        ),
         icon: const Icon(Icons.upload_file),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.black,
@@ -403,7 +437,12 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 class _AddChapterDialog extends StatefulWidget {
   final String mangaId;
   final String mangaTitle;
-  const _AddChapterDialog({required this.mangaId, required this.mangaTitle});
+  final MangaContentType contentType;
+  const _AddChapterDialog({
+    required this.mangaId,
+    required this.mangaTitle,
+    required this.contentType,
+  });
 
   @override
   State<_AddChapterDialog> createState() => _AddChapterDialogState();
@@ -418,7 +457,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['zip', 'cbz', 'epub', 'pdf'],
+      allowedExtensions: widget.contentType.isNovel
+          ? ['epub']
+          : ['zip', 'cbz', 'pdf'],
       allowMultiple: true,
     );
     if (result != null && result.files.isNotEmpty) {
@@ -440,14 +481,22 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     // Khi chỉ upload 1 file, tên chương là bắt buộc.
     // Khi upload nhiều file, tên tự động lấy từ tên file nên không cần validate.
     if (_files.length == 1 && _titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên chương')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Vui lòng nhập tên ${widget.contentType.unitLabel.toLowerCase()}',
+          ),
+        ),
+      );
       return;
     }
     if (_files.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng chọn file chapter')),
+        SnackBar(
+          content: Text(
+            'Vui lòng chọn file ${widget.contentType.isNovel ? 'EPUB' : 'chapter'}',
+          ),
+        ),
       );
       return;
     }
@@ -474,10 +523,11 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       await NotificationService.instance.notifySubscribers(
         type: 'new_chapter',
         mangaId: widget.mangaId,
-        title: '${widget.mangaTitle} có chương mới',
+        title:
+            '${widget.mangaTitle} có ${widget.contentType.unitLabel.toLowerCase()} mới',
         body: _files.length == 1
-            ? (uploadedChapterTitle ?? 'Chương mới')
-            : '${_files.length} chương mới',
+            ? (uploadedChapterTitle ?? '${widget.contentType.unitLabel} mới')
+            : '${_files.length} ${widget.contentType.unitLabel.toLowerCase()} mới',
       );
 
       if (mounted) Navigator.pop(context);
@@ -497,7 +547,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     return AlertDialog(
       backgroundColor: Theme.of(context).cardColor,
       title: Text(
-        'Thêm Chapter Mới (Drive)',
+        widget.contentType.isNovel
+            ? 'Thêm EPUB Mới (Drive)'
+            : 'Thêm Chapter Mới (Drive)',
         style: Theme.of(
           context,
         ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -510,7 +562,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
               controller: _titleController,
               style: Theme.of(context).textTheme.bodyLarge,
               decoration: InputDecoration(
-                labelText: 'Tên Chapter (VD: Chap 1)',
+                labelText: widget.contentType.isNovel
+                    ? 'Tên tập (VD: Tập 1)'
+                    : 'Tên Chapter (VD: Chap 1)',
                 labelStyle: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
@@ -546,7 +600,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                     Expanded(
                       child: Text(
                         _files.isEmpty
-                            ? 'Chọn file (ZIP/CBZ/PDF/EPUB)'
+                            ? (widget.contentType.isNovel
+                                  ? 'Chọn file EPUB'
+                                  : 'Chọn file (ZIP/CBZ/PDF)')
                             : _files.length == 1
                             ? path.basename(_files.first.path)
                             : 'Đã chọn ${_files.length} file',
@@ -586,6 +642,40 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           child: const Text('Thêm'),
         ),
       ],
+    );
+  }
+}
+
+class _ContentTypeMismatchBanner extends StatelessWidget {
+  final MangaContentType contentType;
+  const _ContentTypeMismatchBanner({required this.contentType});
+
+  @override
+  Widget build(BuildContext context) {
+    final expected = contentType.isNovel ? 'EPUB' : 'ZIP/CBZ/PDF';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Một số file không khớp với loại nội dung hiện tại. '
+              '${contentType.label} nên dùng file $expected.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

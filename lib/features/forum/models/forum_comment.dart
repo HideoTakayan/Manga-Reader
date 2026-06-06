@@ -33,22 +33,37 @@ class ForumComment {
 
   factory ForumComment.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return ForumComment.fromMap(doc.id, data);
+  }
+
+  factory ForumComment.fromMap(String id, Map<String, dynamic> data) {
     return ForumComment(
-      id: doc.id,
-      authorId: data['authorId'] ?? '',
-      authorName: data['authorName'] ?? 'Unknown',
-      authorAvatar: data['authorAvatar'] ?? '',
-      body: data['body'] ?? '',
-      gifUrl: data['gifUrl'],
-      likeCount: data['likeCount'] ?? 0,
-      isDeleted: data['isDeleted'] ?? false,
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      replyToCommentId: data['replyToCommentId'],
-      replyToAuthorName: data['replyToAuthorName'],
-      replyToUserId: data['replyToUserId'],
+      id: id,
+      authorId: _readString(data['authorId']),
+      authorName: _readString(data['authorName'], fallback: 'Unknown'),
+      authorAvatar: _readString(data['authorAvatar']),
+      body: _readString(data['body']),
+      gifUrl: _readNullableString(data['gifUrl']),
+      likeCount: _readInt(data['likeCount']),
+      isDeleted: data['isDeleted'] is bool ? data['isDeleted'] as bool : false,
+      createdAt: _readDateTime(data['createdAt']),
+      updatedAt: _readDateTime(data['updatedAt']),
+      replyToCommentId: _readNullableString(data['replyToCommentId']),
+      replyToAuthorName: _readNullableString(data['replyToAuthorName']),
+      replyToUserId: _readNullableString(data['replyToUserId']),
     );
   }
+
+  static String _readString(dynamic value, {String fallback = ''}) =>
+      value is String ? value : fallback;
+
+  static String? _readNullableString(dynamic value) =>
+      value is String ? value : null;
+
+  static int _readInt(dynamic value) => value is num ? value.toInt() : 0;
+
+  static DateTime _readDateTime(dynamic value) =>
+      value is Timestamp ? value.toDate() : DateTime.now();
 
   Map<String, dynamic> toFirestore() {
     return {

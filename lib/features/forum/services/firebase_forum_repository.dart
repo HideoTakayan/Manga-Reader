@@ -279,15 +279,24 @@ class FirebaseForumRepository implements ForumRepository {
 
     await _firestore.runTransaction((transaction) async {
       final commentSnapshot = await transaction.get(commentRef);
-      if (!commentSnapshot.exists) return;
-      final data = commentSnapshot.data();
-      if (data != null && data['isDeleted'] == true) return;
+      if (!commentSnapshot.exists ||
+          commentSnapshot.data()?['isDeleted'] == true) {
+        return;
+      }
 
+      final postSnapshot = await transaction.get(postRef);
       transaction.update(commentRef, {
         'isDeleted': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      transaction.update(postRef, {'commentCount': FieldValue.increment(-1)});
+
+      if (postSnapshot.exists) {
+        final count =
+            (postSnapshot.data()?['commentCount'] as num?)?.toInt() ?? 0;
+        if (count > 0) {
+          transaction.update(postRef, {'commentCount': count - 1});
+        }
+      }
     });
   }
 
@@ -561,7 +570,7 @@ class FirebaseForumRepository implements ForumRepository {
     if (recipientId == actorId) return;
 
     final docId = type == 'forum_like'
-        ? 'post_like_${postId}_${actorId}_${DateTime.now().millisecondsSinceEpoch}'
+        ? 'post_like_${postId}_$actorId'
         : type == 'forum_reply'
         ? 'post_reply_${postId}_$commentId'
         : 'post_comment_${postId}_$commentId';

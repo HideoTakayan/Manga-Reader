@@ -25,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -92,6 +92,12 @@ class DatabaseHelper {
     }
     if (oldVersion < 13) {
       await _createReadingActivityTable(db);
+    }
+    if (oldVersion < 14) {
+      if (await _tableExists(db, 'comics') &&
+          !await _columnExists(db, 'comics', 'contentType')) {
+        await db.execute("ALTER TABLE comics ADD COLUMN contentType TEXT");
+      }
     }
   }
 
@@ -333,7 +339,8 @@ class DatabaseHelper {
         author TEXT,
         description TEXT,
         coverUrl TEXT,
-        genres TEXT
+        genres TEXT,
+        contentType TEXT
       )
     ''');
 

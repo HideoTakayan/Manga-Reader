@@ -109,14 +109,14 @@ class ForumCommentTile extends StatelessWidget {
     );
   }
 
-  void _showOptions(BuildContext context) {
+  void _showOptions(BuildContext pageContext) {
     final currentUser = FirebaseAuth.instance.currentUser;
     final isOwner = currentUser?.uid == comment.authorId;
     final isAdmin = AdminConfig.isAdmin(currentUser?.email);
 
     showModalBottomSheet(
-      context: context,
-      builder: (context) {
+      context: pageContext,
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -125,10 +125,10 @@ class ForumCommentTile extends StatelessWidget {
                 leading: const Icon(Icons.flag_outlined),
                 title: const Text('Báo cáo bình luận'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   showDialog(
-                    context: context,
-                    builder: (context) => ReportDialog(
+                    context: pageContext,
+                    builder: (_) => ReportDialog(
                       targetType: 'comment',
                       targetId: comment.id,
                       postId: postId,
@@ -144,21 +144,22 @@ class ForumCommentTile extends StatelessWidget {
                     style: TextStyle(color: Colors.red),
                   ),
                   onTap: () async {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
+                      context: pageContext,
+                      builder: (dialogContext) => AlertDialog(
                         title: const Text('Xác nhận xóa'),
                         content: const Text(
                           'Bạn có chắc muốn xóa bình luận này?',
                         ),
                         actions: [
                           TextButton(
-                            onPressed: () => Navigator.pop(context, false),
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
                             child: const Text('Hủy'),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.pop(context, true),
+                            onPressed: () => Navigator.pop(dialogContext, true),
                             child: const Text(
                               'Xóa',
                               style: TextStyle(color: Colors.red),
@@ -168,22 +169,22 @@ class ForumCommentTile extends StatelessWidget {
                       ),
                     );
 
-                    if (confirm == true && context.mounted) {
+                    if (confirm == true && pageContext.mounted) {
                       try {
                         await FirebaseForumRepository().softDeleteComment(
                           postId,
                           comment.id,
                         );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                        if (pageContext.mounted) {
+                          ScaffoldMessenger.of(pageContext).showSnackBar(
                             const SnackBar(content: Text('Đã xóa bình luận')),
                           );
                           onDeleted?.call();
                         }
                       } catch (e) {
-                        if (context.mounted) {
+                        if (pageContext.mounted) {
                           ScaffoldMessenger.of(
-                            context,
+                            pageContext,
                           ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                         }
                       }

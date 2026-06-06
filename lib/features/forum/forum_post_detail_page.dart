@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
 import 'services/firebase_forum_repository.dart';
 import 'models/forum_comment.dart';
 import 'models/forum_post.dart';
@@ -143,13 +146,24 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                       if (index == 0) {
                         return ForumPostCard(
                           post: _post!,
+                          onDeleted: () {
+                            if (mounted) context.pop(true);
+                          },
                           onTap: () {}, // Already in detail page
                         );
                       }
+                      final comment = _comments[index - 1];
                       return ForumCommentTile(
                         postId: widget.postId,
-                        comment: _comments[index - 1],
-                        onDeleted: _loadComments,
+                        comment: comment,
+                        onDeleted: () {
+                          setState(
+                            () => _comments.removeWhere(
+                              (item) => item.id == comment.id,
+                            ),
+                          );
+                          unawaited(_loadComments());
+                        },
                         onReply: (comment) {
                           setState(() {
                             _replyingTo = comment;
@@ -231,10 +245,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                               )
                             : const Icon(Icons.send),
                         color: const Color(0xFFFF5252),
-                        onPressed:
-                            _isSubmitting
-                                ? null
-                                : _submitComment,
+                        onPressed: _isSubmitting ? null : _submitComment,
                       ),
                     ],
                   ),

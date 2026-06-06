@@ -29,6 +29,7 @@ import '../features/reader/local_novel_reader_page.dart';
 import '../data/models_cloud.dart';
 import '../services/novel_service.dart';
 import '../config/admin_config.dart';
+import '../features/ai_assistant/ai_chat_page.dart';
 
 // Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
@@ -113,7 +114,8 @@ final GoRouter appRouter = GoRouter(
                 GoRoute(
                   path: 'create',
                   builder: (context, state) {
-                    final type = state.uri.queryParameters['type'] ?? 'discussion';
+                    final type =
+                        state.uri.queryParameters['type'] ?? 'discussion';
                     return ForumCreatePostPage(type: type);
                   },
                 ),
@@ -146,8 +148,10 @@ final GoRouter appRouter = GoRouter(
     // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?genre=Action
     GoRoute(
       path: '/search-global',
-      builder: (context, state) =>
-          SearchPage(initialGenre: state.uri.queryParameters['genre']),
+      builder: (context, state) => SearchPage(
+        initialGenre: state.uri.queryParameters['genre'],
+        initialContentType: state.uri.queryParameters['type'],
+      ),
     ),
 
     // Route trang thống kê đọc (Analytics)
@@ -173,6 +177,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/backup',
       builder: (context, state) => const BackupRestorePage(),
+    ),
+    GoRoute(
+      path: '/ai-chat',
+      builder: (context, state) => const AiChatPage(),
     ),
     // Route màn hình đọc truyện chữ (EPUB) cục bộ — nhận LocalNovel qua state.extra
     GoRoute(

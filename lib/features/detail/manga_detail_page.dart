@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/follow_service.dart';
+import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/models.dart';
 import '../../data/drive_service.dart';
@@ -45,6 +46,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       author: cm.author,
       description: cm.description,
       genres: cm.genres,
+      contentType: cm.contentType,
     );
   }
 
@@ -99,6 +101,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             description:
                 'Không có thông tin chi tiết (Tải từ phiên bản cũ hoặc chưa đồng bộ). Bạn vẫn có thể đọc bình thường.',
             genres: [],
+            contentType: MangaContentType.manga,
           );
         }
       }
@@ -115,6 +118,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           updatedAt: DateTime.now(),
           genres: dbManga.genres,
           chapterOrder: [],
+          contentType: dbManga.contentType,
         );
 
         final downloadedMaps = await DatabaseHelper.instance
@@ -353,7 +357,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             context.push(
                               Uri(
                                 path: '/search-global',
-                                queryParameters: {'genre': genre},
+                                queryParameters: {
+                                  'genre': genre,
+                                  'type': manga.contentType.name,
+                                },
                               ).toString(),
                             );
                           },
@@ -392,7 +399,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'DS Chương (${chapters.length})',
+                          'Danh sách ${manga.contentType.unitLabel.toLowerCase()} (${chapters.length})',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -424,16 +431,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 ],
                               ),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'download_latest_10',
                               child: Row(
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.download_for_offline_outlined,
                                     color: Colors.orange,
                                   ),
-                                  SizedBox(width: 12),
-                                  Text('Tải 10 chương mới nhất'),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Tải 10 ${manga.contentType.unitLabel.toLowerCase()} mới nhất',
+                                  ),
                                 ],
                               ),
                             ),
@@ -1090,14 +1099,20 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     }
 
     if (mounted && addedCount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      final router = GoRouter.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(
           content: Text('Đã thêm $addedCount chương vào hàng đợi tải'),
           backgroundColor: Colors.green,
           action: SnackBarAction(
             label: 'Xem',
             textColor: Colors.white,
-            onPressed: () => context.push('/downloads'),
+            onPressed: () {
+              messenger.hideCurrentSnackBar();
+              router.push('/downloads');
+            },
           ),
         ),
       );

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../catalog/catalog_cache_service.dart';
@@ -15,7 +16,8 @@ enum SearchSortMode { updated, views, title }
 // initialGenre: mở trang với genre được pre-select (navigate từ genre chip ở HomePage)
 class SearchPage extends StatefulWidget {
   final String? initialGenre;
-  const SearchPage({super.key, this.initialGenre});
+  final String? initialContentType;
+  const SearchPage({super.key, this.initialGenre, this.initialContentType});
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -31,6 +33,7 @@ class _SearchPageState extends State<SearchPage> {
   SearchSortMode sortMode = SearchSortMode.updated;
   List<String> allGenres = [];
   final List<String> allStatuses = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
+  late final MangaContentType contentType;
 
   // Debounce timer: chỏ 200ms sau khi user dừng gõ mới filter
   Timer? _debounce;
@@ -38,6 +41,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
+    contentType = parseContentType(widget.initialContentType);
     if (widget.initialGenre != null) {
       genreFilters[widget.initialGenre!] = GenreFilterState.included;
     }
@@ -71,9 +75,11 @@ class _SearchPageState extends State<SearchPage> {
 
   void _applyCatalog(List<CloudManga> mangas, {required bool loading}) {
     setState(() {
-      allMangas = mangas;
+      allMangas = mangas
+          .where((manga) => manga.contentType == contentType)
+          .toList();
       final genres = <String>{};
-      for (var c in mangas) {
+      for (var c in allMangas) {
         genres.addAll(c.genres);
       }
       allGenres = genres.toList()..sort();
@@ -271,7 +277,7 @@ class _SearchPageState extends State<SearchPage> {
           },
           style: Theme.of(context).textTheme.bodyLarge,
           decoration: InputDecoration(
-            hintText: 'Tìm truyện...',
+            hintText: contentType.isNovel ? 'Tìm novel...' : 'Tìm truyện...',
             hintStyle: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
@@ -365,7 +371,9 @@ class _SearchPageState extends State<SearchPage> {
                         const SizedBox(height: 200),
                         Center(
                           child: Text(
-                            'Không tìm thấy truyện nào',
+                            contentType.isNovel
+                                ? 'Không tìm thấy novel phù hợp'
+                                : 'Không tìm thấy truyện tranh phù hợp',
                             style: TextStyle(
                               color: Theme.of(
                                 context,

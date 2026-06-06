@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'epub/epub_models.dart';
@@ -21,12 +22,16 @@ class NovelReaderWidget extends StatefulWidget {
   final Uint8List epubBytes;
   final String title;
   final String storageKey;
+  final String? realMangaId;
+  final String? realChapterId;
 
   const NovelReaderWidget({
     super.key,
     required this.epubBytes,
     required this.title,
     String? storageKey,
+    this.realMangaId,
+    this.realChapterId,
   }) : storageKey = storageKey ?? title;
 
   @override
@@ -39,7 +44,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   final _tts = FlutterTts();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final _verticalController = ScrollController();
+  final _verticalViewportKey = GlobalKey();
+  final _verticalItemController = ItemScrollController();
+  final _verticalOffsetController = ScrollOffsetController();
+  final _verticalPositionsListener = ItemPositionsListener.create();
+  int _verticalJumpGeneration = 0;
   final _pageController = PageController();
   final Map<int, GlobalKey> _chapterSectionKeys = {};
   Offset? _readerPointerStart;
@@ -51,7 +60,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   String? _errorMessage;
   int _chapterIndex = 0;
   int _horizontalPageIndex = 0;
-  int _verticalListStartChapter = 0;
   int _fontSize = 18;
   int _bgColor = 0xFF1C1C1E;
   int _textColor = 0xFFFFFFFF;
@@ -123,13 +131,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   EpubChapter get _currentChapter => _chapterAt(_chapterIndex);
 
-  double get _readerBottomPadding {
-    if (!_showControls) return 24;
-    return _showTtsPanel ? 270 : 110;
-  }
+  double get _readerBottomPadding => 24;
 
   double get _floatingActionBottomPadding {
-    if (!_showControls) return 16;
     return _showTtsPanel ? 220 : 72;
   }
 
@@ -318,7 +322,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       setState(() {
         _book = book;
         _chapterIndex = saved.$1;
-        _verticalListStartChapter = saved.$1;
         _horizontalPageIndex = saved.$2;
         _isLoading = false;
       });
@@ -345,6 +348,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         }
       });
       await _refreshBookmarkState();
+      await _saveProgress();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -360,8 +364,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     _sleepTimer?.cancel();
     _bookSearchTimer?.cancel();
     _tts.stop();
-    if (_verticalController.hasClients) {
-      _verticalController.jumpTo(0);
+    if (_verticalItemController.isAttached) {
+      _verticalItemController.jumpTo(index: 0);
     }
     _lastTtsText = null;
     _ttsChunks = [];
@@ -370,7 +374,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     _lazyChapterLoader?.clear();
     _lazyChapterLoader = null;
     _chapterIndex = 0;
-    _verticalListStartChapter = 0;
     _horizontalPageIndex = 0;
     _isCurrentBookmark = false;
     _isTtsPlaying = false;
@@ -457,12 +460,19 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       final key = _chapterSectionKeys[_chapterIndex];
       if (key?.currentContext != null) {
         final box = key!.currentContext!.findRenderObject() as RenderBox?;
-        if (box != null && box.attached) {
-          // dy is relative to screen top. If we scrolled down past the chapter top, dy is negative.
-          final top = box.localToGlobal(Offset.zero).dy;
+        final viewportBox =
+            _verticalViewportKey.currentContext?.findRenderObject()
+                as RenderBox?;
+        if (box != null &&
+            viewportBox != null &&
+            box.attached &&
+            viewportBox.attached) {
+          final chapterTop = box.localToGlobal(Offset.zero).dy;
+          final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+          final topInViewport = chapterTop - viewportTop;
           final height = box.size.height;
           if (height > 0) {
-            ratio = (max(0.0, -top) / height).clamp(0.0, 1.0);
+            ratio = (max(0.0, -topInViewport) / height).clamp(0.0, 1.0);
           }
         }
       }
@@ -545,6 +555,24 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   max<double>(1, (_book!.chapters.length - 1).toDouble()),
       ),
     );
+
+    if (widget.realMangaId != null && widget.realChapterId != null) {
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final chapterTitle = _book != null && _chapterIndex >= 0 && _chapterIndex < _book!.chapters.length
+          ? _book!.chapters[_chapterIndex].title
+          : widget.title;
+      final history = ReadingHistory(
+        userId: userId,
+        mangaId: widget.realMangaId!,
+        chapterId: widget.realChapterId!,
+        chapterTitle: chapterTitle,
+        lastPageIndex: 0,
+        totalPages: _book?.chapters.length ?? 1,
+        updatedAt: DateTime.now(),
+      );
+      await DatabaseHelper.instance.saveHistory(history);
+    }
+
     await _refreshBookmarkState();
   }
 
@@ -584,7 +612,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   void _toggleControls() {
-    _repaginate(() => _showControls = !_showControls);
+    if (!mounted) return;
+    setState(() => _showControls = !_showControls);
   }
 
   void _handleReaderPointerDown(PointerDownEvent event) {
@@ -682,9 +711,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
     setState(() {
       _flowType = next;
-      if (next == 1) {
-        _verticalListStartChapter = targetChapter;
-      }
       if (next == 0) {
         final centerPagesCount = _getPagesForChapter(targetChapter).length;
         final newPageWithinChapter = (targetRatio * centerPagesCount)
@@ -729,42 +755,65 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   void _jumpVerticalToChapter(int index, {double offsetRatio = 0.0}) {
-    int retryCount = 0;
-    void tryRefine() {
-      if (!mounted) return;
-      if (_verticalController.hasClients &&
-          index == _verticalListStartChapter) {
-        _verticalController.jumpTo(0);
+    final generation = ++_verticalJumpGeneration;
+    final safeRatio = offsetRatio.clamp(0.0, 1.0);
+
+    Future<void> restorePosition() async {
+      for (var retry = 0; retry < 12; retry++) {
+        if (!mounted || generation != _verticalJumpGeneration) return;
+        if (_verticalItemController.isAttached) {
+          _verticalItemController.jumpTo(index: index, alignment: 0);
+          break;
+        }
+        await WidgetsBinding.instance.endOfFrame;
       }
 
-      final newKey = _chapterSectionKeys[index];
-      if (newKey?.currentContext != null) {
-        Scrollable.ensureVisible(
-          newKey!.currentContext!,
-          alignment: 0.0,
-          duration: Duration.zero,
-        );
-        // Legacy progress records saved offset as an absolute pixel value (> 1.0).
-        // We safely ignore them and fallback to the top of the chapter.
-        if (offsetRatio > 0 && offsetRatio <= 1.0) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || !_verticalController.hasClients) return;
-            final box = newKey.currentContext?.findRenderObject() as RenderBox?;
-            if (box != null && box.attached) {
-              final height = box.size.height;
-              _verticalController.jumpTo(
-                _verticalController.offset + height * offsetRatio,
-              );
-            }
-          });
+      if (safeRatio <= 0) return;
+
+      const settleDelays = [
+        Duration.zero,
+        Duration(milliseconds: 80),
+        Duration(milliseconds: 250),
+        Duration(milliseconds: 700),
+        Duration(milliseconds: 1500),
+      ];
+      for (final delay in settleDelays) {
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
+        if (!mounted || generation != _verticalJumpGeneration) return;
+        await WidgetsBinding.instance.endOfFrame;
+
+        final context = _chapterSectionKeys[index]?.currentContext;
+        final box = context?.findRenderObject() as RenderBox?;
+        final viewportBox =
+            _verticalViewportKey.currentContext?.findRenderObject()
+                as RenderBox?;
+        if (box == null ||
+            viewportBox == null ||
+            !box.attached ||
+            !viewportBox.attached ||
+            box.size.height <= 0) {
+          continue;
         }
-      } else if (retryCount < 10) {
-        retryCount++;
-        WidgetsBinding.instance.addPostFrameCallback((_) => tryRefine());
+
+        final currentGlobalTop = box.localToGlobal(Offset.zero).dy;
+        final viewportGlobalTop = viewportBox.localToGlobal(Offset.zero).dy;
+        final currentViewportTop = currentGlobalTop - viewportGlobalTop;
+        final desiredViewportTop = -(box.size.height * safeRatio);
+        final correction = currentViewportTop - desiredViewportTop;
+        if (correction.abs() <= 1) continue;
+
+        try {
+          await _verticalOffsetController.animateScroll(
+            offset: correction,
+            duration: const Duration(milliseconds: 1),
+          );
+        } catch (_) {
+          // The list may detach while switching reader modes or closing.
+        }
       }
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => tryRefine());
+    unawaited(restorePosition());
   }
 
   void _pruneChapterSectionKeys(int activeIndex) {
@@ -774,29 +823,34 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     );
   }
 
-  /// New GlobalKey-based sync for ListView.builder vertical reader.
-  /// Finds the chapter whose top edge is closest to (but still above) the
-  /// viewport top. Falls back gracefully if no key is mounted yet.
+  /// Tracks the chapter currently crossing the top of the viewport.
   void _syncChapterFromVerticalKeys() {
     if (_book == null) return;
-    int? best;
-    double bestTop = double.negativeInfinity;
+    final positions = _verticalPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+    final visible = positions.where(
+      (position) => position.itemTrailingEdge > 0,
+    );
+    if (visible.isEmpty) return;
+    final crossingTop = visible.where(
+      (position) => position.itemLeadingEdge <= 0,
+    );
+    final best = crossingTop.isNotEmpty
+        ? crossingTop.reduce(
+            (current, candidate) =>
+                candidate.itemLeadingEdge > current.itemLeadingEdge
+                ? candidate
+                : current,
+          )
+        : visible.reduce(
+            (current, candidate) =>
+                candidate.itemLeadingEdge < current.itemLeadingEdge
+                ? candidate
+                : current,
+          );
 
-    for (final entry in _chapterSectionKeys.entries) {
-      final ctx = entry.value.currentContext;
-      if (ctx == null) continue;
-      final box = ctx.findRenderObject() as RenderBox?;
-      if (box == null || !box.attached) continue;
-      final topInViewport = box.localToGlobal(Offset.zero).dy;
-      // Find chapter whose top is just above or at the screen top area
-      if (topInViewport <= 100 && topInViewport > bestTop) {
-        bestTop = topInViewport;
-        best = entry.key;
-      }
-    }
-
-    if (best != null && best != _chapterIndex && mounted) {
-      setState(() => _chapterIndex = best!);
+    if (best.index != _chapterIndex && mounted) {
+      setState(() => _chapterIndex = best.index);
       _pruneChapterSectionKeys(_chapterIndex);
     }
   }
@@ -834,9 +888,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
     setState(() {
       _chapterIndex = next;
-      if (_flowType == 1) {
-        _verticalListStartChapter = next;
-      }
     });
 
     if (_flowType == 1) {
@@ -852,7 +903,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _pageController.hasClients) {
-          _pageController.jumpToPage(_pagesBeforeCenter);
+          _pageController.jumpToPage(_horizontalPageIndex);
         }
       });
     }
@@ -912,9 +963,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         mangaId: _mangaId,
         chapterId: _chapterId,
         pageIndex: _flowType == 0 ? _pageWithinCurrentChapter() : _chapterIndex,
-        scrollOffset: _verticalController.hasClients
-            ? _verticalController.offset
-            : 0,
+        scrollOffset: 0,
         epubCfi: position,
         createdAt: now,
         updatedAt: now,
@@ -1740,9 +1789,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   contentPadding: EdgeInsets.zero,
                   value: _showTtsPanel,
                   onChanged: (value) {
-                    _repaginate(() {
-                      _showTtsPanel = value;
-                    });
+                    setState(() => _showTtsPanel = value);
                     setModalState(() {});
                   },
                   title: const Text(
@@ -1764,13 +1811,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   @override
   void dispose() {
+    _verticalJumpGeneration++;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _progressTimer?.cancel();
     _ttsSettingsTimer?.cancel();
     _sleepTimer?.cancel();
     _bookSearchTimer?.cancel();
     _tts.stop();
-    _verticalController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -1815,61 +1862,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Color(_bgColor),
-      appBar: _showControls
-          ? AppBar(
-              backgroundColor: const Color(0xFF2C2C2E),
-              title: Text(
-                _currentChapter.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              iconTheme: const IconThemeData(color: Colors.white),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: 'Tìm trong sách',
-                  onPressed: _showBookSearch,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.bookmarks_outlined),
-                  tooltip: 'Danh sách bookmark',
-                  onPressed: _showBookmarks,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.menu_book),
-                  tooltip: 'Mục lục',
-                  onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isCurrentBookmark ? Icons.bookmark : Icons.bookmark_border,
-                    color: _isCurrentBookmark ? Colors.amber : Colors.white,
-                  ),
-                  tooltip: 'Bookmark',
-                  onPressed: _toggleBookmark,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  tooltip: 'Cài đặt',
-                  onPressed: _showReaderSettings,
-                ),
-              ],
-            )
-          : null,
       endDrawer: _buildTocDrawer(),
-      floatingActionButton: _showControls
-          ? Padding(
-              padding: EdgeInsets.only(bottom: _floatingActionBottomPadding),
-              child: FloatingActionButton.small(
-                heroTag: 'epub-reader-settings-${widget.storageKey}',
-                backgroundColor: const Color(0xFF2C2C2E),
-                foregroundColor: Colors.white,
-                onPressed: _showReaderSettings,
-                child: const Icon(Icons.tune),
-              ),
-            )
-          : null,
       body: Stack(
         children: [
           Positioned.fill(
@@ -1884,8 +1877,80 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
             ),
           ),
           if (_showControls)
+            Positioned(left: 0, right: 0, top: 0, child: _buildReaderTopBar()),
+          if (_showControls)
+            Positioned(
+              right: 16,
+              bottom: _floatingActionBottomPadding,
+              child: FloatingActionButton.small(
+                heroTag: 'epub-reader-settings-${widget.storageKey}',
+                backgroundColor: const Color(0xFF2C2C2E),
+                foregroundColor: Colors.white,
+                onPressed: _showReaderSettings,
+                child: const Icon(Icons.tune),
+              ),
+            ),
+          if (_showControls)
             Positioned(left: 0, right: 0, bottom: 0, child: _buildTtsBar()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReaderTopBar() {
+    return Material(
+      color: const Color(0xFF2C2C2E),
+      elevation: 4,
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                tooltip: 'Quay lại',
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Text(
+                  _currentChapter.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.search, color: Colors.white),
+                tooltip: 'Tìm trong sách',
+                onPressed: _showBookSearch,
+              ),
+              IconButton(
+                icon: const Icon(Icons.bookmarks_outlined, color: Colors.white),
+                tooltip: 'Danh sách bookmark',
+                onPressed: _showBookmarks,
+              ),
+              IconButton(
+                icon: const Icon(Icons.menu_book, color: Colors.white),
+                tooltip: 'Mục lục',
+                onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+              ),
+              IconButton(
+                icon: Icon(
+                  _isCurrentBookmark ? Icons.bookmark : Icons.bookmark_border,
+                  color: _isCurrentBookmark ? Colors.amber : Colors.white,
+                ),
+                tooltip: 'Bookmark',
+                onPressed: _toggleBookmark,
+              ),
+              IconButton(
+                icon: const Icon(Icons.tune, color: Colors.white),
+                tooltip: 'Cài đặt',
+                onPressed: _showReaderSettings,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1971,12 +2036,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   Widget _buildVerticalReader() {
     final totalChapters = _book?.chapters.length ?? 0;
-    final startChapter = totalChapters == 0
-        ? 0
-        : _verticalListStartChapter.clamp(0, totalChapters - 1).toInt();
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
+        if (notification is ScrollStartNotification &&
+            notification.dragDetails != null) {
+          _verticalJumpGeneration++;
+        }
         if (notification is ScrollUpdateNotification ||
             notification is ScrollEndNotification) {
           _syncChapterFromVerticalKeys();
@@ -1984,75 +2050,79 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         }
         return false;
       },
-      child: ListView.builder(
-        controller: _verticalController,
-        padding: EdgeInsets.fromLTRB(
-          _pageHorizontalPadding,
-          24,
-          _pageHorizontalPadding,
-          _readerBottomPadding,
-        ),
-        itemCount: max(0, totalChapters - startChapter),
-        itemBuilder: (context, localIndex) {
-          final chapterIndex = startChapter + localIndex;
-          final isNear = (chapterIndex - _chapterIndex).abs() <= 3;
-          if (!isNear) {
-            _chapterSectionKeys.remove(chapterIndex);
-          } else {
-            _chapterSectionKeys[chapterIndex] ??= GlobalKey();
-          }
-          final loader = _lazyChapterLoader;
-          if (loader == null) {
-            return _buildVerticalChapter(
-              chapterIndex,
-              _book!.chapters[chapterIndex],
-              isNear: isNear,
-            );
-          }
-          return FutureBuilder<EpubChapter>(
-            future: _loadChapter(chapterIndex),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          'Lỗi tải chương',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              // By calling setState, FutureBuilder will rebuild and recall _loadChapter
-                            });
-                          },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Thử lại'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-              final chapter = snapshot.data;
-              if (chapter == null) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
+      child: SizedBox.expand(
+        key: _verticalViewportKey,
+        child: ScrollablePositionedList.builder(
+          itemScrollController: _verticalItemController,
+          scrollOffsetController: _verticalOffsetController,
+          itemPositionsListener: _verticalPositionsListener,
+          padding: EdgeInsets.fromLTRB(
+            _pageHorizontalPadding,
+            24,
+            _pageHorizontalPadding,
+            _readerBottomPadding,
+          ),
+          itemCount: totalChapters,
+          itemBuilder: (context, chapterIndex) {
+            final isNear = (chapterIndex - _chapterIndex).abs() <= 3;
+            if (!isNear) {
+              _chapterSectionKeys.remove(chapterIndex);
+            } else {
+              _chapterSectionKeys[chapterIndex] ??= GlobalKey();
+            }
+            final loader = _lazyChapterLoader;
+            if (loader == null) {
               return _buildVerticalChapter(
                 chapterIndex,
-                chapter,
+                _book!.chapters[chapterIndex],
                 isNear: isNear,
               );
-            },
-          );
-        },
+            }
+            return FutureBuilder<EpubChapter>(
+              future: _loadChapter(chapterIndex),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'Lỗi tải chương',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                // By calling setState, FutureBuilder will rebuild and recall _loadChapter
+                              });
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Thử lại'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                final chapter = snapshot.data;
+                if (chapter == null) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return _buildVerticalChapter(
+                  chapterIndex,
+                  chapter,
+                  isNear: isNear,
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -2418,9 +2488,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                         color: Colors.white,
                       ),
                       onPressed: () {
-                        _repaginate(() {
-                          _showTtsPanel = true;
-                        });
+                        setState(() => _showTtsPanel = true);
                       },
                     ),
                   ],
@@ -2452,9 +2520,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
             InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
-                _repaginate(() {
-                  _showTtsPanel = false;
-                });
+                setState(() => _showTtsPanel = false);
               },
               child: const Padding(
                 padding: EdgeInsets.fromLTRB(24, 0, 24, 8),

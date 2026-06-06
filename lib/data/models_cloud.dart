@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'content_type.dart';
 
 /// Model đại diện cho một bộ truyện lấy từ Google Drive (qua catalog.json).
 /// Đây là model "online", khác với [Manga] là model cục bộ SQLite.
@@ -14,6 +15,7 @@ class CloudManga {
   final int viewCount;
   final int likeCount;
   final List<String> chapterOrder; // Danh sách ID chương/file theo thứ tự
+  final MangaContentType contentType;
 
   CloudManga({
     required this.id,
@@ -27,6 +29,7 @@ class CloudManga {
     this.viewCount = 0,
     this.likeCount = 0,
     this.chapterOrder = const [],
+    this.contentType = MangaContentType.manga,
   });
 
   /// Chuyển đối tượng sang Map để ghi vào Firestore hoặc truyền qua API.
@@ -45,11 +48,13 @@ class CloudManga {
       'viewCount': viewCount,
       'likeCount': likeCount,
       'chapterOrder': chapterOrder,
+      'contentType': contentTypeToJson(contentType),
     };
   }
 
   /// Tạo đối tượng CloudManga từ Map đọc ra từ catalog.json hoặc Firestore.
   factory CloudManga.fromMap(Map<String, dynamic> map) {
+    final genres = List<String>.from(map['genres'] ?? []);
     return CloudManga(
       id: map['id'] ?? '',
       title: map['title'] ?? '',
@@ -57,11 +62,12 @@ class CloudManga {
       description: map['description'] ?? '',
       coverFileId: map['coverFileId'] ?? '',
       updatedAt: DateTime.tryParse(map['updatedAt'] ?? '') ?? DateTime.now(),
-      genres: List<String>.from(map['genres'] ?? []),
+      genres: genres,
       status: map['status'] ?? 'Đang Cập Nhật',
       viewCount: map['viewCount'] ?? 0,
       likeCount: map['likeCount'] ?? 0,
       chapterOrder: List<String>.from(map['chapterOrder'] ?? []),
+      contentType: parseContentType(map['contentType'], genres: genres),
     );
   }
 }

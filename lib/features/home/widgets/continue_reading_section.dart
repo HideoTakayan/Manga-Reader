@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
+import '../../../data/content_type.dart';
 import '../../../data/database_helper.dart';
 import '../../../data/models.dart';
 import '../../../data/drive_service.dart';
@@ -129,6 +130,19 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
+                                FutureBuilder<MangaContentType?>(
+                                  future: _getMangaContentType(topItem.mangaId),
+                                  builder: (context, snapshot) {
+                                    final type = snapshot.data;
+                                    if (type == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: _ContentTypeBadge(type: type),
+                                    );
+                                  },
+                                ),
                                 Text(
                                   topItem.chapterTitle ?? 'Đang đọc...',
                                   maxLines: 1,
@@ -157,11 +171,13 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                                       child: LinearProgressIndicator(
                                         value: topItem.totalPages <= 1
                                             ? 1.0
-                                            : topItem.lastPageIndex / (topItem.totalPages - 1),
+                                            : topItem.lastPageIndex /
+                                                  (topItem.totalPages - 1),
                                         backgroundColor: Colors.white24,
-                                        valueColor: const AlwaysStoppedAnimation<Color>(
-                                          Colors.redAccent,
-                                        ),
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(
+                                              Colors.redAccent,
+                                            ),
                                         minHeight: 6,
                                       ),
                                     ),
@@ -209,8 +225,6 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
               ),
             ),
           ),
-
-
         ],
       ),
     );
@@ -232,5 +246,38 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
     }
     return 'Truyện';
   }
+
+  Future<MangaContentType?> _getMangaContentType(String mangaId) async {
+    final cached = DriveService.instance.cachedMangas;
+    for (final manga in cached ?? const []) {
+      if (manga.id == mangaId) return manga.contentType;
+    }
+    final local = await DatabaseHelper.instance.getLocalManga(mangaId);
+    return local?.contentType;
+  }
 }
 
+class _ContentTypeBadge extends StatelessWidget {
+  final MangaContentType type;
+  const _ContentTypeBadge({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Text(
+        type.label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}

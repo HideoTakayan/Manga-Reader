@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../data/content_type.dart';
 import '../../data/drive_service.dart';
 import '../../data/models_cloud.dart';
 import '../../services/notification_service.dart';
@@ -25,6 +26,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
   String _status = 'Đang Cập Nhật';
   final List<String> _statusOptions = ['Đang Cập Nhật', 'Hoàn Thành', 'Drop'];
+  late MangaContentType _contentType;
 
   File? _newCoverFile; // null = giữ nguyên bìa cũ, khác null = thay bìa mới
   bool _isUploading = false;
@@ -50,6 +52,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
     if (!_statusOptions.contains(_status)) {
       _status = 'Đang Cập Nhật';
     }
+    _contentType = widget.manga.contentType;
   }
 
   @override
@@ -74,6 +77,49 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
     }
   }
 
+  Future<bool> _confirmContentTypeChangeIfNeeded() async {
+    if (_contentType == widget.manga.contentType) return true;
+
+    final chapters = await DriveService.instance.getChapters(widget.manga.id);
+    final hasMismatch = _contentType.isNovel
+        ? chapters.any((chapter) => chapter.fileType != 'epub')
+        : chapters.any((chapter) => chapter.fileType == 'epub');
+
+    if (!hasMismatch) return true;
+    if (!mounted) return false;
+
+    final message = _contentType.isNovel
+        ? 'Truyện này đang có file không phải EPUB. Nếu đổi sang Novel, các file cũ có thể không phù hợp với loại nội dung mới.\n\nBạn vẫn muốn tiếp tục?'
+        : 'Truyện này đang có file EPUB. Nếu đổi sang Truyện tranh, các file EPUB có thể không phù hợp với loại nội dung mới.\n\nBạn vẫn muốn tiếp tục?';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        title: Text(
+          'Đổi loại nội dung?',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        content: Text(message, style: Theme.of(context).textTheme.bodyMedium),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Vẫn đổi',
+              style: TextStyle(color: Colors.orange),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed == true;
+  }
+
   // Lưu tất cả thay đổi: validate → gọi DriveService → phát hiện thay đổi → ghi thông báo Firestore.
   Future<void> _saveChanges() async {
     if (_titleController.text.trim().isEmpty) {
@@ -86,6 +132,12 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
     setState(() => _isUploading = true);
 
     try {
+      final canContinue = await _confirmContentTypeChangeIfNeeded();
+      if (!canContinue) {
+        if (mounted) setState(() => _isUploading = false);
+        return;
+      }
+
       // updateManga xử lý: cập nhật info.json trên Drive, catalog.json tổng,
       // upload bìa mới (nếu có), xóa bìa cũ, và gửi push notification nếu status thay đổi.
       await DriveService.instance.updateManga(
@@ -101,6 +153,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             .toList(),
         status: _status,
         newCoverFile: _newCoverFile, // null = không thay bìa
+        contentType: _contentType,
       );
 
       // Phát hiện các thay đổi quan trọng để ghi log thông báo vào Firestore.
@@ -207,6 +260,36 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
                   borderSide: BorderSide(color: Colors.orange),
                 ),
               ),
+            ),
+            const SizedBox(height: 12),
+
+            DropdownButtonFormField<MangaContentType>(
+              initialValue: _contentType,
+              decoration: InputDecoration(
+                labelText: 'Loại nội dung',
+                labelStyle: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                enabledBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey),
+                ),
+                focusedBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.orange),
+                ),
+              ),
+              items: MangaContentType.values
+                  .map(
+                    (type) =>
+                        DropdownMenuItem(value: type, child: Text(type.label)),
+                  )
+                  .toList(),
+              onChanged: _isUploading
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() => _contentType = value);
+                      }
+                    },
             ),
             const SizedBox(height: 12),
 

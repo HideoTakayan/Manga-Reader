@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/database_helper.dart';
+import '../../data/content_type.dart';
 import '../../data/models.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
@@ -301,6 +302,8 @@ class _HistoryPageState extends State<HistoryPage> {
                       date,
                       style: const TextStyle(color: Colors.grey, fontSize: 11),
                     ),
+                    const SizedBox(height: 6),
+                    _ContentTypeBadge(type: manga.contentType),
                   ],
                 ),
                 onTap: () async {
@@ -313,6 +316,27 @@ class _HistoryPageState extends State<HistoryPage> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _ContentTypeBadge extends StatelessWidget {
+  final MangaContentType type;
+  const _ContentTypeBadge({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Text(
+        type.label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
       ),
     );
   }

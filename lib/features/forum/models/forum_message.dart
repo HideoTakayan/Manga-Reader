@@ -35,22 +35,34 @@ class ForumMessage {
 
   factory ForumMessage.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return ForumMessage.fromMap(doc.id, data);
+  }
+
+  factory ForumMessage.fromMap(String id, Map<String, dynamic> data) {
     return ForumMessage(
-      id: doc.id,
-      authorId: data['authorId'] ?? '',
-      authorName: data['authorName'] ?? 'Người dùng',
-      authorAvatar: data['authorAvatar'] ?? '',
-      body: data['body'] ?? '',
-      gifUrl: data['gifUrl'],
-      imageUrl: data['imageUrl'],
-      isDeleted: data['isDeleted'] ?? false,
-      authorIsAdmin: data['authorIsAdmin'] ?? false,
+      id: id,
+      authorId: _readString(data['authorId']),
+      authorName: _readString(data['authorName'], fallback: 'Người dùng'),
+      authorAvatar: _readString(data['authorAvatar']),
+      body: _readString(data['body']),
+      gifUrl: _readNullableString(data['gifUrl']),
+      imageUrl: _readNullableString(data['imageUrl']),
+      isDeleted: data['isDeleted'] is bool ? data['isDeleted'] as bool : false,
+      authorIsAdmin: data['authorIsAdmin'] is bool
+          ? data['authorIsAdmin'] as bool
+          : false,
       createdAt: _parseTimestamp(data['createdAt']),
-      replyToMessageId: data['replyToMessageId'],
-      replyToAuthorName: data['replyToAuthorName'],
-      replyToBody: data['replyToBody'],
+      replyToMessageId: _readNullableString(data['replyToMessageId']),
+      replyToAuthorName: _readNullableString(data['replyToAuthorName']),
+      replyToBody: _readNullableString(data['replyToBody']),
     );
   }
+
+  static String _readString(dynamic value, {String fallback = ''}) =>
+      value is String ? value : fallback;
+
+  static String? _readNullableString(dynamic value) =>
+      value is String ? value : null;
 
   static DateTime _parseTimestamp(dynamic value) {
     if (value is Timestamp) return value.toDate();

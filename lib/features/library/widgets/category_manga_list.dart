@@ -77,6 +77,7 @@ class CategoryMangaList extends StatelessWidget {
                     genres: m.genres,
                     status: 'Offline',
                     chapterOrder: [],
+                    contentType: m.contentType,
                   ),
                 )
                 .toList();

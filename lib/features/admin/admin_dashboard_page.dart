@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
@@ -231,6 +232,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       ),
                     ],
                   ),
+
                   const SizedBox(height: 24),
                   Row(
                     children: [
@@ -503,6 +505,25 @@ class _AdminMangaCard extends StatelessWidget {
               ),
             ],
           ),
+          Positioned(
+            top: 8,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                manga.contentType.label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
           // Lớp InkWell phủ toàn bộ card để bắt sự kiện tap, hiện bottom sheet menu
           Positioned.fill(
             child: Material(
@@ -680,6 +701,7 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
   final _genresController =
       TextEditingController(); // Nhập dạng "Action, Romance, Fantasy"
   File? _coverFile;
+  MangaContentType _contentType = MangaContentType.manga;
   bool _isUploading = false;
 
   // Mở file picker giới hạn chỉ ảnh, lưu file đã chọn vào _coverFile.
@@ -713,6 +735,7 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             .where((e) => e.isNotEmpty)
             .toList(),
         status: 'Đang Cập Nhật',
+        contentType: _contentType,
       );
       if (mounted) {
         Navigator.pop(context, true); // true = báo hiệu thêm thành công
@@ -744,6 +767,24 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
               controller: _titleController,
               style: Theme.of(context).textTheme.bodyLarge,
               decoration: const InputDecoration(labelText: 'Tên truyện'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<MangaContentType>(
+              initialValue: _contentType,
+              decoration: const InputDecoration(labelText: 'Loại nội dung'),
+              items: MangaContentType.values
+                  .map(
+                    (type) =>
+                        DropdownMenuItem(value: type, child: Text(type.label)),
+                  )
+                  .toList(),
+              onChanged: _isUploading
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        setState(() => _contentType = value);
+                      }
+                    },
             ),
             TextField(
               controller: _authorController,

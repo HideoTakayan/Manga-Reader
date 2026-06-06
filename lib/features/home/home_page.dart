@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/content_type.dart';
 import '../../data/drive_service.dart';
 import '../../data/models.dart';
 import '../../data/models_cloud.dart';
@@ -11,6 +14,7 @@ import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/follow_service.dart';
+import '../ai_assistant/ai_chat_page.dart';
 import 'widgets/continue_reading_section.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -21,9 +25,51 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showAiButton = FirebaseAuth.instance.currentUser != null;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: const _HomeContent(),
+      floatingActionButton: showAiButton
+          ? SizedBox(
+              width: 44,
+              height: 44,
+              child: FloatingActionButton(
+                onPressed: () => _showAiChat(context),
+                backgroundColor: Colors.redAccent,
+                mini: true,
+                child: const Icon(Icons.smart_toy, color: Colors.white),
+              ),
+            )
+          : null,
+    );
+  }
+
+  void _showAiChat(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        final media = MediaQuery.of(context);
+        final keyboardHeight = media.viewInsets.bottom;
+        final availableHeight = media.size.height - keyboardHeight;
+        final sheetHeight = availableHeight * (keyboardHeight > 0 ? 0.9 : 0.56);
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: keyboardHeight),
+          child: SizedBox(
+            height: sheetHeight
+                .clamp(300.0, media.size.height * 0.86)
+                .toDouble(),
+            child: AiChatPanel(onClose: () => Navigator.pop(context)),
+          ),
+        );
+      },
     );
   }
 }
@@ -37,18 +83,21 @@ class _HomeContent extends StatefulWidget {
 
 class _HomeData {
   final List<CloudManga> mangas;
-  final List<String> bannerIds;
-  _HomeData(this.mangas, this.bannerIds);
+  final List<String> mangaBannerIds;
+  final List<String> novelBannerIds;
+  _HomeData(this.mangas, this.mangaBannerIds, this.novelBannerIds);
 }
 
 class _HomeContentState extends State<_HomeContent> {
   // Future lưu kết quả getMangas() và banner settings
   late Future<_HomeData> _homeDataFuture;
+  MangaContentType _selectedContentType = MangaContentType.manga;
 
   @override
   void initState() {
     super.initState();
     _homeDataFuture = _loadData();
+    _loadContentTypePreference();
 
     // Dùng addPostFrameCallback vì không được gọi side-effect trong initState —
     // widget chưa gắn vào tree, context chưa sẵn sàng.
@@ -67,25 +116,46 @@ class _HomeContentState extends State<_HomeContent> {
     });
   }
 
+  Future<void> _loadContentTypePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final type = parseContentType(prefs.getString('home_content_type'));
+    if (mounted) {
+      setState(() => _selectedContentType = type);
+    }
+  }
+
+  Future<void> _toggleContentType() async {
+    final next = _selectedContentType.isManga
+        ? MangaContentType.novel
+        : MangaContentType.manga;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('home_content_type', next.name);
+    if (mounted) {
+      setState(() => _selectedContentType = next);
+    }
+  }
+
   Future<_HomeData> _loadData({bool forceRefresh = false}) async {
     final mangas = await DriveService.instance.getMangas(
       forceRefresh: forceRefresh,
     );
 
-    List<String> bannerIds = [];
+    List<String> mangaBannerIds = [];
+    List<String> novelBannerIds = [];
     try {
       final doc = await FirebaseFirestore.instance
           .collection('app_settings')
           .doc('home_banner')
           .get();
       if (doc.exists) {
-        bannerIds = List<String>.from(doc.data()?['mangaIds'] ?? []);
+        mangaBannerIds = List<String>.from(doc.data()?['mangaIds'] ?? []);
+        novelBannerIds = List<String>.from(doc.data()?['novelIds'] ?? []);
       }
     } catch (e) {
       debugPrint('Lỗi tải banner: $e');
     }
 
-    return _HomeData(mangas, bannerIds);
+    return _HomeData(mangas, mangaBannerIds, novelBannerIds);
   }
 
   // Nếu chưa có quyền storage → hiện dialog xin quyền.
@@ -152,6 +222,7 @@ class _HomeContentState extends State<_HomeContent> {
       description: c.description,
       coverUrl: c.coverFileId,
       genres: const [],
+      contentType: c.contentType,
     );
   }
 
@@ -345,8 +416,13 @@ class _HomeContentState extends State<_HomeContent> {
 
               final homeData = snapshot.data;
               final cloudMangas = homeData?.mangas ?? [];
-              final bannerIds = homeData?.bannerIds ?? [];
-              final allMangas = cloudMangas.map(_fromCloud).toList();
+              final visibleCloudMangas = cloudMangas
+                  .where((m) => m.contentType == _selectedContentType)
+                  .toList();
+              final bannerIds = _selectedContentType.isNovel
+                  ? homeData?.novelBannerIds ?? []
+                  : homeData?.mangaBannerIds ?? [];
+              final allMangas = visibleCloudMangas.map(_fromCloud).toList();
 
               if (allMangas.isEmpty) {
                 // AlwaysScrollableScrollPhysics: cho phép kéo refresh ngay cả khi empty
@@ -359,7 +435,9 @@ class _HomeContentState extends State<_HomeContent> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'Chưa có truyện nào.',
+                              _selectedContentType.isNovel
+                                  ? 'Chưa có novel nào.'
+                                  : 'Chưa có truyện tranh nào.',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                             // Gợi ý thêm khi chưa đăng nhập Drive OAuth
@@ -387,11 +465,11 @@ class _HomeContentState extends State<_HomeContent> {
               final newUpdates = _getNewUpdates(allMangas);
               final featured = _getFeatured(allMangas, bannerIds, 10);
               final hotToday = _getHotToday(
-                cloudMangas,
+                visibleCloudMangas,
                 10,
               ); // Sort theo viewCount
               final trending = _getTrending(
-                cloudMangas,
+                visibleCloudMangas,
                 10,
               ); // Sort theo likeCount
 
@@ -466,11 +544,23 @@ class _HomeContentState extends State<_HomeContent> {
                         },
                       ),
                       IconButton(
+                        tooltip: _selectedContentType.isManga
+                            ? 'Chuyển sang Novel'
+                            : 'Chuyển sang Truyện tranh',
+                        icon: Icon(
+                          Icons.swap_vert,
+                          color: Theme.of(context).iconTheme.color,
+                        ),
+                        onPressed: _toggleContentType,
+                      ),
+                      IconButton(
                         icon: Icon(
                           Icons.search,
                           color: Theme.of(context).iconTheme.color,
                         ),
-                        onPressed: () => context.push('/search-global'),
+                        onPressed: () => context.push(
+                          '/search-global?type=${_selectedContentType.name}',
+                        ),
                       ),
                     ],
                   ),
@@ -484,13 +574,25 @@ class _HomeContentState extends State<_HomeContent> {
                     ),
                   ),
 
-                  _SectionTitle(label: '🔥 Truyện Hot Hôm Nay'),
+                  _SectionTitle(
+                    label: _selectedContentType.isNovel
+                        ? 'Novel Hot Hôm Nay'
+                        : '🔥 Truyện Hot Hôm Nay',
+                  ),
                   _MangaReaderCarousel(mangas: hotToday),
 
-                  _SectionTitle(label: '🆕 Mới Cập Nhật'),
+                  _SectionTitle(
+                    label: _selectedContentType.isNovel
+                        ? 'Novel Mới Cập Nhật'
+                        : '🆕 Mới Cập Nhật',
+                  ),
                   _MangaReaderCarousel(mangas: newUpdates),
 
-                  _SectionTitle(label: '🏆 Top Trending'),
+                  _SectionTitle(
+                    label: _selectedContentType.isNovel
+                        ? 'Top Novel'
+                        : '🏆 Top Trending',
+                  ),
                   SliverToBoxAdapter(child: _RankList(mangas: trending)),
                 ],
               );

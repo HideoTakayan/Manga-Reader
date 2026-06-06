@@ -48,28 +48,43 @@ class ForumPost {
 
   factory ForumPost.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    return ForumPost.fromMap(doc.id, data);
+  }
+
+  factory ForumPost.fromMap(String id, Map<String, dynamic> data) {
     return ForumPost(
-      id: doc.id,
-      type: data['type'] ?? 'discussion',
-      authorId: data['authorId'] ?? '',
-      authorName: data['authorName'] ?? 'Unknown',
-      authorAvatar: data['authorAvatar'] ?? '',
-      body: data['body'] ?? '',
-      gifUrl: data['gifUrl'],
-      imageUrl: data['imageUrl'],
-      sharedMangaId: data['sharedMangaId'],
-      sharedMangaTitle: data['sharedMangaTitle'],
-      sharedMangaCoverUrl: data['sharedMangaCoverUrl'],
-      sharedMangaAuthor: data['sharedMangaAuthor'],
-      likeCount: data['likeCount'] ?? 0,
-      commentCount: data['commentCount'] ?? 0,
-      viewCount: data['viewCount'] ?? 0,
-      reportCount: data['reportCount'] ?? 0,
-      isDeleted: data['isDeleted'] ?? false,
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      id: id,
+      type: _readString(data['type'], fallback: 'discussion'),
+      authorId: _readString(data['authorId']),
+      authorName: _readString(data['authorName'], fallback: 'Unknown'),
+      authorAvatar: _readString(data['authorAvatar']),
+      body: _readString(data['body']),
+      gifUrl: _readNullableString(data['gifUrl']),
+      imageUrl: _readNullableString(data['imageUrl']),
+      sharedMangaId: _readNullableString(data['sharedMangaId']),
+      sharedMangaTitle: _readNullableString(data['sharedMangaTitle']),
+      sharedMangaCoverUrl: _readNullableString(data['sharedMangaCoverUrl']),
+      sharedMangaAuthor: _readNullableString(data['sharedMangaAuthor']),
+      likeCount: _readInt(data['likeCount']),
+      commentCount: _readInt(data['commentCount']),
+      viewCount: _readInt(data['viewCount']),
+      reportCount: _readInt(data['reportCount']),
+      isDeleted: data['isDeleted'] is bool ? data['isDeleted'] as bool : false,
+      createdAt: _readDateTime(data['createdAt']),
+      updatedAt: _readDateTime(data['updatedAt']),
     );
   }
+
+  static String _readString(dynamic value, {String fallback = ''}) =>
+      value is String ? value : fallback;
+
+  static String? _readNullableString(dynamic value) =>
+      value is String ? value : null;
+
+  static int _readInt(dynamic value) => value is num ? value.toInt() : 0;
+
+  static DateTime _readDateTime(dynamic value) =>
+      value is Timestamp ? value.toDate() : DateTime.now();
 
   Map<String, dynamic> toFirestore() {
     return {

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../data/content_type.dart';
 import '../../data/drive_service.dart';
 import '../../data/models_cloud.dart';
 import '../shared/drive_image.dart';
@@ -18,6 +19,8 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
   final TextEditingController _searchController = TextEditingController();
   List<CloudManga> _allMangas = [];
   List<String> _bannerMangaIds = [];
+  List<String> _bannerNovelIds = [];
+  MangaContentType _selectedContentType = MangaContentType.manga;
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -38,15 +41,30 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
     for (final manga in _allMangas) manga.id: manga,
   };
 
-  List<CloudManga> get _selectedMangas => _bannerMangaIds
+  List<String> get _currentBannerIds => _selectedContentType.isNovel
+      ? _bannerNovelIds
+      : _bannerMangaIds;
+
+  set _currentBannerIds(List<String> value) {
+    if (_selectedContentType.isNovel) {
+      _bannerNovelIds = value;
+    } else {
+      _bannerMangaIds = value;
+    }
+  }
+
+  List<CloudManga> get _selectedMangas => _currentBannerIds
       .map((id) => _mangaById[id])
       .whereType<CloudManga>()
       .toList();
 
   List<CloudManga> get _filteredMangas {
     final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _allMangas;
-    return _allMangas.where((manga) {
+    final source = _allMangas
+        .where((manga) => manga.contentType == _selectedContentType)
+        .toList();
+    if (query.isEmpty) return source;
+    return source.where((manga) {
       return manga.title.toLowerCase().contains(query) ||
           manga.author.toLowerCase().contains(query);
     }).toList();
@@ -61,14 +79,21 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
           .collection('app_settings')
           .doc('home_banner')
           .get();
-      final bannerIds = doc.exists
+      final mangaBannerIds = doc.exists
           ? List<String>.from(doc.data()?['mangaIds'] ?? [])
+          : <String>[];
+      final novelBannerIds = doc.exists
+          ? List<String>.from(doc.data()?['novelIds'] ?? [])
           : <String>[];
 
       if (!mounted) return;
       setState(() {
         _allMangas = mangas;
-        _bannerMangaIds = bannerIds
+        _bannerMangaIds = mangaBannerIds
+            .where(mangaIds.contains)
+            .take(_maxBannerItems)
+            .toList();
+        _bannerNovelIds = novelBannerIds
             .where(mangaIds.contains)
             .take(_maxBannerItems)
             .toList();
@@ -91,8 +116,9 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
           .doc('home_banner')
           .set({
             'mangaIds': _bannerMangaIds,
+            'novelIds': _bannerNovelIds,
             'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          });
 
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -110,8 +136,8 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
   }
 
   void _toggleManga(String id) {
-    if (!_bannerMangaIds.contains(id) &&
-        _bannerMangaIds.length >= _maxBannerItems) {
+    final ids = List<String>.from(_currentBannerIds);
+    if (!ids.contains(id) && ids.length >= _maxBannerItems) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Banner tối đa 20 truyện.')));
@@ -119,19 +145,24 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
     }
 
     setState(() {
-      if (_bannerMangaIds.contains(id)) {
-        _bannerMangaIds.remove(id);
+      final updatedIds = List<String>.from(_currentBannerIds);
+      if (updatedIds.contains(id)) {
+        updatedIds.remove(id);
+        _currentBannerIds = updatedIds;
         return;
       }
-      _bannerMangaIds.add(id);
+      updatedIds.add(id);
+      _currentBannerIds = updatedIds;
     });
   }
 
   void _reorderSelected(int oldIndex, int newIndex) {
     setState(() {
+      final ids = List<String>.from(_currentBannerIds);
       if (newIndex > oldIndex) newIndex--;
-      final id = _bannerMangaIds.removeAt(oldIndex);
-      _bannerMangaIds.insert(newIndex, id);
+      final id = ids.removeAt(oldIndex);
+      ids.insert(newIndex, id);
+      _currentBannerIds = ids;
     });
   }
 
@@ -165,10 +196,25 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Đã chọn ${_bannerMangaIds.length}/$_maxBannerItems',
+                          'Đã chọn ${_currentBannerIds.length}/$_maxBannerItems',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
+                      SegmentedButton<MangaContentType>(
+                        segments: MangaContentType.values
+                            .map(
+                              (type) => ButtonSegment(
+                                value: type,
+                                label: Text(type.label),
+                              ),
+                            )
+                            .toList(),
+                        selected: {_selectedContentType},
+                        onSelectionChanged: (value) {
+                          setState(() => _selectedContentType = value.first);
+                        },
+                      ),
+                      const SizedBox(width: 8),
                       IconButton(
                         tooltip: 'Tải lại',
                         onPressed: _loadData,
@@ -204,7 +250,7 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                     itemCount: _filteredMangas.length,
                     itemBuilder: (context, index) {
                       final manga = _filteredMangas[index];
-                      final isSelected = _bannerMangaIds.contains(manga.id);
+                      final isSelected = _currentBannerIds.contains(manga.id);
 
                       return ListTile(
                         leading: ClipRRect(

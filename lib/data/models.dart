@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'content_type.dart';
 
 /// --------------------
 /// 📚 Manga Model
@@ -12,6 +13,7 @@ class Manga {
   final String author;
   final String description;
   final List<String> genres;
+  final MangaContentType contentType;
 
   const Manga({
     required this.id,
@@ -20,18 +22,21 @@ class Manga {
     required this.author,
     required this.description,
     this.genres = const [],
+    this.contentType = MangaContentType.manga,
   });
 
   // === JSON ===
   /// Tạo đối tượng Manga từ JSON (VD: đọc từ catalog.json trên Google Drive).
   factory Manga.fromJson(Map<String, dynamic> json) {
+    final genres = _parseGenres(json['genres']);
     return Manga(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       coverUrl: json['coverUrl']?.toString() ?? '',
       author: json['author']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
-      genres: _parseGenres(json['genres']),
+      genres: genres,
+      contentType: parseContentType(json['contentType'], genres: genres),
     );
   }
 
@@ -42,6 +47,7 @@ class Manga {
     'author': author,
     'description': description,
     'genres': genres,
+    'contentType': contentTypeToJson(contentType),
   };
 
   // === SQLite ===
@@ -54,19 +60,22 @@ class Manga {
       'author': author,
       'description': description,
       'genres': jsonEncode(genres),
+      'contentType': contentTypeToJson(contentType),
     };
   }
 
   /// Tạo đối tượng Manga từ Map đọc ra từ SQLite.
   factory Manga.fromMap(Map<String, dynamic> map) {
     final rawGenres = map['genres'];
+    final genres = _parseGenres(rawGenres);
     return Manga(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? '',
       coverUrl: map['coverUrl']?.toString() ?? '',
       author: map['author']?.toString() ?? '',
       description: map['description']?.toString() ?? '',
-      genres: _parseGenres(rawGenres),
+      genres: genres,
+      contentType: parseContentType(map['contentType'], genres: genres),
     );
   }
 
@@ -106,6 +115,7 @@ class Manga {
     String? author,
     String? description,
     List<String>? genres,
+    MangaContentType? contentType,
   }) {
     return Manga(
       id: id ?? this.id,
@@ -114,6 +124,7 @@ class Manga {
       author: author ?? this.author,
       description: description ?? this.description,
       genres: genres ?? this.genres,
+      contentType: contentType ?? this.contentType,
     );
   }
 

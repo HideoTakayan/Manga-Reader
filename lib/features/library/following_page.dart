@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../shared/drive_image.dart';
@@ -190,11 +191,18 @@ class _FollowingPageState extends State<FollowingPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      subtitle: Text(
-                        'Tác giả: ${manga.author}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tác giả: ${manga.author}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          _ContentTypeBadge(type: manga.contentType),
+                        ],
                       ),
                       trailing: Icon(
                         Icons.chevron_right,
@@ -209,6 +217,27 @@ class _FollowingPageState extends State<FollowingPage> {
           },
         );
       },
+    );
+  }
+}
+
+class _ContentTypeBadge extends StatelessWidget {
+  final MangaContentType type;
+  const _ContentTypeBadge({required this.type});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Text(
+        type.label,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
+      ),
     );
   }
 }

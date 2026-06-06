@@ -112,8 +112,20 @@ class _ForumSharePageState extends State<ForumSharePage> {
                     final post = _posts[index];
                     return ForumPostCard(
                       post: post,
-                      onTap: () {
-                        context.push('/forum/detail/${post.id}');
+                      onDeleted: () {
+                        setState(
+                          () => _posts.removeWhere((p) => p.id == post.id),
+                        );
+                      },
+                      onTap: () async {
+                        final deleted = await context.push<bool>(
+                          '/forum/detail/${post.id}',
+                        );
+                        if (deleted == true && mounted) {
+                          setState(
+                            () => _posts.removeWhere((p) => p.id == post.id),
+                          );
+                        }
                       },
                     );
                   },

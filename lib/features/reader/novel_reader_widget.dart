@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1553,9 +1554,15 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2C2C2E),
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => StatefulBuilder(
+      builder: (context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            color: const Color(0xFF2C2C2E).withValues(alpha: 0.8),
+            child: StatefulBuilder(
         builder: (context, setModalState) => SafeArea(
           top: false,
           child: SingleChildScrollView(
@@ -1806,7 +1813,10 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           ),
         ),
       ),
-    );
+    ),
+  ),
+),
+);
   }
 
   @override
@@ -1898,10 +1908,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Widget _buildReaderTopBar() {
-    return Material(
-      color: const Color(0xFF2C2C2E),
-      elevation: 4,
-      child: SafeArea(
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.6),
+          child: SafeArea(
         bottom: false,
         child: SizedBox(
           height: kToolbarHeight,
@@ -1952,7 +1964,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildTocDrawer() {
@@ -2433,18 +2447,17 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C2C2E),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                    ),
                   ),
-                ],
-              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 child: Row(
@@ -2497,21 +2510,22 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
             ),
           ),
         ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2E),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 12,
-            offset: const Offset(0, -4),
-          ),
-        ],
       ),
+    ),
+  );
+}
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.6),
+            border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+          ),
       child: SafeArea(
         top: false,
         child: Column(
@@ -2662,7 +2676,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }
 

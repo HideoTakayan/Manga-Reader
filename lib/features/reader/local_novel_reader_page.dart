@@ -73,6 +73,8 @@ class _LocalNovelReaderPageState extends State<LocalNovelReaderPage> {
           title: widget.novel.title,
           epubBytes: snapshot.data!,
           storageKey: widget.novel.path,
+          realMangaId: 'LOCAL_NOVEL|${widget.novel.path}',
+          realChapterId: 'LOCAL_NOVEL|${widget.novel.path}',
         );
       },
     );

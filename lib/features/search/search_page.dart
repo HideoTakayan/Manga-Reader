@@ -266,22 +266,28 @@ class _SearchPageState extends State<SearchPage> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        title: TextField(
-          autofocus: true,
-          onChanged: (val) {
-            // Debounce 200ms: chỏ user dừng gõ mới rebuild kết quả
-            if (_debounce?.isActive ?? false) _debounce!.cancel();
-            _debounce = Timer(const Duration(milliseconds: 200), () {
-              setState(() => query = val);
-            });
-          },
-          style: Theme.of(context).textTheme.bodyLarge,
-          decoration: InputDecoration(
-            hintText: contentType.isNovel ? 'Tìm novel...' : 'Tìm truyện...',
-            hintStyle: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-            border: InputBorder.none,
+        title: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: TextField(
+            autofocus: true,
+            onChanged: (val) {
+              // Debounce 200ms: chỏ user dừng gõ mới rebuild kết quả
+              if (_debounce?.isActive ?? false) _debounce!.cancel();
+              _debounce = Timer(const Duration(milliseconds: 200), () {
+                setState(() => query = val);
+              });
+            },
+            style: Theme.of(context).textTheme.bodyLarge,
+            decoration: InputDecoration(
+              hintText: contentType.isNovel ? 'Tìm novel...' : 'Tìm truyện...',
+              hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // Adjust for center alignment
+            ),
           ),
         ),
         actions: [
@@ -391,47 +397,111 @@ class _SearchPageState extends State<SearchPage> {
                   child: ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: mangas.length,
+                    padding: const EdgeInsets.all(12),
                     itemBuilder: (context, i) {
                       final manga = mangas[i];
-                      return ListTile(
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: DriveImage(
-                            fileId: manga.coverFileId,
-                            width: 50,
-                            height: 70,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        title: Text(
-                          manga.title,
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              manga.author,
-                              style: Theme.of(context).textTheme.bodySmall,
+                      return Container(
+                        height: 140,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
                             ),
-                            // Chỉ hiện 3 genre đầu để không quá dài
-                            if (manga.genres.isNotEmpty)
-                              Text(
-                                manga.genres.take(3).join(', '),
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      fontSize: 12,
-                                      color: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.color
-                                          ?.withValues(alpha: 0.7),
-                                    ),
-                              ),
                           ],
                         ),
-                        onTap: () => context.push('/detail/${manga.id}'),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => context.push('/detail/${manga.id}'),
+                          child: Row(
+                            children: [
+                              DriveImage(
+                                fileId: manga.coverFileId,
+                                width: 100,
+                                height: 140,
+                                fit: BoxFit.cover,
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        manga.title,
+                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        manga.author,
+                                        style: const TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      if (manga.genres.isNotEmpty)
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 6,
+                                          children: manga.genres.take(3).map((genre) => Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              genre,
+                                              style: const TextStyle(fontSize: 10, color: Colors.white70),
+                                            ),
+                                          )).toList(),
+                                        ),
+                                      const Spacer(),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.remove_red_eye_rounded, size: 14, color: Colors.grey),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                manga.viewCount.toString(),
+                                                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                              ),
+                                            ],
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: manga.status == 'Đang Cập Nhật' ? Colors.blue.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              manga.status,
+                                              style: TextStyle(
+                                                color: manga.status == 'Đang Cập Nhật' ? Colors.blueAccent : Colors.greenAccent,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     },
                   ),

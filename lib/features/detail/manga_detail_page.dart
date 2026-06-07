@@ -371,10 +371,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white10,
+                              color: Colors.white.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.1),
+                                color: Colors.white.withValues(alpha: 0.2),
                               ),
                             ),
                             alignment: Alignment.center,
@@ -382,6 +382,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               genre,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.9),
                               ),
                             ),
                           ),

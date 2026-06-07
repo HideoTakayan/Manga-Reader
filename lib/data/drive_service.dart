@@ -34,10 +34,10 @@ class DriveService {
   List<CloudManga>? _cachedMangas;
 
   // Cache file ZIP/CBZ trong RAM để không phải tải lại khi chuyển chapter.
-  // Giới hạn 5 file (~50MB) để tránh dùng quá nhiều RAM.
+  // Giới hạn 2 file (~50-100MB) để tránh dùng quá nhiều RAM (gây văng app OOM).
   final Map<String, Uint8List> _fileCache = {};
   final List<String> _fileCacheOrder = []; // Theo dõi thứ tự để xóa cái cũ nhất
-  static const int _maxCacheSize = 5;
+  static const int _maxCacheSize = 2;
 
   final Map<String, Future<Uint8List?>> _activeDownloadFutures = {};
   final Map<String, Future<bool>> _activeFileDownloads = {};

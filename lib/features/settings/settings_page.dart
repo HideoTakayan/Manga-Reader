@@ -28,6 +28,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     super.initState();
   }
 
+  InputDecoration _inputDeco(String label, {IconData? icon, Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white70),
+      prefixIcon: icon != null ? Icon(icon, color: Colors.white54) : null,
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    );
+  }
+
   Future<void> _editProfileDialog(BuildContext context) async {
     final currentUser = user;
     if (currentUser == null) return;
@@ -67,11 +87,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  const Text(
                     "Chỉnh sửa thông tin",
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.white),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                   GestureDetector(
                     onTap: () async {
                       final picked = await ImagePicker().pickImage(
@@ -81,76 +101,71 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         setStateSheet(() => newAvatar = File(picked.path));
                       }
                     },
-                    child: CircleAvatar(
-                      radius: 45,
-                      backgroundColor: Colors.grey[700],
-                      backgroundImage: newAvatar != null
-                          ? FileImage(newAvatar!)
-                          : _getUserAvatar(doc),
-                      child: (newAvatar == null && _getUserAvatar(doc) == null)
-                          ? const Icon(
-                              Icons.camera_alt,
-                              size: 30,
-                              color: Colors.white70,
-                            )
-                          : null,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orange.withValues(alpha: 0.2),
+                            blurRadius: 15,
+                            spreadRadius: 2,
+                          )
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 45,
+                        backgroundColor: Colors.grey[800],
+                        backgroundImage: newAvatar != null
+                            ? FileImage(newAvatar!)
+                            : _getUserAvatar(doc),
+                        child: (newAvatar == null && _getUserAvatar(doc) == null)
+                            ? const Icon(
+                                Icons.camera_alt,
+                                size: 30,
+                                color: Colors.white54,
+                              )
+                            : null,
+                      ),
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: nameController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _inputDeco('Tên hiển thị', icon: Icons.person_outline),
                   ),
                   const SizedBox(height: 16),
                   TextField(
-                    controller: nameController,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                    decoration: InputDecoration(
-                      labelText: 'Tên hiển thị',
-                      labelStyle: Theme.of(context).textTheme.bodyMedium,
-                      filled: true,
-                      fillColor: Theme.of(context).scaffoldBackgroundColor,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
                     controller: bioController,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                    decoration: InputDecoration(
-                      labelText: 'Mô tả',
-                      labelStyle: Theme.of(context).textTheme.bodyMedium,
-                      filled: true,
-                      fillColor: Theme.of(context).scaffoldBackgroundColor,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _inputDeco('Mô tả ngắn', icon: Icons.description_outlined),
                     maxLines: 2,
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(
-                        ctx,
-                      ); // Đóng sheet trước khi lưu để tránh bị block
-                      await _saveProfile(
-                        nameController.text,
-                        bioController.text,
-                        newAvatar,
-                      );
-                    },
-                    icon: const Icon(Icons.save),
-                    label: const Text("Lưu thay đổi"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _saveProfile(
+                          nameController.text,
+                          bioController.text,
+                          newAvatar,
+                        );
+                      },
+                      icon: const Icon(Icons.save),
+                      label: const Text("Lưu thay đổi", style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                 ],
               ),
             );
@@ -604,11 +619,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        // StatefulBuilder: toggle show/hide password trong dialog mà không remake dialog
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF2C2C2E),
+          backgroundColor: const Color(0xFF1C1C1E),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(24),
           ),
           title: const Text(
             'Thêm mật khẩu',
@@ -621,23 +635,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 'Thêm mật khẩu để có thể đăng nhập bằng email/password',
                 style: TextStyle(color: Colors.white70),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               TextField(
                 controller: passwordController,
                 obscureText: obscurePassword,
                 style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Mật khẩu mới',
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  filled: true,
-                  fillColor: const Color(0xFF1C1C1E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  suffixIcon: IconButton(
+                decoration: _inputDeco(
+                  'Mật khẩu mới',
+                  icon: Icons.lock_outline,
+                  suffix: IconButton(
                     icon: Icon(
                       obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white70,
+                      color: Colors.white54,
                     ),
                     onPressed: () => setDialogState(
                       () => obscurePassword = !obscurePassword,
@@ -645,23 +654,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextField(
                 controller: confirmController,
                 obscureText: obscureConfirm,
                 style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Xác nhận mật khẩu',
-                  labelStyle: const TextStyle(color: Colors.white70),
-                  filled: true,
-                  fillColor: const Color(0xFF1C1C1E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  suffixIcon: IconButton(
+                decoration: _inputDeco(
+                  'Xác nhận mật khẩu',
+                  icon: Icons.lock_outline,
+                  suffix: IconButton(
                     icon: Icon(
                       obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.white70,
+                      color: Colors.white54,
                     ),
                     onPressed: () =>
                         setDialogState(() => obscureConfirm = !obscureConfirm),
@@ -732,8 +736,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   }
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: const Text('Thêm'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -746,8 +755,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF2C2C2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text(
           'Đăng xuất',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -756,14 +765,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           'Bạn có chắc muốn đăng xuất?',
           style: TextStyle(color: Colors.white70),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Đăng xuất', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

@@ -44,17 +44,9 @@ class ForumComposer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
           IconButton(
             icon: const Icon(Icons.emoji_emotions_outlined),
             onPressed: enabled ? onEmojiPressed : null,
@@ -72,7 +64,6 @@ class ForumComposer extends StatelessWidget {
               tooltip: 'Chọn Ảnh',
             ),
         ],
-      ),
     );
   }
 }

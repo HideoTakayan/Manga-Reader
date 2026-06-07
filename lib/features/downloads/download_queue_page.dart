@@ -88,26 +88,31 @@ class DownloadQueuePage extends StatelessWidget {
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  backgroundColor: theme.cardColor,
-                  title: Text(
+                  backgroundColor: const Color(0xFF1C1C1E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  title: const Text(
                     'Xóa hàng đợi?',
-                    style: theme.textTheme.titleLarge,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
-                  content: Text(
+                  content: const Text(
                     'Bạn có chắc muốn xóa tất cả khỏi hàng đợi?',
-                    style: theme.textTheme.bodyMedium,
+                    style: TextStyle(color: Colors.white70),
                   ),
+                  actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Hủy'),
+                      child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                     ),
-                    TextButton(
+                    ElevatedButton(
                       onPressed: () => Navigator.pop(context, true),
-                      child: const Text(
-                        'Xóa',
-                        style: TextStyle(color: Colors.red),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
+                      child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -235,26 +240,31 @@ class _MangaDownloadGroup extends StatelessWidget {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          backgroundColor: theme.cardColor,
-                          title: Text(
+                          backgroundColor: const Color(0xFF1C1C1E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                          title: const Text(
                             'Xóa tất cả?',
-                            style: theme.textTheme.titleLarge,
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
                           content: Text(
                             'Xóa tất cả chương của "$mangaTitle" khỏi hàng đợi?',
-                            style: theme.textTheme.bodyMedium,
+                            style: const TextStyle(color: Colors.white70),
                           ),
+                          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Hủy'),
+                              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                             ),
-                            TextButton(
+                            ElevatedButton(
                               onPressed: () => Navigator.pop(context, true),
-                              child: const Text(
-                                'Xóa',
-                                style: TextStyle(color: Colors.red),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                               ),
+                              child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ),

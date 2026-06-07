@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -18,7 +19,18 @@ class AccountPage extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tài khoản')),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: const Text('Tài khoản', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+        elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -55,68 +67,135 @@ class AccountPage extends StatelessWidget {
           }
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Colors.blueAccent,
-                  backgroundImage: avatarImage,
-                  child: avatarImage == null
-                      ? Text(
-                          ((data['displayName'] ?? user.displayName ?? 'U')[0])
-                              .toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 40,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                // Hero Header
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Blurred background from avatar
+                    if (avatarImage != null)
+                      Container(
+                        height: 220,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                            image: avatarImage,
+                            fit: BoxFit.cover,
                           ),
-                        )
-                      : null,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  data['displayName'] ??
-                      user.displayName ??
-                      data['name'] ??
-                      'Không tên',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  data['email'] ?? user.email ?? '',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 24),
-
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Chỉnh sửa hồ sơ'),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                          child: Container(color: Colors.black.withValues(alpha: 0.4)),
+                        ),
+                      )
+                    else
+                      Container(
+                        height: 220,
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.blueAccent, Colors.purpleAccent],
+                          ),
+                        ),
+                      ),
+                    
+                    // Avatar & Info
+                    Column(
+                      children: [
+                        const SizedBox(height: 30),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: CircleAvatar(
+                            radius: 55,
+                            backgroundColor: Colors.blueAccent,
+                            backgroundImage: avatarImage,
+                            child: avatarImage == null
+                                ? Text(
+                                    ((data['displayName'] ?? user.displayName ?? 'U')[0]).toUpperCase(),
+                                    style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+                                  )
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          data['displayName'] ?? user.displayName ?? data['name'] ?? 'Không tên',
+                          style: const TextStyle(
+                            fontSize: 24, 
+                            fontWeight: FontWeight.bold, 
+                            color: Colors.white, 
+                            shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          data['email'] ?? user.email ?? '',
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                     ),
-                  ),
-                  // go('/settings/account/edit') thay vì push để không chồng route
-                  onPressed: () => context.go('/settings/account/edit'),
+                  ],
                 ),
-                const SizedBox(height: 12),
-
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.lock_reset),
-                  label: const Text('Đổi mật khẩu'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                
+                // Content section
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Cài đặt hồ sơ',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        color: Theme.of(context).cardColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 4,
+                        child: Column(
+                          children: [
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.blueAccent.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.edit, color: Colors.blueAccent),
+                              ),
+                              title: const Text('Chỉnh sửa hồ sơ', style: TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: const Text('Cập nhật tên, giới thiệu và ảnh', style: TextStyle(fontSize: 12)),
+                              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                              onTap: () => context.go('/settings/account/edit'),
+                            ),
+                            Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.lock_reset, color: Colors.orange),
+                              ),
+                              title: const Text('Đổi mật khẩu', style: TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: const Text('Bảo vệ tài khoản của bạn', style: TextStyle(fontSize: 12)),
+                              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                              onTap: () => _showChangePasswordDialog(context),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  onPressed: () => _showChangePasswordDialog(context),
                 ),
               ],
             ),
@@ -152,10 +231,31 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   bool _obscureNew = true;
   bool _obscureConfirm = true;
 
+  InputDecoration _inputDeco(String label, {Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white70),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Đổi mật khẩu'),
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text('Đổi mật khẩu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       content: SizedBox(
         width: double.maxFinite,
         child: Form(
@@ -166,12 +266,13 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
               TextFormField(
                 controller: _currentPassController,
                 obscureText: _obscureCurrent,
-                decoration: InputDecoration(
-                  labelText: 'Mật khẩu hiện tại',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDeco(
+                  'Mật khẩu hiện tại',
+                  suffix: IconButton(
                     icon: Icon(
-                      _obscureCurrent ? Icons.visibility : Icons.visibility_off,
+                      _obscureCurrent ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white54,
                     ),
                     onPressed: () =>
                         setState(() => _obscureCurrent = !_obscureCurrent),
@@ -181,16 +282,17 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     ? 'Vui lòng nhập mật khẩu hiện tại'
                     : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _newPassController,
                 obscureText: _obscureNew,
-                decoration: InputDecoration(
-                  labelText: 'Mật khẩu mới',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDeco(
+                  'Mật khẩu mới',
+                  suffix: IconButton(
                     icon: Icon(
-                      _obscureNew ? Icons.visibility : Icons.visibility_off,
+                      _obscureNew ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white54,
                     ),
                     onPressed: () => setState(() => _obscureNew = !_obscureNew),
                   ),
@@ -203,16 +305,17 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   return null;
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _confirmPassController,
                 obscureText: _obscureConfirm,
-                decoration: InputDecoration(
-                  labelText: 'Xác nhận mật khẩu mới',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                style: const TextStyle(color: Colors.white),
+                decoration: _inputDeco(
+                  'Xác nhận mật khẩu mới',
+                  suffix: IconButton(
                     icon: Icon(
-                      _obscureConfirm ? Icons.visibility : Icons.visibility_off,
+                      _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.white54,
                     ),
                     onPressed: () =>
                         setState(() => _obscureConfirm = !_obscureConfirm),
@@ -226,20 +329,27 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           ),
         ),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy'),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
           onPressed: _isLoading ? null : _changePassword,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
           child: _isLoading
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
-              : const Text('Đổi mật khẩu'),
+              : const Text('Đổi mật khẩu', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

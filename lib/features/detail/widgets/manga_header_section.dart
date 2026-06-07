@@ -4,6 +4,7 @@ import '../../../data/models_cloud.dart';
 import '../../../services/interaction_service.dart';
 import '../../shared/drive_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui';
 
 class MangaHeaderSection extends StatelessWidget {
   final CloudManga manga;
@@ -31,9 +32,14 @@ class MangaHeaderSection extends StatelessWidget {
         Positioned.fill(
           child: DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
         ),
-        // Lớp phủ làm tối
+        // Lớp phủ làm tối và hiệu ứng kính mờ (Frosted Glass)
         Positioned.fill(
-          child: Container(color: Colors.black.withValues(alpha: 0.7)),
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+              child: Container(color: Colors.black.withValues(alpha: 0.4)),
+            ),
+          ),
         ),
         // Gradient che dưới (Hòa vào nền Scaffold)
         Positioned.fill(

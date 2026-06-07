@@ -7,6 +7,7 @@ import '../../data/models.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/history_service.dart';
+import '../../services/novel_service.dart';
 import '../shared/drive_image.dart';
 
 // Trang lịch sử đọc truyện — dùng FutureBuilder thủ công (không dùng StreamBuilder)
@@ -20,7 +21,8 @@ class HistoryPage extends StatefulWidget {
 
 class _HistoryPageState extends State<HistoryPage> {
   List<ReadingHistory> _historyList = [];
-  List<CloudManga> _mangas = []; //
+  List<CloudManga> _mangas = [];
+  List<LocalNovel> _localNovels = [];
   bool _isLoading = true;
 
   @override
@@ -41,10 +43,12 @@ class _HistoryPageState extends State<HistoryPage> {
       final mangas = await DriveService.instance.getMangas(
         forceRefresh: forceRefresh,
       );
+      final localNovels = await NovelService.instance.getAll();
       final hList = await _fetchAndMergeHistory();
       if (mounted) {
         setState(() {
           _mangas = mangas;
+          _localNovels = localNovels;
           _historyList = hList;
           _isLoading = false;
         });
@@ -236,82 +240,154 @@ class _HistoryPageState extends State<HistoryPage> {
             // Map mangaId → CloudManga. orElse: truyện đã bị xóa khỏi catalog
             final manga = _mangas.firstWhere(
               (c) => c.id == item.mangaId,
-              orElse: () => CloudManga(
-                id: item.mangaId,
-                title: 'Truyện không tồn tại',
-                author: 'Không rõ tác giả',
-                description: '',
-                coverFileId: '',
-                genres: [],
-                status: '',
-                viewCount: 0,
-                likeCount: 0,
-                updatedAt: DateTime.now(),
-              ),
+              orElse: () {
+                if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
+                  final novelPath = item.mangaId.substring('LOCAL_NOVEL|'.length);
+                  final localNovel = _localNovels.firstWhere(
+                    (n) => n.path == novelPath,
+                    orElse: () => LocalNovel(
+                      path: novelPath,
+                      title: item.chapterTitle ?? 'Truyện không tồn tại',
+                      importedAt: DateTime.now(),
+                    )
+                  );
+                  return CloudManga(
+                    id: item.mangaId,
+                    title: localNovel.title,
+                    author: 'Local',
+                    description: '',
+                    coverFileId: localNovel.coverPath.isNotEmpty ? localNovel.coverPath : 'local_novel_placeholder',
+                    genres: [],
+                    status: '',
+                    viewCount: 0,
+                    likeCount: 0,
+                    updatedAt: localNovel.importedAt,
+                    contentType: MangaContentType.novel,
+                  );
+                }
+                return CloudManga(
+                  id: item.mangaId,
+                  title: 'Truyện không tồn tại',
+                  author: 'Không rõ tác giả',
+                  description: '',
+                  coverFileId: '',
+                  genres: [],
+                  status: '',
+                  viewCount: 0,
+                  likeCount: 0,
+                  updatedAt: DateTime.now(),
+                );
+              },
             );
 
-            // Ẩn dòng nếu không tìm thấy ảnh bìa (truyện đã bị xóa)
-            if (manga.coverFileId.isEmpty) return const SizedBox.shrink();
+            // Ẩn dòng nếu không tìm thấy ảnh bìa (truyện đã bị xóa), ngoại trừ Local Novel
+            if (manga.coverFileId.isEmpty && !item.mangaId.startsWith('LOCAL_NOVEL|')) {
+              return const SizedBox.shrink();
+            }
 
             final date =
                 '${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}';
 
-            return Card(
-              color: Theme.of(context).cardColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: DriveImage(
-                    fileId: manga.coverFileId,
-                    width: 60,
-                    height: 80,
-                    fit: BoxFit.cover,
+            return Container(
+              height: 120,
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
                   ),
-                ),
-                title: Text(
-                  manga.title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () async {
+                  if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
+                    final novelPath = item.mangaId.substring('LOCAL_NOVEL|'.length);
+                    final localNovel = _localNovels.firstWhere(
+                      (n) => n.path == novelPath,
+                      orElse: () => LocalNovel(
+                        path: novelPath,
+                        title: manga.title,
+                        importedAt: DateTime.now(),
+                      ),
+                    );
+                    await context.push('/novel-reader', extra: localNovel);
+                  } else {
+                    await context.push(
+                      '/reader/${item.chapterId}?mangaId=${Uri.encodeComponent(item.mangaId)}',
+                    );
+                  }
+                  _initData();
+                },
+                child: Row(
                   children: [
-                    const SizedBox(height: 4),
-                    // Hiện "chapterTitle • Trang X" — lastPageIndex là 0-based nên +1
-                    Text(
-                      '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
-                      style: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                    DriveImage(
+                      fileId: manga.coverFileId,
+                      width: 85,
+                      height: 120,
+                      fit: BoxFit.cover,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              manga.title,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.menu_book_rounded, size: 14, color: Colors.orangeAccent),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
+                                    style: const TextStyle(
+                                      color: Colors.orangeAccent,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Spacer(),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      date,
+                                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                                _ContentTypeBadge(type: manga.contentType),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      date,
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
-                    ),
-                    const SizedBox(height: 6),
-                    _ContentTypeBadge(type: manga.contentType),
                   ],
                 ),
-                onTap: () async {
-                  await context.push(
-                    '/reader/${item.chapterId}?mangaId=${Uri.encodeComponent(item.mangaId)}',
-                  ); // Chờ user đọc xong
-                  _initData(); // Reload để cập nhật lastPageIndex mới
-                },
               ),
             );
           },

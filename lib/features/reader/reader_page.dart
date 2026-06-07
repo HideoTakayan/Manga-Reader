@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -59,6 +60,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   late AnimationController _holdProgressController;
   final ValueNotifier<int> _currentPageNotifier = ValueNotifier<int>(0);
+  final Map<int, GlobalKey> _pageKeys = {};
 
   DateTime? _lastChapterChange;
   static const Duration _chapterChangeCooldown = Duration(seconds: 2);
@@ -116,13 +118,44 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
 
     final pageCount = state.pages.length;
-    final estimatedPage = pageCount <= 1 || maxExtent <= 0
-        ? 0
-        : ((pixels / maxExtent) * (pageCount - 1)).round().clamp(
-            0,
-            pageCount - 1,
-          );
+    int estimatedPage = _currentPageNotifier.value;
 
+    if (pageCount > 0 && state.readingMode == ReadingMode.vertical) {
+      final viewportRender = _scrollController.position.context.notificationContext?.findRenderObject();
+      if (viewportRender is RenderBox && mounted) {
+        final centerTarget = viewportRender.size.height / 2;
+        double? bestDistance;
+
+        for (final entry in _pageKeys.entries) {
+          final ctx = entry.value.currentContext;
+          if (ctx != null) {
+            final renderObj = ctx.findRenderObject();
+            if (renderObj is RenderBox) {
+              final position = renderObj.localToGlobal(Offset.zero, ancestor: viewportRender);
+              final itemTop = position.dy;
+              final itemBottom = itemTop + renderObj.size.height;
+
+              // Mục tiêu 1: Trang ảnh đang phủ qua điểm tâm màn hình
+              if (itemTop <= centerTarget && itemBottom >= centerTarget) {
+                estimatedPage = entry.key;
+                break;
+              }
+
+              // Mục tiêu 2: Trang ảnh nào có tâm gần tâm màn hình nhất
+              final itemCenter = itemTop + (renderObj.size.height / 2);
+              final distance = (itemCenter - centerTarget).abs();
+              if (bestDistance == null || distance < bestDistance) {
+                bestDistance = distance;
+                estimatedPage = entry.key;
+              }
+            }
+          }
+        }
+      }
+    } else if (pageCount > 0 && state.readingMode == ReadingMode.horizontal) {
+        // Dự phòng cho chế độ ngang nếu lọt vào đây (dù horizontal dùng onPageChanged)
+        estimatedPage = _currentPageNotifier.value;
+    }
     if (_currentPageNotifier.value != estimatedPage) {
       _currentPageNotifier.value = estimatedPage;
     }
@@ -694,6 +727,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         }
       }
 
+      // Xử lý khi chuyển đổi giữa chế độ dọc và ngang
+      if (prev != null && prev.readingMode != next.readingMode) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          
+          if (next.readingMode == ReadingMode.horizontal) {
+            if (_pageController.hasClients &&
+                _pageController.page?.round() != next.currentPageIndex) {
+              _pageController.jumpToPage(next.currentPageIndex);
+            }
+          } else if (next.readingMode == ReadingMode.vertical) {
+            if (_scrollController.hasClients && next.pages.length > 1) {
+              final maxScroll = _scrollController.position.maxScrollExtent;
+              final targetOffset = maxScroll * (next.currentPageIndex / (next.pages.length - 1));
+              _scrollController.jumpTo(targetOffset.clamp(0.0, maxScroll));
+            }
+          }
+        });
+      }
+
       final chapterId = next.currentChapter?.id;
       if (!next.isLoading &&
           next.readingMode == ReadingMode.vertical &&
@@ -807,27 +860,28 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       top: 0,
                       left: 0,
                       right: 0,
-                      child: Container(
-                        padding: EdgeInsets.fromLTRB(
-                          10,
-                          MediaQuery.of(context).padding.top + 5,
-                          10,
-                          10,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.9),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Nút quay lại
+                      child: ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: EdgeInsets.fromLTRB(
+                              10,
+                              MediaQuery.of(context).padding.top + 5,
+                              10,
+                              10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Nút quay lại
                             IconButton(
                               icon: const Icon(
                                 Icons.arrow_back,
@@ -879,7 +933,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   const SizedBox(height: 4),
-
                                   // Nút chọn chương
                                   InkWell(
                                     onTap: () => _showChapterListModal(
@@ -888,38 +941,40 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       state.currentChapter,
                                       state.mangaId,
                                     ),
+                                    borderRadius: BorderRadius.circular(16),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
+                                        horizontal: 12,
+                                        vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
                                         color: Colors.white.withValues(
-                                          alpha: 0.1,
+                                          alpha: 0.15,
                                         ),
-                                        borderRadius: BorderRadius.circular(4),
+                                        borderRadius: BorderRadius.circular(16),
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           const Icon(
                                             Icons.list,
-                                            color: Colors.white70,
+                                            color: Colors.white,
                                             size: 14,
                                           ),
-                                          const SizedBox(width: 4),
+                                          const SizedBox(width: 6),
                                           Text(
                                             state.currentChapter?.title ??
                                                 'Chương ?',
                                             style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 12,
+                                              fontWeight: FontWeight.bold,
                                             ),
                                           ),
                                           const SizedBox(width: 4),
                                           const Icon(
                                             Icons.keyboard_arrow_down,
-                                            color: Colors.white70,
+                                            color: Colors.white,
                                             size: 14,
                                           ),
                                         ],
@@ -985,129 +1040,134 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ),
                     ),
+                  ),
+                ),
 
                   // LỚP PHỦ DƯỚI CÙNG
                   if (state.showControls)
                     Positioned(
+                      bottom: 16,
                       left: 16,
                       right: 16,
-                      bottom: 96,
-                      child: ValueListenableBuilder<int>(
-                        valueListenable: _currentPageNotifier,
-                        builder: (context, currentPage, _) =>
-                            _buildPageSlider(state, currentPage),
-                      ),
-                    ),
-
-                  if (state.showControls)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 30,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.9),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.arrow_back_ios,
-                                color: Colors.white,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.15),
                               ),
-                              onPressed: notifier.getPrevChapterId() != null
-                                  ? () => context.pushReplacement(
-                                      _readerRoute(
-                                        notifier.getPrevChapterId()!,
-                                        state.mangaId,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ValueListenableBuilder<int>(
+                                  valueListenable: _currentPageNotifier,
+                                  builder: (context, currentPage, _) =>
+                                      _buildPageSlider(state, currentPage),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.arrow_back_ios,
+                                        color: Colors.white,
                                       ),
-                                    )
-                                  : null,
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                state.isFollowed
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: state.isFollowed
-                                    ? Colors.red
-                                    : Colors.white,
-                              ),
-                              onPressed: () =>
-                                  _toggleFollowWithFeedback(state, notifier),
-                            ),
-
-                            IconButton(
-                              tooltip: state.isCurrentPageBookmarked
-                                  ? 'Bỏ bookmark'
-                                  : 'Bookmark trang này',
-                              icon: Icon(
-                                state.isCurrentPageBookmarked
-                                    ? Icons.bookmark
-                                    : Icons.bookmark_border,
-                                color: state.isCurrentPageBookmarked
-                                    ? Colors.amber
-                                    : Colors.white,
-                              ),
-                              onPressed: () async {
-                                final added = await notifier.toggleBookmark();
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      added
-                                          ? 'Đã thêm bookmark'
-                                          : 'Đã bỏ bookmark',
+                                      onPressed: notifier.getPrevChapterId() != null
+                                          ? () => context.pushReplacement(
+                                              _readerRoute(
+                                                notifier.getPrevChapterId()!,
+                                                state.mangaId,
+                                              ),
+                                            )
+                                          : null,
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
-
-                            IconButton(
-                              tooltip: _isAutoScrolling
-                                  ? 'Tắt tự động đọc'
-                                  : state.readingMode == ReadingMode.horizontal
-                                  ? 'Tự lật trang'
-                                  : 'Tự cuộn',
-                              icon: Icon(
-                                _isAutoScrolling
-                                    ? Icons.pause_circle
-                                    : Icons.play_circle,
-                                color: state.isPdf
-                                    ? Colors.white30
-                                    : Colors.white,
-                              ),
-                              onPressed: state.isPdf ? null : _toggleAutoScroll,
-                            ),
-
-                            IconButton(
-                              icon: const Icon(
-                                Icons.arrow_forward_ios,
-                                color: Colors.white,
-                              ),
-                              onPressed: notifier.getNextChapterId() != null
-                                  ? () => context.pushReplacement(
-                                      _readerRoute(
-                                        notifier.getNextChapterId()!,
-                                        state.mangaId,
+                                    IconButton(
+                                      icon: Icon(
+                                        state.isFollowed
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
+                                        color: state.isFollowed
+                                            ? Colors.red
+                                            : Colors.white,
                                       ),
-                                    )
-                                  : null,
+                                      onPressed: () =>
+                                          _toggleFollowWithFeedback(state, notifier),
+                                    ),
+                                    IconButton(
+                                      tooltip: state.isCurrentPageBookmarked
+                                          ? 'Bỏ bookmark'
+                                          : 'Bookmark trang này',
+                                      icon: Icon(
+                                        state.isCurrentPageBookmarked
+                                            ? Icons.bookmark
+                                            : Icons.bookmark_border,
+                                        color: state.isCurrentPageBookmarked
+                                            ? Colors.amber
+                                            : Colors.white,
+                                      ),
+                                      onPressed: () async {
+                                        final added = await notifier.toggleBookmark();
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              added
+                                                  ? 'Đã thêm bookmark'
+                                                  : 'Đã bỏ bookmark',
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    IconButton(
+                                      tooltip: _isAutoScrolling
+                                          ? 'Tắt tự động đọc'
+                                          : state.readingMode == ReadingMode.horizontal
+                                          ? 'Tự lật trang'
+                                          : 'Tự cuộn',
+                                      icon: Icon(
+                                        _isAutoScrolling
+                                            ? Icons.pause_circle
+                                            : Icons.play_circle,
+                                        color: state.isPdf
+                                            ? Colors.white30
+                                            : Colors.white,
+                                      ),
+                                      onPressed: state.isPdf ? null : _toggleAutoScroll,
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.arrow_forward_ios,
+                                        color: Colors.white,
+                                      ),
+                                      onPressed: notifier.getNextChapterId() != null
+                                          ? () => context.pushReplacement(
+                                              _readerRoute(
+                                                notifier.getNextChapterId()!,
+                                                state.mangaId,
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -1744,21 +1804,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         }
         // pageIndex = index - 1 vì index 0 là header
         final pageIndex = index - 1;
-        return Transform.translate(
-          offset: const Offset(0, -0.5), // Khử hở viền 1px
-          child: Image.file(
-            File(state.pages[pageIndex]),
-            fit: _verticalImageFit(state.imageFit),
-            width: double.infinity,
-            alignment: Alignment.topCenter,
-            cacheWidth:
-                (MediaQuery.of(context).size.width *
-                        MediaQuery.of(context).devicePixelRatio)
-                    .toInt(),
-            filterQuality: FilterQuality.none, // Khử anti-aliasing
-            errorBuilder: (_, __, ___) => const SizedBox(
-              height: 200,
-              child: Icon(Icons.broken_image, color: Colors.white),
+        final key = _pageKeys.putIfAbsent(pageIndex, () => GlobalKey());
+        
+        return Container(
+          key: key,
+          child: Transform.translate(
+            offset: const Offset(0, -0.5), // Khử hở viền 1px
+            child: Image.file(
+              File(state.pages[pageIndex]),
+              fit: _verticalImageFit(state.imageFit),
+              width: double.infinity,
+              alignment: Alignment.topCenter,
+              cacheWidth:
+                  (MediaQuery.of(context).size.width *
+                          MediaQuery.of(context).devicePixelRatio)
+                      .toInt(),
+              filterQuality: FilterQuality.none, // Khử anti-aliasing
+              errorBuilder: (_, __, ___) => const SizedBox(
+                height: 200,
+                child: Icon(Icons.broken_image, color: Colors.white),
+              ),
             ),
           ),
         );

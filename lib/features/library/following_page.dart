@@ -163,52 +163,80 @@ class _FollowingPageState extends State<FollowingPage> {
                 itemCount: mangas.length,
                 itemBuilder: (context, index) {
                   final manga = mangas[index];
-                  return Card(
-                    color: Theme.of(context).cardColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  return Container(
+                    height: 120,
+                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: DriveImage(
-                          fileId: manga.coverFileId,
-                          width: 60,
-                          height: 80,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      title: Text(
-                        manga.title,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => context.push('/detail/${manga.id}'),
+                      child: Row(
                         children: [
-                          Text(
-                            'Tác giả: ${manga.author}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          DriveImage(
+                            fileId: manga.coverFileId,
+                            width: 85,
+                            height: 120,
+                            fit: BoxFit.cover,
                           ),
-                          const SizedBox(height: 6),
-                          _ContentTypeBadge(type: manga.contentType),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    manga.title,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Tác giả: ${manga.author}',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const Spacer(),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _ContentTypeBadge(type: manga.contentType),
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.redAccent.withValues(alpha: 0.15),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.play_arrow_rounded,
+                                          color: Colors.redAccent,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        color: Theme.of(context).iconTheme.color,
-                      ),
-                      onTap: () => context.push('/detail/${manga.id}'),
                     ),
                   );
                 },

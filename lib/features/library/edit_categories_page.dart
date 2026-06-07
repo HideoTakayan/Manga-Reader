@@ -10,6 +10,24 @@ class EditCategoriesPage extends StatefulWidget {
   State<EditCategoriesPage> createState() => _EditCategoriesPageState();
 }
 
+InputDecoration _inputDeco(String hint) {
+  return InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: Colors.white54),
+    filled: true,
+    fillColor: Colors.white.withValues(alpha: 0.05),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+  );
+}
+
 class _EditCategoriesPageState extends State<EditCategoriesPage> {
   @override
   Widget build(BuildContext context) {
@@ -62,8 +80,8 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
         onPressed: () => _showAddDialog(context),
         label: const Text('Thêm'),
         icon: const Icon(Icons.add),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.orange,
+        foregroundColor: Colors.white,
       ),
     );
   }
@@ -74,25 +92,35 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Thêm danh mục'),
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Thêm danh mục', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Tên danh mục'),
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDeco('Tên danh mục'),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty) {
                 LibraryService.instance.addCategory(controller.text);
                 Navigator.pop(ctx);
               }
             },
-            child: const Text('Thêm'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -126,19 +154,21 @@ class _CategoryItem extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Colors.white),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, color: Colors.white70),
-              onPressed: () => _showEditDialog(context),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.white70),
-              onPressed: () => _showDeleteDialog(context),
-            ),
-          ],
-        ),
+        trailing: isDefault
+            ? const SizedBox.shrink()
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_outlined, color: Colors.white70),
+                    onPressed: () => _showEditDialog(context),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.white70),
+                    onPressed: () => _showDeleteDialog(context),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -149,25 +179,35 @@ class _CategoryItem extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sửa danh mục'),
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Sửa danh mục', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Tên mới'),
+          style: const TextStyle(color: Colors.white),
+          decoration: _inputDeco('Tên mới'),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty) {
                 LibraryService.instance.updateCategory(name, controller.text);
                 Navigator.pop(ctx);
               }
             },
-            child: const Text('Lưu'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -179,21 +219,31 @@ class _CategoryItem extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Xóa danh mục?'),
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Xóa danh mục?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
           'Tất cả truyện trong mục "$name" sẽ bị gỡ bỏ khỏi mục này.',
+          style: const TextStyle(color: Colors.white70),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               LibraryService.instance.removeCategory(name);
               Navigator.pop(ctx);
             },
-            child: const Text('Xóa', style: TextStyle(color: Colors.redAccent)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

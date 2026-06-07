@@ -143,48 +143,82 @@ class _EditProfilePageState extends State<EditProfilePage> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: SingleChildScrollView(
                 child: Column(
                   children: [
+                    const SizedBox(height: 10),
                     // GestureDetector bao CircleAvatar → tap để chọn ảnh
                     GestureDetector(
                       onTap: _pickImage,
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundImage: avatarImage,
-                        backgroundColor: Colors.grey[300],
-                        // Camera icon khi chưa có ảnh
-                        child: avatarImage == null
-                            ? const Icon(Icons.camera_alt, size: 40)
-                            : null,
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          CircleAvatar(
+                            radius: 55,
+                            backgroundImage: avatarImage,
+                            backgroundColor: Theme.of(context).cardColor,
+                            child: avatarImage == null
+                                ? const Icon(Icons.person, size: 55, color: Colors.grey)
+                                : null,
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                              color: Colors.blueAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 32),
                     TextField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Tên hiển thị',
+                        filled: true,
+                        fillColor: Theme.of(context).cardColor,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(Icons.person_outline, color: Colors.grey),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _bioController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Giới thiệu bản thân',
+                        filled: true,
+                        fillColor: Theme.of(context).cardColor,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(Icons.info_outline, color: Colors.grey),
                       ),
                       maxLines: 3,
                     ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: _saveChanges,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Lưu thay đổi'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _saveChanges,
+                        icon: const Icon(Icons.save_rounded, color: Colors.white),
+                        label: const Text(
+                          'Lưu thay đổi',
+                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 4,
                         ),
                       ),
                     ),

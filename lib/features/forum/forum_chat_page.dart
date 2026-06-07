@@ -317,8 +317,24 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       );
                     }
                     final message = _messages[index];
+                    
+                    final nextMsg = index > 0 ? _messages[index - 1] : null; // Newer message (visual bottom)
+                    final prevMsg = index < _messages.length - 1 ? _messages[index + 1] : null; // Older message (visual top)
+
+                    bool isSameGroup(ForumMessage a, ForumMessage? b) {
+                      if (b == null) return false;
+                      if (a.authorId != b.authorId) return false;
+                      final diff = a.createdAt.difference(b.createdAt).inMinutes.abs();
+                      return diff < 5;
+                    }
+
+                    final isFirstInSequence = !isSameGroup(message, prevMsg);
+                    final isLastInSequence = !isSameGroup(message, nextMsg);
+
                     return ChatMessageBubble(
                       message: message,
+                      isFirstInSequence: isFirstInSequence,
+                      isLastInSequence: isLastInSequence,
                       onDelete: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
@@ -522,18 +538,43 @@ class _ForumChatPageState extends State<ForumChatPage> {
                     vertical: 8,
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      ForumComposer(
+                        showImagePicker: true,
+                        enabled: !isMuted && !isBanned,
+                        onEmojiPressed: () {
+                          setState(() {
+                            _showEmojiPicker = !_showEmojiPicker;
+                            if (_showEmojiPicker) {
+                              _focusNode.unfocus();
+                            } else {
+                              _focusNode.requestFocus();
+                            }
+                          });
+                        },
+                        onGifSelected: (url) {
+                          setState(() {
+                            _gifUrl = url;
+                          });
+                        },
+                        onImageSelected: (file) {
+                          setState(() {
+                            _imageFile = file;
+                          });
+                        },
+                      ),
                       Expanded(
                         child: TextField(
                           controller: _messageController,
                           focusNode: _focusNode,
                           decoration: InputDecoration(
                             hintText: user == null
-                                ? 'Vui lòng đăng nhập...'
+                                ? 'Đăng nhập...'
                                 : isBanned
-                                    ? 'Tài khoản đã bị cấm'
+                                    ? 'Đã bị cấm'
                                     : isMuted
-                                        ? 'Bạn đang bị cấm ngôn'
+                                        ? 'Đang bị cấm ngôn'
                                         : 'Nhập tin nhắn...',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(24),
@@ -552,7 +593,6 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           onSubmitted: (_) => _sendMessage(),
                         ),
                       ),
-                      const SizedBox(width: 8),
                       IconButton(
                         onPressed: user == null || _isSending || isMuted || isBanned
                             ? null
@@ -565,35 +605,11 @@ class _ForumChatPageState extends State<ForumChatPage> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.send),
+                            : const Icon(Icons.send_rounded),
                         color: const Color(0xFFFF5252),
                       ),
                     ],
                   ),
-                ),
-                ForumComposer(
-                  showImagePicker: true,
-                  enabled: !isMuted && !isBanned,
-                  onEmojiPressed: () {
-                    setState(() {
-                      _showEmojiPicker = !_showEmojiPicker;
-                      if (_showEmojiPicker) {
-                        _focusNode.unfocus();
-                      } else {
-                        _focusNode.requestFocus();
-                      }
-                    });
-                  },
-                  onGifSelected: (url) {
-                    setState(() {
-                      _gifUrl = url;
-                    });
-                  },
-                  onImageSelected: (file) {
-                    setState(() {
-                      _imageFile = file;
-                    });
-                  },
                 ),
                 if (_showEmojiPicker)
                   SizedBox(

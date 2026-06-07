@@ -9,6 +9,13 @@ import 'models/forum_post.dart';
 import 'widgets/forum_comment_tile.dart';
 import 'widgets/forum_post_card.dart';
 
+class CommentNode {
+  final ForumComment comment;
+  final int depth;
+
+  CommentNode({required this.comment, required this.depth});
+}
+
 class ForumPostDetailPage extends StatefulWidget {
   final String postId;
 
@@ -129,8 +136,41 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     }
   }
 
+  List<CommentNode> _buildCommentTree() {
+    final Map<String, List<ForumComment>> childrenMap = {};
+    final List<ForumComment> roots = [];
+    final allIds = _comments.map((c) => c.id).toSet();
+
+    for (final c in _comments) {
+      if (c.replyToCommentId == null || !allIds.contains(c.replyToCommentId)) {
+        roots.add(c);
+      } else {
+        childrenMap.putIfAbsent(c.replyToCommentId!, () => []).add(c);
+      }
+    }
+
+    final List<CommentNode> result = [];
+    void traverse(ForumComment comment, int depth) {
+      result.add(CommentNode(comment: comment, depth: depth));
+      final children = childrenMap[comment.id] ?? [];
+      // Sắp xếp các phản hồi theo thời gian cũ -> mới
+      children.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final child in children) {
+        // Giới hạn thụt lề 1 cấp duy nhất (như Facebook) để không bị tràn màn hình
+        traverse(child, 1);
+      }
+    }
+
+    for (final root in roots) {
+      traverse(root, 0);
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final commentTree = _buildCommentTree();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Chi tiết bài viết')),
       body: Column(
@@ -140,8 +180,8 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : _post == null
                 ? const Center(child: Text('Không tìm thấy bài viết'))
-                : ListView.builder(
-                    itemCount: _comments.length + 1,
+                  : ListView.builder(
+                    itemCount: commentTree.length + 1,
                     itemBuilder: (context, index) {
                       if (index == 0) {
                         return ForumPostCard(
@@ -152,24 +192,27 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                           onTap: () {}, // Already in detail page
                         );
                       }
-                      final comment = _comments[index - 1];
-                      return ForumCommentTile(
-                        postId: widget.postId,
-                        comment: comment,
-                        onDeleted: () {
-                          setState(
-                            () => _comments.removeWhere(
-                              (item) => item.id == comment.id,
-                            ),
-                          );
-                          unawaited(_loadComments());
-                        },
-                        onReply: (comment) {
-                          setState(() {
-                            _replyingTo = comment;
-                          });
-                          _commentFocusNode.requestFocus();
-                        },
+                      final node = commentTree[index - 1];
+                      return Padding(
+                        padding: EdgeInsets.only(left: node.depth * 44.0),
+                        child: ForumCommentTile(
+                          postId: widget.postId,
+                          comment: node.comment,
+                          onDeleted: () {
+                            setState(
+                              () => _comments.removeWhere(
+                                (item) => item.id == node.comment.id,
+                              ),
+                            );
+                            unawaited(_loadComments());
+                          },
+                          onReply: (comment) {
+                            setState(() {
+                              _replyingTo = comment;
+                            });
+                            _commentFocusNode.requestFocus();
+                          },
+                        ),
                       );
                     },
                   ),

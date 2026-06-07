@@ -98,7 +98,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                 )
               : ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.only(bottom: 80, top: 8),
+                  padding: const EdgeInsets.only(bottom: 80),
                   itemCount: _posts.length + (_hasMore ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (index == _posts.length) {

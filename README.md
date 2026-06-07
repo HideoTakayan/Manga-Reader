@@ -247,7 +247,7 @@ Thay vì mỗi Widget con (`CommentCard`, `LikeButton`, `ViewCounter`) tự mở
 ## 8. Tải Xuống & Cài Đặt
 
 > **📥 Download Android APK (Bản Release mới nhất):**
-> [**TẢI FILE APK TẠI ĐÂY — GOOGLE DRIVE**](https://drive.google.com/file/d/1wTTaZAyjQcpIFlepORbb43IpRl5lcVku/view?usp=drive_link)
+> [**TẢI FILE APK TẠI ĐÂY — GOOGLE DRIVE**](https://drive.google.com/file/d/1cLiav9dThWEWqYYU1XqrVrbgPIS7RmLX/view?usp=sharing)
 
 **Hướng dẫn cài đặt:**
 1. Tải file `app-release.apk` về điện thoại Android.
@@ -327,4 +327,4 @@ Dự án này giải quyết thành công bài toán phức tạp đa chiều:
 
 ---
 
-> 💬 *"Manga Reader là minh chứng rằng với kiến trúc đúng đắn và kỹ thuật tối ưu hóa sâu, một lập trình viên cá nhân hoàn toàn có thể tạo ra sản phẩm cạnh tranh trực tiếp với các ứng dụng thương mại được hàng chục kỹ sư xây dựng."*
+> 💬 *"Manga Reader là minh chứng rằng với kiến trúc đúng đắn và kỹ thuật tối ưu hóa sâu, một lập trình viên cá nhân hoàn toàn có thể tạo ra sản phẩm cạnh tranh trực tiếp với các ứng dụng thương mại được hàng chục kỹ sư xây dựng."*

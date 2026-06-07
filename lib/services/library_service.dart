@@ -47,6 +47,7 @@ class LibraryService {
   }
 
   Future<void> updateCategory(String oldName, String newName) async {
+    if (oldName == 'Mặc định') return; // Bảo vệ danh mục mặc định
     final db = await _dbHelper.database;
     // transaction: đảm bảo cả 2 update thành công hoặc cả 2 rollback
     await db.transaction((txn) async {
@@ -83,6 +84,7 @@ class LibraryService {
   }
 
   Future<void> removeCategory(String name) async {
+    if (name == 'Mặc định') return; // Bảo vệ danh mục mặc định
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
       await txn.delete(

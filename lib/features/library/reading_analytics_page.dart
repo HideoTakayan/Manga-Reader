@@ -157,9 +157,9 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
         continue;
       }
 
-      if (mangaId.startsWith('epub_')) {
+      if (mangaId.startsWith('epub_') || mangaId.startsWith('LOCAL_NOVEL|')) {
         result[mangaId] = const _MangaInfo(
-          title: 'EPUB',
+          title: 'Truyện chữ (Local)',
           genres: ['EPUB'],
           hasCatalogMetadata: true,
         );

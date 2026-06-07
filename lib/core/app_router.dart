@@ -29,7 +29,6 @@ import '../features/reader/local_novel_reader_page.dart';
 import '../data/models_cloud.dart';
 import '../services/novel_service.dart';
 import '../config/admin_config.dart';
-import '../features/ai_assistant/ai_chat_page.dart';
 
 // Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
@@ -177,10 +176,6 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/backup',
       builder: (context, state) => const BackupRestorePage(),
-    ),
-    GoRoute(
-      path: '/ai-chat',
-      builder: (context, state) => const AiChatPage(),
     ),
     // Route màn hình đọc truyện chữ (EPUB) cục bộ — nhận LocalNovel qua state.extra
     GoRoute(

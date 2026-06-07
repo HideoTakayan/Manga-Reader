@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,7 +13,6 @@ import '../../services/ui_service.dart';
 import '../../services/download_service.dart';
 import '../../data/drive_service.dart';
 import '../shared/library_dialogs.dart';
-import 'widgets/novel_list_tab.dart';
 import 'widgets/category_manga_list.dart';
 
 // Trang thư viện — quản lý truyện theo danh mục (tab), hỗ trợ chọn nhiều truyện,
@@ -149,18 +149,21 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return DefaultTabController(
-              length: 3,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+              child: StatefulBuilder(
+                builder: (context, setModalState) {
+                  return DefaultTabController(
+                    length: 3,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                   const TabBar(
                     indicatorColor: Colors.redAccent,
                     labelColor: Colors.white,
@@ -307,10 +310,13 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       ],
                     ),
                   ),
-                ],
+                      ],
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ),
         );
       },
     );
@@ -501,6 +507,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                   // Xóa khỏi thư viện: lấy categories hiện tại → loại bỏ currentCategory → set lại
                   if (removeFromLibrary) {
                     for (var id in _selectedMangaIds) {
+                      if (id.startsWith('LOCAL_NOVEL|')) {
+                        await NovelService.instance.remove(id.substring('LOCAL_NOVEL|'.length));
+                        continue;
+                      }
                       final cats = await LibraryService.instance
                           .streamMangaCategories(id)
                           .first;
@@ -598,8 +608,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
         final categories = snapshot.data ?? ['Mặc định'];
 
         return DefaultTabController(
-          // +1 cho tab "Truyện Chữ" cố định
-          length: categories.length + 1,
+          length: categories.length,
           child: SafeArea(
             bottom: false,
             child: Scaffold(
@@ -607,7 +616,15 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                 // AppBar thay đổi hoàn toàn khi vào selection mode
                 backgroundColor: isSelectionMode
                     ? const Color(0xFF1C1C1E)
-                    : null,
+                    : Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+                flexibleSpace: isSelectionMode
+                    ? null
+                    : ClipRect(
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(color: Colors.transparent),
+                        ),
+                      ),
                 leading: isSelectionMode
                     ? IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
@@ -720,56 +737,46 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       ],
                 bottom: TabBar(
                   isScrollable: true,
-                  indicatorColor: Colors.white,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  dividerColor: Colors.transparent,
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.grey,
-                  indicatorWeight: 3,
-                  tabs: [
-                    ...categories.map((cat) => Tab(text: cat)),
-                    // Tab cố định cho Truyện Chữ
-                    const Tab(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.menu_book_outlined, size: 14),
-                          SizedBox(width: 4),
-                          Text('Truyện Chữ'),
-                        ],
-                      ),
-                    ),
-                  ],
+                  tabAlignment: TabAlignment.start,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  tabs: categories.map((cat) => Tab(text: cat)).toList(),
                 ),
               ),
               body: TabBarView(
-                children: [
-                  ...categories.map(
-                    (cat) => CategoryMangaList(
-                      category: cat,
-                      searchQuery: _searchQuery,
-                      selectedStatuses: _selectedStatuses,
-                      selectedReadingStatuses: _selectedReadingStatuses,
-                      selectedTags: _selectedTags,
-                      sortMode: _sortMode,
-                      viewMode: _viewMode,
-                      selectedMangaIds: _selectedMangaIds,
-                      onToggleSelect: (id) {
-                        setState(() {
-                          if (_selectedMangaIds.contains(id)) {
-                            _selectedMangaIds.remove(id);
-                          } else {
-                            _selectedMangaIds.add(id);
-                          }
-                          UiService.instance.setMainBottomBarVisible(
-                            _selectedMangaIds.isEmpty,
-                          );
-                        });
-                      },
-                    ),
-                  ),
-                  // Tab cố định: danh sách truyện chữ đã nhập
-                  // ValueKey(_novelRefreshKey) force rebuild khi import EPUB mới
-                  NovelListTab(key: ValueKey(_novelRefreshKey)),
-                ],
+                children: categories.map((cat) {
+                  return CategoryMangaList(
+                    key: ValueKey('$cat-$_novelRefreshKey'),
+                    category: cat,
+                    searchQuery: _searchQuery,
+                    selectedStatuses: _selectedStatuses,
+                    selectedReadingStatuses: _selectedReadingStatuses,
+                    selectedTags: _selectedTags,
+                    sortMode: _sortMode,
+                    viewMode: _viewMode,
+                    selectedMangaIds: _selectedMangaIds,
+                    onToggleSelect: (mangaId) {
+                      setState(() {
+                        if (_selectedMangaIds.contains(mangaId)) {
+                          _selectedMangaIds.remove(mangaId);
+                        } else {
+                          _selectedMangaIds.add(mangaId);
+                        }
+                        UiService.instance.setMainBottomBarVisible(
+                          _selectedMangaIds.isEmpty,
+                        );
+                      });
+                    },
+                  );
+                }).toList(),
               ),
               // Action bar dưới — chỉ hiện khi selection mode
               bottomNavigationBar: isSelectionMode

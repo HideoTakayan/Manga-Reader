@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -133,10 +134,17 @@ class _HelpPageState extends State<HelpPage> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0E0E10),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1C),
-        title: const Text('Trợ giúp'),
+        title: const Text('Trợ giúp', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+        elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(color: Colors.transparent),
+          ),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -170,9 +178,9 @@ class _HelpPageState extends State<HelpPage> {
         hintText: '🔍 Tìm kiếm...',
         hintStyle: const TextStyle(color: Colors.grey),
         filled: true,
-        fillColor: const Color(0xFF1A1A1C),
+        fillColor: Theme.of(context).cardColor,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         prefixIcon: const Icon(Icons.search, color: Colors.grey),
@@ -197,10 +205,12 @@ class _HelpPageState extends State<HelpPage> {
 
   Widget _buildFAQItem(Map<String, String> faq) {
     return Card(
-      color: const Color(0xFF1A1A1C),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.only(bottom: 8),
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
       child: ExpansionTile(
+        shape: const Border(), // Remove default borders on expansion
         title: Text(
           faq['question']!,
           style: const TextStyle(
@@ -225,11 +235,20 @@ class _HelpPageState extends State<HelpPage> {
 
   Widget _buildGuideItem(Map<String, String> guide) {
     return Card(
-      color: const Color(0xFF1A1A1C),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.only(bottom: 8),
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
       child: ListTile(
-        leading: const Icon(Icons.book, color: Colors.orange),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.book, color: Colors.orange),
+        ),
         title: Text(
           guide['title']!,
           style: const TextStyle(color: Colors.white),
@@ -284,12 +303,21 @@ class _HelpPageState extends State<HelpPage> {
 
   Widget _buildContactInfo() {
     return Card(
-      color: const Color(0xFF1A1A1C),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
       child: Column(
         children: [
           ListTile(
-            leading: const Icon(Icons.email, color: Colors.orange),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.email, color: Colors.orange),
+            ),
             title: const Text('Email', style: TextStyle(color: Colors.white)),
             subtitle: const Text(
               'minhhieued245@gmail.com',
@@ -317,9 +345,17 @@ class _HelpPageState extends State<HelpPage> {
               }
             },
           ),
-          const Divider(color: Colors.grey),
+          Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
           ListTile(
-            leading: const Icon(Icons.facebook, color: Colors.orange),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.facebook, color: Colors.blueAccent),
+            ),
             title: const Text(
               'Facebook',
               style: TextStyle(color: Colors.white),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'following_page.dart';
 import 'history_page.dart';
 
@@ -14,13 +15,21 @@ class LibraryPage extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: const Text('Theo dõi'),
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-          bottom: TabBar(
-            indicatorColor: Theme.of(context).primaryColor,
-            labelColor: Theme.of(context).primaryColor,
-            unselectedLabelColor: Colors.grey,
-            tabs: const [
+          title: const Text('Theo dõi', style: TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+          flexibleSpace: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          bottom: const TabBar(
+            indicatorColor: Colors.redAccent,
+            indicatorWeight: 3,
+            labelColor: Colors.white,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            unselectedLabelColor: Colors.white54,
+            tabs: [
               Tab(text: 'Đang theo dõi', icon: Icon(Icons.favorite)),
               Tab(text: 'Lịch sử', icon: Icon(Icons.history)),
             ],

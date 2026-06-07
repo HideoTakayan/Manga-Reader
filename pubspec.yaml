@@ -50,8 +50,6 @@ dependencies:
   timeago: ^3.7.1
   html: ^0.15.6
   intl: ^0.20.2
-  flutter_markdown: ^0.7.7+1
-  google_generative_ai: ^0.4.7
   scrollable_positioned_list: ^0.3.8
 dev_dependencies:
   flutter_test:

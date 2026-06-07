@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:ui';
+
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,7 +15,7 @@ import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/follow_service.dart';
-import '../ai_assistant/ai_chat_page.dart';
+
 import 'widgets/continue_reading_section.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -25,51 +26,9 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showAiButton = FirebaseAuth.instance.currentUser != null;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: const _HomeContent(),
-      floatingActionButton: showAiButton
-          ? SizedBox(
-              width: 44,
-              height: 44,
-              child: FloatingActionButton(
-                onPressed: () => _showAiChat(context),
-                backgroundColor: Colors.redAccent,
-                mini: true,
-                child: const Icon(Icons.smart_toy, color: Colors.white),
-              ),
-            )
-          : null,
-    );
-  }
-
-  void _showAiChat(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        final media = MediaQuery.of(context);
-        final keyboardHeight = media.viewInsets.bottom;
-        final availableHeight = media.size.height - keyboardHeight;
-        final sheetHeight = availableHeight * (keyboardHeight > 0 ? 0.9 : 0.56);
-        return AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.only(bottom: keyboardHeight),
-          child: SizedBox(
-            height: sheetHeight
-                .clamp(300.0, media.size.height * 0.86)
-                .toDouble(),
-            child: AiChatPanel(onClose: () => Navigator.pop(context)),
-          ),
-        );
-      },
     );
   }
 }
@@ -479,7 +438,14 @@ class _HomeContentState extends State<_HomeContent> {
                   // AppBar nổi (floating: true) — ẩn khi cuộn xuống, hiện lại khi cuộn lên
                   SliverAppBar(
                     floating: true,
-                    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                    pinned: true,
+                    backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
+                    flexibleSpace: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(color: Colors.transparent),
+                      ),
+                    ),
                     elevation: 0,
                     title: Row(
                       children: [
@@ -568,10 +534,7 @@ class _HomeContentState extends State<_HomeContent> {
                   const ContinueReadingSection(),
 
                   SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: _AutoSlideBanner(mangas: featured),
-                    ),
+                    child: _AutoSlideBanner(mangas: featured),
                   ),
 
                   _SectionTitle(
@@ -637,78 +600,100 @@ class _MangaReaderCarousel extends StatelessWidget {
   final List<Manga> mangas;
   const _MangaReaderCarousel({required this.mangas});
 
-  static const double _cardWidth = 140;
-  static const double _coverHeight = 165;
+  static const double _cardWidth = 130;
+  static const double _coverHeight = 190;
 
   @override
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 220,
+        height: _coverHeight,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: mangas.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
           itemBuilder: (context, index) {
             final c = mangas[index];
             return GestureDetector(
               onTap: () => context.push('/detail/${c.id}'),
               child: SizedBox(
                 width: _cardWidth,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      height: _coverHeight,
-                      width: _cardWidth,
-                      child: Stack(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DriveImage(
+                        fileId: c.coverUrl,
+                        fit: BoxFit.cover,
+                        width: _cardWidth,
+                        height: _coverHeight,
+                      ),
+                      // Gradient Overlay
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: 80,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Colors.transparent, Colors.black87, Colors.black],
                             ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: DriveImage(
-                                fileId: c.coverUrl,
-                                fit: BoxFit.cover,
-                                width: _cardWidth,
-                                height: _coverHeight,
+                          ),
+                        ),
+                      ),
+                      // Text
+                      Positioned(
+                        bottom: 12,
+                        left: 8,
+                        right: 8,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              c.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                height: 1.2,
                               ),
                             ),
-                          ),
-                          Positioned(
-                            top: 6,
-                            right: 6,
-                            child: _FollowButton(manga: c),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            Text(
+                              c.author,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      c.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                      // Follow Button (Frosted Glass)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                            child: Container(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              child: _FollowButton(manga: c),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      c.author,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -766,7 +751,7 @@ class _FollowButtonState extends State<_FollowButton> {
       builder: (context, snapshot) {
         final isFollowing = snapshot.data ?? false;
         return Material(
-          color: Colors.black.withValues(alpha: 0.28),
+          color: Colors.transparent,
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -798,69 +783,85 @@ class _FollowButtonState extends State<_FollowButton> {
   }
 }
 
-// Danh sách xếp hạng dọc — Top 3 có badge màu vàng/cam/đỏ, còn lại màu trắng
+// Danh sách xếp hạng dọc — Top 3 có số khổng lồ chìm sau ảnh
 class _RankList extends StatelessWidget {
   final List<Manga> mangas;
   const _RankList({required this.mangas});
 
   @override
   Widget build(BuildContext context) {
-    final rankColors = [Colors.amber, Colors.orangeAccent, Colors.redAccent];
-
     return Column(
       children: List.generate(mangas.length, (i) {
         final c = mangas[i];
-        final color = i < 3 ? rankColors[i] : Colors.white54;
-
-        return ListTile(
-          onTap: () => context.push('/detail/${c.id}'),
-          leading: Stack(
-            alignment: Alignment.topLeft,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: DriveImage(
-                  fileId: c.coverUrl,
-                  width: 50,
-                  height: 70,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              // Badge số thứ hạng — chỉ hiện cho Top 3
-              if (i < 3)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.9),
-                      borderRadius: const BorderRadius.only(
-                        bottomRight: Radius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      '#${i + 1}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
+        
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: InkWell(
+            onTap: () => context.push('/detail/${c.id}'),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 40,
+                  child: Center(
+                    child: i == 0
+                        ? const Text('🥇', style: TextStyle(fontSize: 28))
+                        : i == 1
+                            ? const Text('🥈', style: TextStyle(fontSize: 28))
+                            : i == 2
+                                ? const Text('🥉', style: TextStyle(fontSize: 28))
+                                : Text(
+                                    '${i + 1}',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge
+                                          ?.color
+                                          ?.withValues(alpha: 0.5),
+                                    ),
+                                  ),
                   ),
                 ),
-            ],
-          ),
-          title: Text(
-            c.title,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(fontSize: 16),
-          ),
-          subtitle: Text(
-            'Tác giả: ${c.author}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
+                const SizedBox(width: 8),
+                // Ảnh bìa
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: DriveImage(
+                    fileId: c.coverUrl,
+                    width: 60,
+                    height: 80,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Text
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        c.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tác giả: ${c.author}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }),
@@ -886,8 +887,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
   @override
   void initState() {
     super.initState();
-    // viewportFraction < 1 → hiện một phần trang kế — hiệu ứng "peek" sang 2 bên
-    _controller = PageController(viewportFraction: 0.9);
+    _controller = PageController(viewportFraction: 1.0);
     _startTimer();
   }
 
@@ -903,13 +903,12 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
         duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
       );
-      // _currentPage cập nhật trong onPageChanged, không cập nhật ở đây tránh race condition
     });
   }
 
   @override
   void dispose() {
-    _timer?.cancel(); // Hủy timer khi widget bị dispose để tránh memory leak
+    _timer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -921,7 +920,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
     return Column(
       children: [
         SizedBox(
-          height: 180,
+          height: 280,
           child: PageView.builder(
             controller: _controller,
             itemCount: widget.mangas.length,
@@ -930,61 +929,83 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
               final c = widget.mangas[index];
               return GestureDetector(
                 onTap: () => context.push('/detail/${c.id}'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        DriveImage(
-                          fileId: c.coverUrl,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DriveImage(
+                      fileId: c.coverUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                    ),
+                    // Gradient Overlay
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        height: 140,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black54,
+                              Colors.black87,
+                              Colors.black,
+                            ],
+                          ),
                         ),
-                        // Gradient mờ từ trong suốt → đen ở dưới để nổi text trên ảnh
-                        Align(
-                          alignment: Alignment.bottomCenter,
-                          child: Container(
-                            height: 60,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black54,
-                                  Colors.black87,
-                                ],
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      bottom: 24,
+                      right: 16,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Frosted Glass Tag
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  c.contentType.label,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          left: 12,
-                          bottom: 12,
-                          right: 12,
-                          child: Text(
+                          const SizedBox(height: 8),
+                          Text(
                             c.title,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
                               shadows: [
-                                Shadow(
-                                  color: Colors.black54,
-                                  offset: Offset(1, 1),
-                                  blurRadius: 4,
-                                ),
+                                Shadow(color: Colors.black, blurRadius: 8),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               );
             },

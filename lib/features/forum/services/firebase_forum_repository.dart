@@ -13,6 +13,24 @@ import '../../../config/admin_config.dart';
 class FirebaseForumRepository implements ForumRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  Future<(String, String)> _getCustomProfile(String uid, String defaultName, String defaultAvatar) async {
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final name = (data['name']?.toString() ?? '').trim();
+        final avatarUrl = (data['avatarUrl']?.toString() ?? data['avatar']?.toString() ?? '').trim();
+        return (
+          name.isNotEmpty ? name : defaultName,
+          avatarUrl.isNotEmpty ? avatarUrl : defaultAvatar,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error getting custom profile: $e');
+    }
+    return (defaultName, defaultAvatar);
+  }
+
   @override
   Future<(List<ForumPost>, DocumentSnapshot?)> fetchDiscussionPosts({
     DocumentSnapshot? startAfter,
@@ -91,12 +109,14 @@ class FirebaseForumRepository implements ForumRepository {
       );
     }
 
+    final (finalName, finalAvatar) = await _getCustomProfile(uid, authorName, authorAvatar);
+
     final post = ForumPost(
       id: postRef.id,
       type: 'discussion',
       authorId: uid,
-      authorName: authorName,
-      authorAvatar: authorAvatar,
+      authorName: finalName,
+      authorAvatar: finalAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
       imageUrl: uploadedImageUrl,
@@ -131,12 +151,14 @@ class FirebaseForumRepository implements ForumRepository {
 
     final postRef = _firestore.collection('forumPosts').doc();
 
+    final (finalName, finalAvatar) = await _getCustomProfile(uid, authorName, authorAvatar);
+
     final post = ForumPost(
       id: postRef.id,
       type: 'manga_share',
       authorId: uid,
-      authorName: authorName,
-      authorAvatar: authorAvatar,
+      authorName: finalName,
+      authorAvatar: finalAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
       sharedMangaId: sharedMangaId,
@@ -206,11 +228,13 @@ class FirebaseForumRepository implements ForumRepository {
     final postRef = _firestore.collection('forumPosts').doc(postId);
     final commentRef = postRef.collection('comments').doc();
 
+    final (finalName, finalAvatar) = await _getCustomProfile(uid, authorName, authorAvatar);
+
     final comment = ForumComment(
       id: commentRef.id,
       authorId: uid,
-      authorName: authorName,
-      authorAvatar: authorAvatar,
+      authorName: finalName,
+      authorAvatar: finalAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
       createdAt: DateTime.now(), // Overwritten by server timestamp
@@ -536,11 +560,14 @@ class FirebaseForumRepository implements ForumRepository {
     }
 
     final messageRef = _firestore.collection('forumMessages').doc();
+    
+    final (finalName, finalAvatar) = await _getCustomProfile(uid, authorName, authorAvatar);
+
     final message = ForumMessage(
       id: messageRef.id,
       authorId: uid,
-      authorName: authorName,
-      authorAvatar: authorAvatar,
+      authorName: finalName,
+      authorAvatar: finalAvatar,
       body: trimmedBody,
       gifUrl: gifUrl,
       imageUrl: imageUrl,

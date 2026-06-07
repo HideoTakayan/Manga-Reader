@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/drive_service.dart';
 import '../../../data/models_cloud.dart';
+import '../../../data/content_type.dart';
 import '../../../services/library_service.dart';
 import '../../../services/library_status_service.dart';
 import '../../../data/database_helper.dart';
 import '../../shared/drive_image.dart';
+import '../../../services/novel_service.dart';
 
 enum LibrarySortMode { updatedDesc, titleAsc, readingStatus }
 
@@ -91,6 +93,24 @@ class CategoryMangaList extends StatelessWidget {
           final statusByMangaId = {
             for (final entry in localStatusEntries) entry.mangaId: entry,
           };
+          
+          if (category == 'Mặc định') {
+            final novels = await NovelService.instance.getAll();
+            for (final novel in novels) {
+              mangas.add(CloudManga(
+                id: 'LOCAL_NOVEL|${novel.path}',
+                title: novel.title,
+                author: 'Local EPUB',
+                description: '',
+                coverFileId: novel.coverPath,
+                updatedAt: novel.importedAt,
+                genres: [],
+                status: 'Hoàn thành',
+                chapterOrder: [],
+              ));
+            }
+          }
+
           return _CategoryMangaData(
             mangas: mangas,
             statusByMangaId: statusByMangaId,
@@ -103,9 +123,9 @@ class CategoryMangaList extends StatelessWidget {
             if (!mangaSnapshot.hasData) return const SizedBox.shrink();
             final data = mangaSnapshot.data!;
 
-            // Lọc chỉ lấy truyện có id trong danh sách category này
+            // Lọc chỉ lấy truyện có id trong danh sách category này hoặc là Local Novel ở mục Mặc định
             final allMangasInCat = data.mangas
-                .where((m) => mangaIds.contains(m.id))
+                .where((m) => mangaIds.contains(m.id) || (category == 'Mặc định' && m.id.startsWith('LOCAL_NOVEL|')))
                 .toList();
 
             // Áp dụng search + status filter
@@ -120,9 +140,12 @@ class CategoryMangaList extends StatelessWidget {
                 matchesStatus = selectedStatuses.any((s) {
                   if (s == 'Đang tiến hành') {
                     return statusLower.contains('cập nhật') ||
-                        statusLower.contains('hành');
+                        statusLower.contains('tiến hành') ||
+                        statusLower.contains('đang');
                   }
-                  if (s == 'Đã hoàn thành') return statusLower.contains('hoàn');
+                  if (s == 'Đã hoàn thành') {
+                    return statusLower.contains('hoàn') || statusLower.contains('full');
+                  }
                   if (s == 'Drop') {
                     return statusLower.contains('drop') ||
                         statusLower.contains('ngừng');
@@ -292,7 +315,19 @@ class _MangaListItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: isSelectionMode
             ? onToggle
-            : () => context.push('/detail/${manga.id}'),
+            : () {
+                if (manga.id.startsWith('LOCAL_NOVEL|')) {
+                  final novel = LocalNovel(
+                    path: manga.id.substring('LOCAL_NOVEL|'.length),
+                    title: manga.title,
+                    coverPath: manga.coverFileId,
+                    importedAt: manga.updatedAt,
+                  );
+                  context.push('/novel-reader', extra: novel);
+                } else {
+                  context.push('/detail/${manga.id}');
+                }
+              },
         onLongPress: onToggle,
         child: Ink(
           decoration: BoxDecoration(
@@ -337,7 +372,7 @@ class _MangaListItem extends StatelessWidget {
                       Text(
                         [
                           manga.status,
-                          '${manga.chapterOrder.length} chương',
+                          if (manga.id.startsWith('LOCAL_NOVEL|') || manga.contentType == MangaContentType.novel) 'EPUB' else '${manga.chapterOrder.length} chương',
                           if (readingLabel != null) readingLabel,
                         ].where((part) => part.trim().isNotEmpty).join(' • '),
                         maxLines: 1,
@@ -400,7 +435,19 @@ class _MangaGridItem extends StatelessWidget {
     return GestureDetector(
       onTap: isSelectionMode
           ? onToggle
-          : () => context.push('/detail/${manga.id}'),
+          : () {
+              if (manga.id.startsWith('LOCAL_NOVEL|')) {
+                final novel = LocalNovel(
+                  path: manga.id.substring('LOCAL_NOVEL|'.length),
+                  title: manga.title,
+                  coverPath: manga.coverFileId,
+                  importedAt: manga.updatedAt,
+                );
+                context.push('/novel-reader', extra: novel);
+              } else {
+                context.push('/detail/${manga.id}');
+              }
+            },
       onLongPress: onToggle, // Long press để bắt đầu selection mode
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -462,7 +509,7 @@ class _MangaGridItem extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    '${manga.chapterOrder.length}',
+                    (manga.id.startsWith('LOCAL_NOVEL|') || manga.contentType == MangaContentType.novel) ? 'EPUB' : '${manga.chapterOrder.length}',
                     style: const TextStyle(
                       color: Colors.black,
                       fontSize: 10,

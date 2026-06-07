@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -146,28 +147,30 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             floating: false,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              title: Text(
+              title: const Text(
                 'Admin Dashboard',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                ),
               ),
               background: Container(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Theme.of(context).colorScheme.surface,
-                      Theme.of(context).scaffoldBackgroundColor,
+                      Color(0xFF1E1E2C), // Deep premium dark blue
+                      Color(0xFF2D2B55), // Rich purple/indigo
                     ],
                   ),
                 ),
                 child: Center(
                   child: Icon(
                     Icons.admin_panel_settings,
-                    size: 80,
-                    color: Theme.of(
-                      context,
-                    ).iconTheme.color?.withValues(alpha: 0.1),
+                    size: 100,
+                    color: Colors.white.withValues(alpha: 0.05),
                   ),
                 ),
               ),
@@ -458,68 +461,94 @@ class _AdminMangaCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
+        fit: StackFit.expand,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
+          DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
+          // Gradient Overlay
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black45,
+                  Colors.black87,
+                ],
+                stops: [0.4, 0.7, 1.0],
               ),
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      manga.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      manga.author,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
+          // Text content
           Positioned(
-            top: 8,
-            left: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.65),
-                borderRadius: BorderRadius.circular(999),
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    manga.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    manga.author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
               ),
-              child: Text(
-                manga.contentType.label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+            ),
+          ),
+          // Frosted Glass Tag
+          Positioned(
+            top: 10,
+            left: 10,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    manga.contentType.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -529,7 +558,7 @@ class _AdminMangaCard extends StatelessWidget {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 onTap: () {
                   showModalBottomSheet(
                     context: context,
@@ -751,13 +780,33 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
     }
   }
 
+  InputDecoration _inputDeco(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white70),
+      prefixIcon: Icon(icon, color: Colors.white54),
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: Theme.of(context).cardColor,
-      title: Text(
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Text(
         'Thêm Truyện Mới',
-        style: Theme.of(context).textTheme.titleLarge,
+        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
       ),
       content: SingleChildScrollView(
         child: Column(
@@ -765,17 +814,20 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
           children: [
             TextField(
               controller: _titleController,
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: const InputDecoration(labelText: 'Tên truyện'),
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco('Tên truyện', Icons.title),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             DropdownButtonFormField<MangaContentType>(
               initialValue: _contentType,
-              decoration: const InputDecoration(labelText: 'Loại nội dung'),
+              decoration: _inputDeco('Loại nội dung', Icons.category),
+              dropdownColor: const Color(0xFF2C2C2E),
               items: MangaContentType.values
                   .map(
-                    (type) =>
-                        DropdownMenuItem(value: type, child: Text(type.label)),
+                    (type) => DropdownMenuItem(
+                      value: type,
+                      child: Text(type.label, style: const TextStyle(color: Colors.white)),
+                    ),
                   )
                   .toList(),
               onChanged: _isUploading
@@ -786,50 +838,59 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
                       }
                     },
             ),
+            const SizedBox(height: 16),
             TextField(
               controller: _authorController,
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: const InputDecoration(labelText: 'Tác giả'),
-            ),
-            TextField(
-              controller: _descController,
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: const InputDecoration(labelText: 'Mô tả'),
-            ),
-            TextField(
-              controller: _genresController,
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: const InputDecoration(
-                labelText: 'Thể loại (cách nhau bởi dấu phẩy)',
-              ),
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco('Tác giả', Icons.person_outline),
             ),
             const SizedBox(height: 16),
-            // Vùng chọn ảnh bìa — icon chuyển xanh khi đã chọn file
+            TextField(
+              controller: _descController,
+              style: const TextStyle(color: Colors.white),
+              maxLines: 3,
+              decoration: _inputDeco('Mô tả', Icons.description_outlined),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _genresController,
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco('Thể loại (cách nhau bởi dấu phẩy)', Icons.local_offer_outlined),
+            ),
+            const SizedBox(height: 20),
+            // Vùng chọn ảnh bìa — style xịn hơn
             InkWell(
               onTap: _isUploading ? null : _pickCover,
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8),
+                  color: _coverFile != null 
+                      ? Colors.green.withValues(alpha: 0.1) 
+                      : Colors.white.withValues(alpha: 0.03),
+                  border: Border.all(
+                    color: _coverFile != null ? Colors.green : Colors.white24,
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.image,
-                      color: _coverFile != null ? Colors.green : Colors.grey,
+                      _coverFile != null ? Icons.check_circle : Icons.add_photo_alternate,
+                      color: _coverFile != null ? Colors.green : Colors.orange,
+                      size: 28,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         _coverFile == null
-                            ? 'Chọn Ảnh Bìa'
+                            ? 'Tải lên Ảnh Bìa'
                             : 'Đã chọn: ${_coverFile!.path.split('/').last}',
                         style: TextStyle(
-                          color: _coverFile != null
-                              ? Colors.green
-                              : Theme.of(context).textTheme.bodyMedium?.color,
+                          color: _coverFile != null ? Colors.green : Colors.white70,
+                          fontWeight: FontWeight.w600,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -840,20 +901,27 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             ),
             if (_isUploading)
               const Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: CircularProgressIndicator(),
+                padding: EdgeInsets.only(top: 24),
+                child: Center(child: CircularProgressIndicator(color: Colors.orange)),
               ),
           ],
         ),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy'),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
-          onPressed: _isUploading ? null : _submit, // Disable khi đang upload
-          child: const Text('Lưu'),
+          onPressed: _isUploading ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+          child: const Text('Lưu Truyện', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
@@ -875,15 +943,41 @@ class _AdminToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, color: iconColor),
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Theme.of(context).cardColor,
-        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Theme.of(context).cardColor,
+            Theme.of(context).cardColor.withValues(alpha: 0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, color: iconColor ?? Theme.of(context).iconTheme.color),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
       ),
     );
   }
@@ -919,17 +1013,17 @@ class _StatCard extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                color.withValues(alpha: 0.15),
+                color.withValues(alpha: 0.25),
                 color.withValues(alpha: 0.05),
               ],
             ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.2)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: color.withValues(alpha: 0.1),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
               ),
             ],
           ),

@@ -12,6 +12,8 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback? onUnmute;
   final VoidCallback? onReport;
   final VoidCallback? onReply;
+  final bool isFirstInSequence;
+  final bool isLastInSequence;
 
   const ChatMessageBubble({
     super.key,
@@ -21,6 +23,8 @@ class ChatMessageBubble extends StatelessWidget {
     this.onUnmute,
     this.onReport,
     this.onReply,
+    this.isFirstInSequence = true,
+    this.isLastInSequence = true,
   });
 
   @override
@@ -32,7 +36,12 @@ class ChatMessageBubble extends StatelessWidget {
     return GestureDetector(
       onLongPress: !message.isDeleted ? () => _showOptionsMenu(context, currentUserIsAdmin, isMe) : null,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: isFirstInSequence ? 12 : 2,
+          bottom: isLastInSequence ? 12 : 2,
+        ),
       child: Row(
         mainAxisAlignment: isMe
             ? MainAxisAlignment.end
@@ -40,13 +49,18 @@ class ChatMessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundImage: message.authorAvatar.isNotEmpty
-                  ? NetworkImage(message.authorAvatar)
-                  : null,
-              child: message.authorAvatar.isEmpty
-                  ? const Icon(Icons.person, size: 20)
+            SizedBox(
+              width: 32,
+              child: isLastInSequence
+                  ? CircleAvatar(
+                      radius: 16,
+                      backgroundImage: message.authorAvatar.isNotEmpty
+                          ? NetworkImage(message.authorAvatar)
+                          : null,
+                      child: message.authorAvatar.isEmpty
+                          ? const Icon(Icons.person, size: 20)
+                          : null,
+                    )
                   : null,
             ),
             const SizedBox(width: 8),
@@ -57,7 +71,7 @@ class ChatMessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                if (!isMe || message.authorIsAdmin)
+                if ((!isMe && isFirstInSequence) || message.authorIsAdmin)
                   Padding(
                     padding: EdgeInsets.only(
                       left: isMe ? 0 : 4,
@@ -94,6 +108,54 @@ class ChatMessageBubble extends StatelessWidget {
                       ],
                     ),
                   ),
+                if (message.replyToMessageId != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Column(
+                      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.reply, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                            const SizedBox(width: 4),
+                            Text(
+                              isMe
+                                  ? 'Bạn đã trả lời ${message.replyToAuthorName ?? 'ai đó'}'
+                                  : '${message.authorName} đã trả lời ${message.replyToAuthorName ?? 'ai đó'}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).textTheme.bodySmall?.color,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isMe 
+                                ? Theme.of(context).primaryColor.withValues(alpha: 0.4) 
+                                : Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          constraints: const BoxConstraints(maxWidth: 200),
+                          child: Text(
+                            message.replyToBody ?? 'Hình ảnh/GIF',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isMe 
+                                  ? Colors.white.withValues(alpha: 0.8) 
+                                  : Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -104,10 +166,10 @@ class ChatMessageBubble extends StatelessWidget {
                         ? Theme.of(context).primaryColor
                         : Theme.of(context).cardColor,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isMe ? 16 : 4),
-                      bottomRight: Radius.circular(isMe ? 4 : 16),
+                      topLeft: Radius.circular(message.replyToMessageId != null && !isMe ? 4 : (isMe || isFirstInSequence ? 18 : 4)),
+                      topRight: Radius.circular(message.replyToMessageId != null && isMe ? 4 : (!isMe || isFirstInSequence ? 18 : 4)),
+                      bottomLeft: Radius.circular(isMe || isLastInSequence ? 18 : 4),
+                      bottomRight: Radius.circular(!isMe || isLastInSequence ? 18 : 4),
                     ),
                     border: isMe
                         ? null
@@ -122,44 +184,6 @@ class ChatMessageBubble extends StatelessWidget {
                         ? CrossAxisAlignment.end
                         : CrossAxisAlignment.start,
                     children: [
-                      if (message.replyToMessageId != null)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border(
-                              left: BorderSide(
-                                color: isMe ? Colors.white : Theme.of(context).primaryColor,
-                                width: 3,
-                              ),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                message.replyToAuthorName ?? 'Ai đó',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: isMe ? Colors.white70 : Theme.of(context).primaryColor,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                message.replyToBody ?? 'Hình ảnh/GIF',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isMe ? Colors.white70 : Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       if (message.imageUrl != null && !message.isDeleted)
                         Padding(
                           padding: EdgeInsets.only(
@@ -227,13 +251,14 @@ class ChatMessageBubble extends StatelessWidget {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 4, left: 4),
-                  child: Text(
-                    timeago.format(message.createdAt, locale: 'vi'),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                if (isLastInSequence)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, right: 4, left: 4),
+                    child: Text(
+                      timeago.format(message.createdAt, locale: 'vi'),
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

@@ -7,6 +7,7 @@ import '../../../data/database_helper.dart';
 import '../../../data/models.dart';
 import '../../../data/drive_service.dart';
 import '../../shared/drive_image.dart';
+import '../../../services/novel_service.dart';
 
 class ContinueReadingSection extends StatefulWidget {
   const ContinueReadingSection({super.key});
@@ -58,9 +59,28 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
         children: [
           // NETFLIX STYLE HERO BANNER
           GestureDetector(
-            onTap: () => context.push(
-              '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}',
-            ),
+            onTap: () async {
+              if (topItem.mangaId.startsWith('LOCAL_NOVEL|')) {
+                final novelPath = topItem.mangaId.substring('LOCAL_NOVEL|'.length);
+                final novels = await NovelService.instance.getAll();
+                final localNovel = novels.firstWhere(
+                  (n) => n.path == novelPath,
+                  orElse: () => LocalNovel(
+                    path: novelPath,
+                    title: topItem.chapterTitle ?? 'Truyện',
+                    importedAt: DateTime.now(),
+                  ),
+                );
+                if (context.mounted) {
+                  await context.push('/novel-reader', extra: localNovel);
+                }
+                return;
+              }
+              
+              context.push(
+                '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}',
+              );
+            },
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               height: 200,

@@ -215,30 +215,39 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                       return Container(
                         // ValueKey bắt buộc với ReorderableListView để identify từng item
                         key: ValueKey(chapter.id),
-                        margin: const EdgeInsets.only(bottom: 8),
+                        margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.grey.withValues(alpha: 0.2),
-                          ),
+                          color: const Color(0xFF2C2C2E),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
                         ),
                         child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           leading: const Icon(
-                            Icons.drag_handle,
-                            color: Colors.grey,
+                            Icons.drag_indicator,
+                            color: Colors.white54,
                           ),
                           title: Text(
                             chapter.title,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           // Hiện định dạng file (ZIP/CBZ) và dung lượng
-                          subtitle: Text(
-                            '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
+                              style: const TextStyle(color: Colors.white54, fontSize: 13),
+                            ),
                           ),
                           trailing: IconButton(
                             icon: const Icon(
@@ -542,17 +551,34 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     }
   }
 
+  InputDecoration _inputDeco(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.white70),
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: Theme.of(context).cardColor,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       title: Text(
         widget.contentType.isNovel
             ? 'Thêm EPUB Mới (Drive)'
             : 'Thêm Chapter Mới (Drive)',
-        style: Theme.of(
-          context,
-        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
       ),
       content: SingleChildScrollView(
         child: Column(
@@ -560,19 +586,11 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           children: [
             TextField(
               controller: _titleController,
-              style: Theme.of(context).textTheme.bodyLarge,
-              decoration: InputDecoration(
-                labelText: widget.contentType.isNovel
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco(
+                widget.contentType.isNovel
                     ? 'Tên tập (VD: Tập 1)'
                     : 'Tên Chapter (VD: Chap 1)',
-                labelStyle: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-                filled: true,
-                fillColor: Theme.of(context).scaffoldBackgroundColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -580,21 +598,26 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
             // Vùng chọn file — icon chuyển xanh khi đã chọn, hiện tên file ngắn gọn
             InkWell(
               onTap: _pickFile,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                 decoration: BoxDecoration(
+                  color: _files.isNotEmpty 
+                      ? Colors.green.withValues(alpha: 0.1) 
+                      : Colors.white.withValues(alpha: 0.03),
                   border: Border.all(
-                    color: Colors.grey.withValues(alpha: 0.5),
-                    style: BorderStyle.solid,
+                    color: _files.isNotEmpty ? Colors.green : Colors.white24,
+                    width: 1,
                   ),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _files.isEmpty ? Icons.attach_file : Icons.check_circle,
-                      color: _files.isEmpty ? Colors.grey : Colors.green,
+                      _files.isEmpty ? Icons.file_upload : Icons.check_circle,
+                      color: _files.isEmpty ? Colors.orange : Colors.green,
+                      size: 28,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -606,7 +629,10 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                             : _files.length == 1
                             ? path.basename(_files.first.path)
                             : 'Đã chọn ${_files.length} file',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                        style: TextStyle(
+                          color: _files.isNotEmpty ? Colors.green : Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -617,29 +643,34 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
             // LinearProgressIndicator thay vì CircularProgressIndicator để tiết kiệm không gian
             if (_isUploading)
               const Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: LinearProgressIndicator(color: Colors.orange),
+                padding: EdgeInsets.only(top: 24),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                  child: LinearProgressIndicator(
+                    color: Colors.orange,
+                    backgroundColor: Colors.white24,
+                    minHeight: 6,
+                  ),
+                ),
               ),
           ],
         ),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Hủy',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-          ),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
           onPressed: _isUploading ? null : _submit, // Disable khi đang upload
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
-            foregroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
-          child: const Text('Thêm'),
+          child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

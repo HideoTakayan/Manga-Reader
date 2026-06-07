@@ -254,31 +254,17 @@
       }
 
       match /app_settings/{settingId} {
-        allow read: if settingId == 'home_banner'
-          || (settingId == 'api_keys' && signedIn());
+        allow read: if settingId == 'home_banner';
         allow create, update: if isAdmin()
-          && (
-            (settingId == 'home_banner'
-              && request.resource.data.keys().hasOnly(['mangaIds', 'novelIds', 'updatedAt'])
-              && request.resource.data.keys().hasAll(['mangaIds', 'novelIds', 'updatedAt'])
-              && request.resource.data.mangaIds is list
-              && request.resource.data.novelIds is list
-              && request.resource.data.mangaIds.size() <= 20
-              && request.resource.data.novelIds.size() <= 20
-              && request.resource.data.updatedAt == request.time)
-            ||
-            (settingId == 'api_keys'
-              && request.resource.data.keys().hasOnly(['gemini_key', 'updatedAt'])
-              && request.resource.data.keys().hasAll(['gemini_key'])
-              && request.resource.data.gemini_key is string
-              && request.resource.data.gemini_key.size() > 0
-              && request.resource.data.gemini_key.size() <= 300
-              && (
-                !request.resource.data.keys().hasAny(['updatedAt'])
-                || request.resource.data.updatedAt == request.time
-              ))
-          );
-        allow delete: if isAdmin() && settingId in ['home_banner', 'api_keys'];
+          && settingId == 'home_banner'
+          && request.resource.data.keys().hasOnly(['mangaIds', 'novelIds', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['mangaIds', 'novelIds', 'updatedAt'])
+          && request.resource.data.mangaIds is list
+          && request.resource.data.novelIds is list
+          && request.resource.data.mangaIds.size() <= 20
+          && request.resource.data.novelIds.size() <= 20
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isAdmin() && settingId == 'home_banner';
       }
 
       match /reports/{reportId} {

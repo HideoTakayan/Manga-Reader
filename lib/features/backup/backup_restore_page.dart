@@ -36,22 +36,36 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     final replace = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Import backup'),
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Import backup', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const Text(
           'Bạn muốn gộp dữ liệu backup vào dữ liệu hiện tại, hay thay thế toàn bộ dữ liệu local?',
+          style: TextStyle(color: Colors.white70),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Gộp'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Gộp', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Thay thế', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Thay thế', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -78,6 +92,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         padding: const EdgeInsets.all(16),
         children: [
           Card(
+            color: const Color(0xFF2C2C2E),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -87,6 +103,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     'Dữ liệu được backup',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -97,7 +114,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   const SizedBox(height: 8),
                   Text(
                     'File truyện đã tải không nằm trong backup JSON để tránh file quá nặng.',
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.white54),
                   ),
                 ],
               ),

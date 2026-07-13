@@ -74,6 +74,15 @@ class LibraryStatusService {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
+
+  Future<void> removeEntry(String mangaId) async {
+    final db = await DatabaseHelper.instance.database;
+    await db.delete(
+      'library_status',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+    );
+  }
 }
 
 class LibraryStatusEntry {
@@ -119,8 +128,12 @@ class LibraryStatusEntry {
   static List<String> _readTags(dynamic value) {
     if (value is List) return value.map((tag) => tag.toString()).toList();
     if (value is String && value.isNotEmpty) {
-      final decoded = jsonDecode(value);
-      if (decoded is List) return decoded.map((tag) => tag.toString()).toList();
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) return decoded.map((tag) => tag.toString()).toList();
+      } catch (e) {
+        // Ignored to prevent crashes from invalid JSON
+      }
     }
     return const [];
   }

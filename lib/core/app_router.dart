@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 
 import '../features/home/home_page.dart';
 import '../features/library/library_page.dart';
@@ -30,13 +31,42 @@ import '../data/models_cloud.dart';
 import '../services/novel_service.dart';
 import '../config/admin_config.dart';
 
+// Stream wrapper để GoRouter tự động reload khi trạng thái Firebase Auth thay đổi
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+    _subscription = stream.asBroadcastStream().listen(
+      (dynamic _) => notifyListeners(),
+    );
+  }
+  late final StreamSubscription<dynamic> _subscription;
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
 // Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
-  initialLocation:
-      '/auth-check', // Trang mặc định ban đầu để kiểm tra trạng thái đăng nhập
+  initialLocation: '/', // Mặc định vào thẳng Home, redirect sẽ tự chặn nếu chưa đăng nhập
+  refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
+  redirect: (context, state) {
+    final user = FirebaseAuth.instance.currentUser;
+    final isGoingToLogin = state.matchedLocation == '/login';
+
+    // Chưa đăng nhập mà không ở trang login -> Đẩy ra trang login
+    if (user == null && !isGoingToLogin) {
+      return '/login';
+    }
+    // Đã đăng nhập mà cố vào trang login -> Đẩy về trang chủ
+    if (user != null && isGoingToLogin) {
+      return '/';
+    }
+    // Cho phép đi tiếp
+    return null;
+  },
   routes: [
-    // Route kiểm tra trạng thái đăng nhập ban đầu (màn hình trấn an), tự động chuyển hướng sau khi check Firebase Auth
-    GoRoute(path: '/auth-check', builder: (_, __) => const _AuthCheckPage()),
     // Route trang đăng nhập / đăng ký (hiển thị khi chưa có tài khoản hoặc chưa đăng nhập)
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
@@ -208,32 +238,6 @@ final GoRouter appRouter = GoRouter(
   ],
 );
 
-// Widget dùng để kiểm tra trạng thái xác thực người dùng ban đầu
-// Tự động chuyển hướng tới màn hình trang chủ nếu đã đăng nhập, ngược lại ra màn hình đăng nhập.
-class _AuthCheckPage extends StatelessWidget {
-  const _AuthCheckPage();
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (!snapshot.hasData) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => context.go('/login'),
-          );
-          return const SizedBox.shrink();
-        }
-        WidgetsBinding.instance.addPostFrameCallback((_) => context.go('/'));
-        return const SizedBox.shrink();
-      },
-    );
-  }
-}
 
 class _AdminRouteGuard extends StatelessWidget {
   final Widget child;

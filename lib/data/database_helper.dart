@@ -58,14 +58,6 @@ class DatabaseHelper {
       // _createDownloadTable đã được dời xuống bản 12 hoặc đã xử lý riêng
       await _createDownloadTable(db);
     }
-    if (oldVersion < 12) {
-      if (await _tableExists(db, 'history') &&
-          !await _columnExists(db, 'history', 'totalPages')) {
-        await db.execute(
-          'ALTER TABLE history ADD COLUMN totalPages INTEGER DEFAULT 1',
-        );
-      }
-    }
     if (oldVersion < 7) {
       try {
         await db.execute('ALTER TABLE comics ADD COLUMN genres TEXT');
@@ -89,6 +81,14 @@ class DatabaseHelper {
     }
     if (oldVersion < 11) {
       await _createLibraryStatusTable(db);
+    }
+    if (oldVersion < 12) {
+      if (await _tableExists(db, 'history') &&
+          !await _columnExists(db, 'history', 'totalPages')) {
+        await db.execute(
+          'ALTER TABLE history ADD COLUMN totalPages INTEGER DEFAULT 1',
+        );
+      }
     }
     if (oldVersion < 13) {
       await _createReadingActivityTable(db);
@@ -491,44 +491,47 @@ class DatabaseHelper {
 
   Future<void> saveReadingActivity(ReadingActivity activity) async {
     final db = await instance.database;
-    final existing = await db.query(
-      'reading_activity',
-      where: 'id = ?',
-      whereArgs: [activity.id],
-      limit: 1,
-    );
-
-    if (existing.isEmpty) {
-      await db.insert(
+    // Dùng transaction để tránh race condition khi nhiều lần ghi đồng thời.
+    await db.transaction((txn) async {
+      final existing = await txn.query(
         'reading_activity',
-        activity.toMap(),
+        where: 'id = ?',
+        whereArgs: [activity.id],
+        limit: 1,
+      );
+
+      if (existing.isEmpty) {
+        await txn.insert(
+          'reading_activity',
+          activity.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        return;
+      }
+
+      final current = ReadingActivity.fromMap(existing.first);
+      final merged = {
+        ...activity.toMap(),
+        'pageIndex': activity.pageIndex > current.pageIndex
+            ? activity.pageIndex
+            : current.pageIndex,
+        'totalPages': activity.totalPages > current.totalPages
+            ? activity.totalPages
+            : current.totalPages,
+        'progressPercent': activity.progressPercent > current.progressPercent
+            ? activity.progressPercent
+            : current.progressPercent,
+        'readAt': activity.readAt.isAfter(current.readAt)
+            ? activity.readAt.millisecondsSinceEpoch
+            : current.readAt.millisecondsSinceEpoch,
+      };
+
+      await txn.insert(
+        'reading_activity',
+        merged,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
-      return;
-    }
-
-    final current = ReadingActivity.fromMap(existing.first);
-    final merged = {
-      ...activity.toMap(),
-      'pageIndex': activity.pageIndex > current.pageIndex
-          ? activity.pageIndex
-          : current.pageIndex,
-      'totalPages': activity.totalPages > current.totalPages
-          ? activity.totalPages
-          : current.totalPages,
-      'progressPercent': activity.progressPercent > current.progressPercent
-          ? activity.progressPercent
-          : current.progressPercent,
-      'readAt': activity.readAt.isAfter(current.readAt)
-          ? activity.readAt.millisecondsSinceEpoch
-          : current.readAt.millisecondsSinceEpoch,
-    };
-
-    await db.insert(
-      'reading_activity',
-      merged,
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    });
   }
 
   Future<List<ReadingActivity>> getReadingActivity(

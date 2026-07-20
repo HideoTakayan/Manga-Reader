@@ -185,7 +185,9 @@ class NovelService {
               (lowerName.endsWith('.jpg') ||
                   lowerName.endsWith('.jpeg') ||
                   lowerName.endsWith('.png'))) {
-            coverBytes = file.content as Uint8List;
+            final raw = file.content;
+            if (raw == null) continue;
+            coverBytes = raw is Uint8List ? raw : Uint8List.fromList(raw as List<int>);
             break;
           }
         }
@@ -199,7 +201,9 @@ class NovelService {
             if (lowerName.endsWith('.jpg') ||
                 lowerName.endsWith('.jpeg') ||
                 lowerName.endsWith('.png')) {
-              coverBytes = file.content as Uint8List;
+              final raw = file.content;
+              if (raw == null) continue;
+              coverBytes = raw is Uint8List ? raw : Uint8List.fromList(raw as List<int>);
               break;
             }
           }

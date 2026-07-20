@@ -190,9 +190,10 @@ class DriveService {
             final files = listData['files'] as List<dynamic>? ?? [];
             if (files.isNotEmpty) {
               final fileId = files.first['id'] as String;
-              // Tải nội dung file
+              // Tải nội dung file bằng Drive API v3 (tránh Google HTML interstitial)
               final dlUrl = Uri.parse(
-                'https://drive.google.com/uc?export=download&id=$fileId',
+                'https://www.googleapis.com/drive/v3/files/$fileId'
+                '?alt=media&key=${DriveConfig.apiKey}',
               );
               final dlRes = await http
                   .get(dlUrl)
@@ -975,6 +976,7 @@ class DriveService {
         }
         await sink.flush();
         await sink.close();
+        sink = null; // Đặt null để finally block không đóng lần 2
 
         print('Tải file hoàn tất (sink): $fileId ($received bytes)');
         if (onProgress != null && total == 0) onProgress(100, 100);

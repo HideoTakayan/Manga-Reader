@@ -145,4 +145,73 @@ class InteractionService {
           return map;
         });
   }
+
+  /// Kiểm tra user hiện tại đã like truyện chưa.
+  Future<bool> isLiked(String mangaId) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    try {
+      final doc = await _db
+          .collection('comics')
+          .doc(mangaId)
+          .collection('likes')
+          .doc(user.uid)
+          .get();
+      return doc.exists;
+    } catch (e) {
+      debugPrint('Lỗi kiểm tra like: $e');
+      return false;
+    }
+  }
+
+  /// Like một bộ truyện. Nếu đã like rồi thì bỏ qua (idempotent).
+  Future<void> likeManga(String mangaId) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Bạn cần đăng nhập để thích truyện.');
+    try {
+      final likeRef = _db
+          .collection('comics')
+          .doc(mangaId)
+          .collection('likes')
+          .doc(user.uid);
+      final mangaRef = _db.collection('comics').doc(mangaId);
+      // Dùng batch để ghi 2 document nguyên tử
+      final batch = _db.batch();
+      batch.set(likeRef, {'likedAt': FieldValue.serverTimestamp()});
+      batch.set(
+        mangaRef,
+        {'likeCount': FieldValue.increment(1)},
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Lỗi khi like truyện: $e');
+      rethrow;
+    }
+  }
+
+  /// Bỏ like một bộ truyện. Nếu chưa like thì bỏ qua (idempotent).
+  Future<void> unlikeManga(String mangaId) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Bạn cần đăng nhập để bỏ thích truyện.');
+    try {
+      final likeRef = _db
+          .collection('comics')
+          .doc(mangaId)
+          .collection('likes')
+          .doc(user.uid);
+      final mangaRef = _db.collection('comics').doc(mangaId);
+      final batch = _db.batch();
+      batch.delete(likeRef);
+      batch.set(
+        mangaRef,
+        {'likeCount': FieldValue.increment(-1)},
+        SetOptions(merge: true),
+      );
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Lỗi khi bỏ like truyện: $e');
+      rethrow;
+    }
+  }
 }

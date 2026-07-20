@@ -830,7 +830,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     });
   }
 
-  /// Tải trước chương trước và sau chạy ngầm để tăng tốc độ chuyển chương
+  /// Tải trước chương trước và sau chạy ngầm để tăng tốc độ chuyển chương.
+  /// Chỉ prefetch tối đa 2 chương liền kề (kế tiếp + trước) để giới hạn cache disk.
   void _prefetchAdjacentChapters() {
     // Chạy trong microtask để không chặn luồng chính
     Future.microtask(() async {
@@ -928,7 +929,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
   void onPageChanged(int index) {
     state = state.copyWith(currentPageIndex: index);
-    _saveProgress();
+    unawaited(_saveProgress());
     _refreshBookmarkState();
   }
 
@@ -936,6 +937,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     if (pageIndex == state.currentPageIndex) return;
     state = state.copyWith(scrollOffset: offset, currentPageIndex: pageIndex);
     _refreshBookmarkState();
+    unawaited(_saveProgress()); // Lưu tiến độ ngay khi cuộn để tránh mất data khi app crash
   }
 
   Future<void> saveScrollProgress(double offset, {int? pageIndex}) async {
@@ -1311,7 +1313,23 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     return true;
   }
 
-  void toggleLike() {
-    state = state.copyWith(isLiked: !state.isLiked);
+  Future<void> toggleLike() async {
+    final mangaId = state.mangaId;
+    if (mangaId == null || mangaId.isEmpty) return;
+    final newIsLiked = !state.isLiked;
+    // Cập nhật UI ngay lập tức
+    state = state.copyWith(isLiked: newIsLiked);
+    // Persist lên Firestore
+    try {
+      if (newIsLiked) {
+        await InteractionService.instance.likeManga(mangaId);
+      } else {
+        await InteractionService.instance.unlikeManga(mangaId);
+      }
+    } catch (e) {
+      // Rollback UI nếu Firestore lỗi
+      state = state.copyWith(isLiked: !newIsLiked);
+      debugPrint('toggleLike error: $e');
+    }
   }
 }

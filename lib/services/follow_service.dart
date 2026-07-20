@@ -64,15 +64,11 @@ class FollowService {
       final doc = await transaction.get(ref);
       if (!doc.exists) return;
 
-      final mangaDoc = await transaction.get(mangaRef);
-      final likeCount = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
-
       transaction.delete(ref);
-      if (likeCount > 0) {
-        transaction.set(mangaRef, {
-          'likeCount': FieldValue.increment(-1),
-        }, SetOptions(merge: true));
-      }
+      // FieldValue.increment(-1) là atomic server-side, không cần đọc rồi kiểm tra > 0
+      transaction.set(mangaRef, {
+        'likeCount': FieldValue.increment(-1),
+      }, SetOptions(merge: true));
     });
   }
 
@@ -101,15 +97,11 @@ class FollowService {
         final followDoc = await transaction.get(ref);
         if (!followDoc.exists) return;
 
-        final mangaDoc = await transaction.get(mangaRef);
-        final likeCount = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
-
         transaction.delete(ref);
-        if (likeCount > 0) {
-          transaction.set(mangaRef, {
-            'likeCount': FieldValue.increment(-1),
-          }, SetOptions(merge: true));
-        }
+        // FieldValue.increment(-1) là atomic, không cần đọc likeCount rồi check > 0
+        transaction.set(mangaRef, {
+          'likeCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
       });
     } else {
       await _db.runTransaction((transaction) async {

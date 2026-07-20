@@ -669,7 +669,8 @@ class NotificationService {
   }
 
   void _startListening() {
-    _stopListening();
+    // Nếu đã có subscription đang chạy (chưa stop), không khởi động thêm.
+    if (_subscription != null) return;
     _subscription = streamUserNotifications().listen((notifs) {
       for (var n in notifs) {
         final id = n.id;
@@ -708,7 +709,9 @@ class NotificationService {
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
     );
-    final id = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    // Dùng hash của (title + body + timestamp giây) để tránh ID trùng
+    // khi 2 thông báo đến trong cùng 1 giây.
+    final id = (title + body + (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString()).hashCode.abs() % 100000;
     await _localNotifications.show(
       id: id,
       title: title,
@@ -776,7 +779,10 @@ class NotificationService {
     }
   }
 
+  // TODO: cần implement đăng ký nhận thông báo theo từng truyện riêng lẻ.
+  // Hiện tại app dùng hệ thống "following" tập trung, nên các method này là stub.
   Stream<bool> streamSubscriptionStatus(String mangaId) => Stream.value(false);
+  // ignore: avoid_returning_null_for_future
   Future<void> toggleSubscription(String mangaId) async {}
   Stream<int> streamMangaNotificationCount(String mangaId) => Stream.value(0);
 }

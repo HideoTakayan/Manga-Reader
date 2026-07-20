@@ -368,6 +368,9 @@ class DownloadService {
       }
 
       // 4. Lưu thông tin vào cơ sở dữ liệu
+      if (!await file.exists()) {
+        throw Exception('Rename thất bại: file đích không tồn tại sau khi rename');
+      }
       await DatabaseHelper.instance.saveDownload(
         chapterId: task.chapterId,
         mangaId: task.mangaId,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -9,6 +10,7 @@ import 'data/drive_service.dart';
 import 'services/folder_service.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
+import 'services/sync_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
 import 'core/utils/archive_image_extractor.dart';
@@ -34,6 +36,15 @@ Future<void> main() async {
   // Khởi tạo Hệ thống Thông báo (Cục bộ + Trình lắng nghe Firestore)
   await NotificationService.instance.initialize();
   await BackgroundService.initialize();
+
+  // Fix #9: Tự động sync lịch sử đọc khi user đăng nhập (hoặc kết nối mạng trở lại).
+  // authStateChanges bắn event mỗi khi login state thay đổi — đây là hook tự nhiên
+  // để trigger sync mà không cần package connectivity_plus.
+  FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user != null) {
+      Future.microtask(() => SyncService.instance.syncPendingHistory());
+    }
+  });
 
   try {
     await DriveService.instance.restorePreviousSession();

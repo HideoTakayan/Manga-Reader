@@ -39,6 +39,15 @@ class ChapterUtils {
       onlineMap[normalize(ch.title)] = ch;
     }
 
+    // Tải sẵn tất cả chapter IDs đã download của manga này bằng 1 câu query duy nhất.
+    // Tránh việc gọi isChapterDownloaded() lặp lại trong vòng lặp (N queries).
+    Set<String> downloadedIds = {};
+    try {
+      downloadedIds = await DownloadCache.instance.getDownloadedChapterIds(mangaId);
+    } catch (e) {
+      debugPrint('❌ Lỗi tải danh sách download cache: $e');
+    }
+
     // 1. Xử lý tập tin ngoại tuyến trước (Được ưu tiên nếu đã tải về)
     // Lọc trùng lặp từ đầu vào trước
     for (final localCh in offline) {
@@ -57,16 +66,8 @@ class ChapterUtils {
         continue;
       }
 
-      // Kiểm tra bộ nhớ cache (Đã tải)
-      bool isDownloaded = false;
-      try {
-        isDownloaded = await DownloadCache.instance.isChapterDownloaded(
-          localCh.id,
-          mangaId,
-        );
-      } catch (e) {
-        debugPrint('❌ Lỗi kiểm tra cache tại id ${localCh.id}: $e');
-      }
+      // Kiểm tra từ batch đã load trước (không cần await riêng lẻ)
+      final isDownloaded = downloadedIds.contains(localCh.id);
 
       if (isDownloaded) {
         finalChapters.add(localCh);

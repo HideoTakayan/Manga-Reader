@@ -71,6 +71,8 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
       if (!_isSupportedImage(name)) continue;
 
       final content = file.content;
+      // Guard null và kiểu không hợp lệ (content có thể null khi ZIP entry bị corrupt)
+      if (content == null) continue;
       Uint8List fileBytes;
       if (content is Uint8List) {
         fileBytes = content;

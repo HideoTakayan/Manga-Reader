@@ -1,10 +1,16 @@
 import 'dart:convert';
-
+import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_reader/features/reader/epub/epub_parser.dart';
 import 'package:manga_reader/features/reader/epub/epub_models.dart';
+
+String writeTempEpub(Uint8List bytes) {
+  final file = File('${Directory.systemTemp.path}/test_epub_${DateTime.now().microsecondsSinceEpoch}.epub');
+  file.writeAsBytesSync(bytes);
+  return file.path;
+}
 
 void main() {
   group('EpubParser', () {
@@ -113,7 +119,7 @@ void main() {
         },
       );
 
-      final args = EpubParseArgs(bytes: bytes, title: 'Test EPUB3');
+      final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Test EPUB3');
       final epub = EpubParser.parse(args);
 
       expect(epub.title, 'Test EPUB3');
@@ -181,7 +187,7 @@ void main() {
         },
       );
 
-      final args = EpubParseArgs(bytes: bytes, title: 'Test EPUB2');
+      final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Test EPUB2');
       final epub = EpubParser.parse(args);
 
       expect(epub.chapters.length, 1);
@@ -236,7 +242,7 @@ void main() {
           },
         );
 
-        final args = EpubParseArgs(bytes: bytes, title: 'Test Custom Nav');
+        final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Test Custom Nav');
         final epub = EpubParser.parse(args);
 
         expect(epub.chapters.length, 1);
@@ -273,7 +279,7 @@ void main() {
         },
       );
 
-      final args = EpubParseArgs(bytes: bytes, title: 'Test Invalid XHTML');
+      final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Test Invalid XHTML');
       final epub = EpubParser.parse(args);
 
       expect(epub.chapters.length, 1);
@@ -326,7 +332,7 @@ void main() {
           },
         );
 
-        final args = EpubParseArgs(bytes: bytes, title: 'Smoke Test EPUB');
+        final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Smoke Test EPUB');
         final epub = EpubParser.parse(args);
 
         expect(epub.chapters.length, 2);
@@ -366,7 +372,7 @@ void main() {
         },
       );
 
-      final args = EpubParseArgs(bytes: bytes, title: 'Isolate EPUB');
+      final args = EpubParseArgs(path: writeTempEpub(bytes), title: 'Isolate EPUB');
 
       final epub = await compute(EpubParser.parse, args);
 
@@ -421,7 +427,7 @@ void main() {
       );
 
       final epub = EpubParser.parse(
-        EpubParseArgs(bytes: bytes, title: 'Test Book'),
+        EpubParseArgs(path: writeTempEpub(bytes), title: 'Test Book'),
       );
       expect(epub.chapters.length, 2);
 
@@ -486,7 +492,7 @@ void main() {
       );
 
       final epub = EpubParser.parse(
-        EpubParseArgs(bytes: bytes, title: 'Test Book'),
+        EpubParseArgs(path: writeTempEpub(bytes), title: 'Test Book'),
       );
       expect(epub.chapters.length, 1);
 
@@ -545,7 +551,7 @@ void main() {
 
       final stopwatch = Stopwatch()..start();
       final index = EpubParser.parseIndex(
-        EpubParseArgs(bytes: bytes, title: 'Large Book'),
+        EpubParseArgs(path: writeTempEpub(bytes), title: 'Large Book'),
       );
       stopwatch.stop();
 
@@ -591,11 +597,11 @@ void main() {
         },
       );
       final index = EpubParser.parseIndex(
-        EpubParseArgs(bytes: bytes, title: 'Lazy Book'),
+        EpubParseArgs(path: writeTempEpub(bytes), title: 'Lazy Book'),
       );
 
       final chapter = EpubParser.parseChapter(
-        EpubChapterParseArgs(bytes: bytes, chapter: index.chapters[1]),
+        EpubChapterParseArgs(path: writeTempEpub(bytes), chapter: index.chapters[1]),
       );
 
       expect(chapter.title, 'Chương Hai');

@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/follow_service.dart';
 import '../../services/interaction_service.dart';
 import '../../services/download_cache.dart';
+import '../../services/download_service.dart';
 
 import '../../core/utils/chapter_utils.dart';
 import '../../core/utils/archive_image_extractor.dart';
@@ -35,10 +37,10 @@ class ReaderState {
   final List<CloudChapter> chapters;
   final CloudChapter? currentChapter;
   final List<String> pages;
-  final Uint8List? epubBytes; // Dữ liệu file EPUB cho truyện chữ
-  final Uint8List? pdfBytes; // Dữ liệu file PDF gốc (không giải nén ngầm)
+  final String? localFilePath; // Thay thế cho epubBytes và pdfBytes
   final int pdfPageCount; // Số trang của file PDF
   final int currentPageIndex;
+  final int currentBlockIndex;
   final bool showControls;
   final String? errorMessage;
   final bool isLiked;
@@ -64,10 +66,10 @@ class ReaderState {
     this.chapters = const [],
     this.currentChapter,
     this.pages = const [],
-    this.epubBytes,
-    this.pdfBytes,
+    this.localFilePath,
     this.pdfPageCount = 0,
     this.currentPageIndex = 0,
+    this.currentBlockIndex = 0,
     this.showControls = true,
     this.errorMessage,
     this.isLiked = false,
@@ -93,12 +95,11 @@ class ReaderState {
     List<CloudChapter>? chapters,
     CloudChapter? currentChapter,
     List<String>? pages,
-    Uint8List? epubBytes,
-    bool clearEpubBytes = false,
-    Uint8List? pdfBytes,
-    bool clearPdfBytes = false,
+    String? localFilePath,
+    bool clearLocalFilePath = false,
     int? pdfPageCount,
     int? currentPageIndex,
+    int? currentBlockIndex,
     bool? showControls,
     String? errorMessage,
     bool clearErrorMessage = false,
@@ -124,10 +125,10 @@ class ReaderState {
       chapters: chapters ?? this.chapters,
       currentChapter: currentChapter ?? this.currentChapter,
       pages: pages ?? this.pages,
-      epubBytes: clearEpubBytes ? null : (epubBytes ?? this.epubBytes),
-      pdfBytes: clearPdfBytes ? null : (pdfBytes ?? this.pdfBytes),
+      localFilePath: clearLocalFilePath ? null : (localFilePath ?? this.localFilePath),
       pdfPageCount: pdfPageCount ?? this.pdfPageCount,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
+      currentBlockIndex: currentBlockIndex ?? this.currentBlockIndex,
       showControls: showControls ?? this.showControls,
       errorMessage: clearErrorMessage
           ? null
@@ -203,6 +204,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     if (progress == null) return 0;
     if (pageCount == null || pageCount <= 0) return progress.pageIndex;
     return progress.pageIndex.clamp(0, pageCount - 1);
+  }
+
+  int _restoreBlockIndex(ReaderProgress? progress) {
+    if (progress == null) return 0;
+    return progress.blockIndex;
   }
 
   Future<void> _refreshBookmarkState() async {
@@ -313,6 +319,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           isLoading: false,
           currentChapter: currentChapter,
           currentPageIndex: _restorePageIndex(savedProgress, cachedPages.length),
+          currentBlockIndex: _restoreBlockIndex(savedProgress),
           scrollOffset: savedProgress?.scrollOffset ?? 0,
           isLiked: false,
           mangaId: preferredMangaId,
@@ -320,8 +327,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           pages: cachedPages,
           isNovel: false,
           isPdf: false,
-          clearEpubBytes: true,
-          clearPdfBytes: true,
+          clearLocalFilePath: true,
           pdfPageCount: 0,
         );
         
@@ -370,8 +376,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         return;
       }
 
-      final fileBytes = await file.readAsBytes();
-      debugPrint('✅ Đọc file thành công (${fileBytes.length} bytes)');
+      debugPrint('✅ Đã đọc file đường dẫn ($localPath)');
 
       // 3. Phát hiện loại tệp từ phần mở rộng
       final ext = localPath.toLowerCase();
@@ -387,8 +392,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         state = state.copyWith(
           isLoading: false,
           pages: const [],
-          epubBytes: fileBytes,
-          clearPdfBytes: true,
+          localFilePath: localPath,
+          clearLocalFilePath: false,
           clearErrorMessage: true,
           isNovel: true,
           isPdf: false,
@@ -414,13 +419,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         state = state.copyWith(
           isLoading: false,
           pages: const [],
-          pdfBytes: fileBytes,
-          clearEpubBytes: true,
+          localFilePath: localPath,
+          clearLocalFilePath: false,
           clearErrorMessage: true,
           isNovel: false,
           isPdf: true,
           pdfPageCount: 0,
           currentPageIndex: _restorePageIndex(savedProgress, null),
+          currentBlockIndex: _restoreBlockIndex(savedProgress),
           scrollOffset: savedProgress?.scrollOffset ?? 0,
           mangaId: mangaId,
           currentChapter: CloudChapter(
@@ -434,7 +440,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         );
       } else {
         // ZIP / CBZ: Trích xuất ảnh ngay xuống ổ cứng thay vì RAM
-        final images = await _extractImagesFromZip(fileBytes, chapterId);
+        final images = await ArchiveImageExtractor.extract(localPath, chapterId);
         if (images.isEmpty) {
           state = state.copyWith(
             isLoading: false,
@@ -445,13 +451,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         state = state.copyWith(
           isLoading: false,
           pages: images,
-          clearPdfBytes: true,
-          clearEpubBytes: true,
+          clearLocalFilePath: true,
           clearErrorMessage: true,
           isPdf: false,
           isNovel: false,
           pdfPageCount: 0,
           currentPageIndex: _restorePageIndex(savedProgress, images.length),
+          currentBlockIndex: _restoreBlockIndex(savedProgress),
           scrollOffset: savedProgress?.scrollOffset ?? 0,
           mangaId: mangaId,
           currentChapter: CloudChapter(
@@ -624,6 +630,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         isLoading: false,
         currentChapter: currentChapter,
         currentPageIndex: _restorePageIndex(savedProgress, cachedPages.length),
+        currentBlockIndex: _restoreBlockIndex(savedProgress),
         scrollOffset: savedProgress?.scrollOffset ?? 0,
         isLiked: false,
         mangaId: mangaId,
@@ -631,8 +638,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         pages: cachedPages,
         isNovel: false,
         isPdf: false,
-        clearEpubBytes: true,
-        clearPdfBytes: true,
+        clearLocalFilePath: true,
         pdfPageCount: 0,
       );
       
@@ -658,9 +664,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     // Chạy song song các tác vụ độc lập (~2s)
     // ========================================
 
-    // Giai đoạn 1: Bắt đầu tải file ngay lập tức trong khi lấy metadata
-    // Hai tác vụ này độc lập nên có thể chạy song song
-    final downloadFuture = DriveService.instance.downloadFile(chapterId);
+    // Giai đoạn 1: Lấy metadata để biết mangaId (Nên làm trước khi download vào disk vì cần check lỗi sớm)
     final metaFuture = DriveService.instance.getFile(chapterId);
 
     // Chờ metadata trước (cần để lấy mangaId)
@@ -680,18 +684,29 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     mangaId = resolvedMangaId;
 
-    // Giai đoạn 2: CHỈ chờ tải file hoàn tất để hiển thị sớm nhất có thể.
-    // Việc tải danh sách chương (Metadata) sẽ được đẩy xuống chạy ngầm ở cuối hàm.
-    final fileBytes = await downloadFuture;
+    // Giai đoạn 2: Tải file thẳng xuống đĩa cứng thay vì nhét vào RAM
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/temp_online_$chapterId');
+    
+    bool downloadSuccess = true;
+    if (await tempFile.exists() && await tempFile.length() > 0) {
+      debugPrint('✅ Reusing smart temp cache for online chapter: $chapterId');
+    } else {
+      downloadSuccess = await DriveService.instance.downloadFileToFile(
+        chapterId, 
+        tempFile
+      );
+    }
 
     // Kiểm tra file tải về
-    if (fileBytes == null) {
+    if (!downloadSuccess || !await tempFile.exists()) {
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Lỗi tải nội dung chương truyện',
       );
       return;
     }
+    final localPath = tempFile.path;
 
     // Tạo thông tin chương tạm thời từ tên file
     final fileName = fileMeta == null ? '' : _readString(fileMeta, 'name');
@@ -713,6 +728,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       isLoading: false,
       currentChapter: currentChapter,
       currentPageIndex: 0,
+      currentBlockIndex: 0,
       scrollOffset: savedProgress?.scrollOffset ?? 0,
       isLiked: false,
       mangaId: mangaId,
@@ -724,8 +740,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     // --- Trường hợp EPUB (Truyện chữ) ---
     if (fileType == 'epub') {
       state = baseState.copyWith(
-        epubBytes: fileBytes,
-        clearPdfBytes: true,
+        localFilePath: localPath,
+        clearLocalFilePath: false,
         isPdf: false,
         isNovel: true,
         pages: const [],
@@ -738,13 +754,14 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         pages: const [],
         isNovel: false,
         isPdf: true,
-        clearEpubBytes: true,
-        pdfBytes: fileBytes,
+        clearLocalFilePath: false,
+        localFilePath: localPath,
         pdfPageCount: 0,
         currentPageIndex: _restorePageIndex(savedProgress, null),
+        currentBlockIndex: _restoreBlockIndex(savedProgress),
       );
     } else {
-      final images = await _extractImagesFromZip(fileBytes, chapterId);
+      final images = await ArchiveImageExtractor.extract(localPath, chapterId);
       if (images.isEmpty) {
         state = state.copyWith(
           isLoading: false,
@@ -756,10 +773,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         pages: images,
         isNovel: false,
         isPdf: false,
-        clearEpubBytes: true,
-        clearPdfBytes: true,
+        clearLocalFilePath: true,
         pdfPageCount: 0,
         currentPageIndex: _restorePageIndex(savedProgress, images.length),
+        currentBlockIndex: _restoreBlockIndex(savedProgress),
       );
     }
 
@@ -838,51 +855,55 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       final nextId = getNextChapterId();
       final prevId = getPrevChapterId();
 
-      // Tải và quên (Fire and forget) - kết quả sẽ được bung nén trực tiếp xuống ổ cứng
-      if (nextId != null) {
-        final nextChap = state.chapters.firstWhereOrNull((c) => c.id == nextId);
-        if (nextChap?.fileType != 'pdf') {
-          ArchiveImageExtractor.getCachedExtractedPages(nextId).then((cached) {
-            if (cached == null || cached.isEmpty) {
-              DriveService.instance.downloadFile(nextId).then((bytes) async {
-                if (bytes != null) await _extractImagesFromZip(bytes, nextId);
-                debugPrint('✅ Prefetched next chapter: $nextId');
-              }).catchError((_) {});
-            } else {
-              debugPrint('✅ Next chapter already in fast cache: $nextId');
-            }
-          });
-        } else {
-          debugPrint('⏭️ Skip prefetch for PDF: $nextId');
-        }
-      }
-      if (prevId != null) {
-        final prevChap = state.chapters.firstWhereOrNull((c) => c.id == prevId);
-        if (prevChap?.fileType != 'pdf') {
-          ArchiveImageExtractor.getCachedExtractedPages(prevId).then((cached) {
-            if (cached == null || cached.isEmpty) {
-              DriveService.instance.downloadFile(prevId).then((bytes) async {
-                if (bytes != null) await _extractImagesFromZip(bytes, prevId);
-                debugPrint('✅ Prefetched prev chapter: $prevId');
-              }).catchError((_) {});
-            } else {
-              debugPrint('✅ Prev chapter already in fast cache: $prevId');
-            }
-          });
-        } else {
-          debugPrint('⏭️ Skip prefetch for PDF: $prevId');
-        }
-      }
+      if (nextId != null) _prefetchChapter(nextId);
+      if (prevId != null) _prefetchChapter(prevId);
     });
+  }
+
+  void _prefetchChapter(String chapterId) {
+    final chapter = state.chapters.firstWhereOrNull((c) => c.id == chapterId);
+    if (chapter == null) return;
+    
+    final fileType = chapter.fileType;
+    
+    if (fileType == 'pdf' || fileType == 'epub') {
+      getTemporaryDirectory().then((tempDir) async {
+        final tempFile = File('${tempDir.path}/temp_online_$chapterId');
+        if (await tempFile.exists() && await tempFile.length() > 0) {
+          debugPrint('✅ $fileType chapter already in fast cache: $chapterId');
+        } else {
+          DriveService.instance.downloadFileToFile(chapterId, tempFile).then((success) {
+            if (success) debugPrint('✅ Prefetched $fileType chapter: $chapterId');
+          }).catchError((_) {});
+        }
+      });
+    } else {
+      ArchiveImageExtractor.getCachedExtractedPages(chapterId).then((cached) async {
+        if (cached == null || cached.isEmpty) {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File('${tempDir.path}/temp_online_$chapterId');
+          bool hasFile = await tempFile.exists() && await tempFile.length() > 0;
+          if (!hasFile) {
+            hasFile = await DriveService.instance.downloadFileToFile(chapterId, tempFile);
+          }
+          if (hasFile) {
+            await _extractImagesFromZip(tempFile.path, chapterId);
+            debugPrint('✅ Prefetched zip/cbz chapter: $chapterId');
+          }
+        } else {
+          debugPrint('✅ Zip/cbz chapter already in fast cache: $chapterId');
+        }
+      }).catchError((_) {});
+    }
   }
 
   // Trích xuất ảnh từ tệp ZIP/CBZ xuống ổ cứng (temp directory)
   Future<List<String>> _extractImagesFromZip(
-    Uint8List fileBytes,
+    String localPath,
     String chapterId,
   ) async {
     try {
-      return await ArchiveImageExtractor.extract(fileBytes, chapterId);
+      return await ArchiveImageExtractor.extract(localPath, chapterId);
     } catch (e) {
       debugPrint('ZIP extraction error: $e');
       return [];
@@ -933,17 +954,18 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     _refreshBookmarkState();
   }
 
-  void updateScrollPosition(double offset, int pageIndex) {
-    if (pageIndex == state.currentPageIndex) return;
-    state = state.copyWith(scrollOffset: offset, currentPageIndex: pageIndex);
+  void updateScrollPosition(double offset, int pageIndex, {int blockIndex = 0}) {
+    if (pageIndex == state.currentPageIndex && blockIndex == state.currentBlockIndex) return;
+    state = state.copyWith(scrollOffset: offset, currentPageIndex: pageIndex, currentBlockIndex: blockIndex);
     _refreshBookmarkState();
     unawaited(_saveProgress()); // Lưu tiến độ ngay khi cuộn để tránh mất data khi app crash
   }
 
-  Future<void> saveScrollProgress(double offset, {int? pageIndex}) async {
+  Future<void> saveScrollProgress(double offset, {int? pageIndex, int? blockIndex}) async {
     state = state.copyWith(
       scrollOffset: offset,
       currentPageIndex: pageIndex ?? state.currentPageIndex,
+      currentBlockIndex: blockIndex ?? state.currentBlockIndex,
     );
     await _saveProgress(scrollOffset: offset);
     _refreshBookmarkState();
@@ -982,6 +1004,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           mangaId: state.mangaId!,
           chapterId: state.currentChapter!.id,
           pageIndex: currentPage,
+          blockIndex: state.currentBlockIndex,
           scrollOffset: resolvedScrollOffset,
           progressPercent: progressPercent,
           updatedAt: DateTime.now(),
@@ -1069,10 +1092,42 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   }
 
   /// Tải chương tiếp theo một cách mượt mà không cần load lại trang
-  Future<void> loadNextChapter() async => _loadAdjacentChapter(isNext: true);
+  Future<void> loadNextChapter() async {
+    await _autoSaveCurrentChapterOffline();
+    await _loadAdjacentChapter(isNext: true);
+  }
 
   /// Tải chương trước đó một cách mượt mà không cần load lại trang
   Future<void> loadPrevChapter() async => _loadAdjacentChapter(isNext: false);
+
+  Future<void> _autoSaveCurrentChapterOffline() async {
+    final chapter = state.currentChapter;
+    final mangaId = state.mangaId;
+    if (chapter == null || mangaId == null) return;
+    if (state.localFilePath != null) return; // Đã là file offline
+    if (chapter.fileType != 'zip' && chapter.fileType != 'cbz') return; // Chỉ auto-save truyện tranh
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/temp_online_${chapter.id}');
+      if (await tempFile.exists() && await tempFile.length() > 0) {
+        final manga = await DatabaseHelper.instance.getLocalManga(mangaId);
+        if (manga != null) {
+          await DownloadService.instance.saveTempAsOffline(
+            chapterId: chapter.id,
+            mangaId: mangaId,
+            mangaTitle: manga.title,
+            chapterTitle: chapter.title,
+            fileType: chapter.fileType,
+            tempFile: tempFile,
+            mangaInfo: manga,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Lỗi auto-save offline: $e');
+    }
+  }
 
   Future<void> _loadAdjacentChapter({required bool isNext}) async {
     // Ngăn chặn gọi nhiều lần
@@ -1081,9 +1136,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     final targetChapterId = isNext ? getNextChapterId() : getPrevChapterId();
     if (targetChapterId == null) {
-      state = isNext
-          ? state.copyWith(hasReachedEnd: true)
-          : state.copyWith(hasReachedStart: true);
+      if (isNext) {
+        state = state.copyWith(hasReachedEnd: true);
+        await _autoSaveCurrentChapterOffline();
+      } else {
+        state = state.copyWith(hasReachedStart: true);
+      }
       return;
     }
 
@@ -1108,11 +1166,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           pages: cachedPages,
           isNovel: false,
           isPdf: false,
-          clearEpubBytes: true,
-          clearPdfBytes: true,
+          clearLocalFilePath: true,
           clearErrorMessage: true,
           pdfPageCount: 0,
           currentPageIndex: isNext ? 0 : cachedPages.length - 1,
+          currentBlockIndex: 0,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
           hasReachedStart: !isNext ? false : state.hasReachedStart,
@@ -1127,15 +1185,15 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       }
 
       // 1. Kiểm tra Ngoại tuyến trước và Tải nội dung
-      Uint8List? fileBytes;
+      String? localPath;
       final downloadInfo = await DatabaseHelper.instance.getDownload(
         targetChapterId,
       );
 
       if (downloadInfo != null) {
-        final localPath = _readString(downloadInfo, 'localPath');
+        final path = _readString(downloadInfo, 'localPath');
         final downloadMangaId = _readString(downloadInfo, 'mangaId');
-        if (localPath.isEmpty) {
+        if (path.isEmpty) {
           await DatabaseHelper.instance.deleteDownload(targetChapterId);
           if (downloadMangaId.isNotEmpty) {
             await DownloadCache.instance.removeChapter(
@@ -1143,20 +1201,16 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
               downloadMangaId,
             );
           }
-          fileBytes = null;
+          localPath = null;
         } else {
-          final file = File(localPath);
+          final file = File(path);
           if (await file.exists()) {
             if (kDebugMode) {
               debugPrint(
-                '📂 Đọc chương ${isNext ? "TIẾP THEO" : "TRƯỚC"} từ cục bộ: $localPath',
+                '📂 Đọc chương ${isNext ? "TIẾP THEO" : "TRƯỚC"} từ cục bộ: $path',
               );
             }
-            try {
-              fileBytes = await file.readAsBytes();
-            } catch (e) {
-              if (kDebugMode) debugPrint('⚠️ Error reading local file: $e');
-            }
+            localPath = path;
           } else {
             await DatabaseHelper.instance.deleteDownload(targetChapterId);
             if (downloadMangaId.isNotEmpty) {
@@ -1170,16 +1224,24 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       }
 
       // 2. Nếu không tìm thấy cục bộ, hãy tải trực tuyến
-      if (fileBytes == null) {
+      if (localPath == null) {
         if (kDebugMode) {
           debugPrint(
             '🌐 Tải chương ${isNext ? "TIẾP THEO" : "TRƯỚC"} từ Drive',
           );
         }
-        fileBytes = await DriveService.instance.downloadFile(targetChapterId);
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/temp_online_$targetChapterId');
+        if (await tempFile.exists() && await tempFile.length() > 0) {
+          debugPrint('✅ Reusing smart temp cache for adjacent chapter: $targetChapterId');
+          localPath = tempFile.path;
+        } else {
+          final success = await DriveService.instance.downloadFileToFile(targetChapterId, tempFile);
+          if (success) localPath = tempFile.path;
+        }
       }
 
-      if (fileBytes == null) {
+      if (localPath == null) {
         resetLoadingState();
         return;
       }
@@ -1194,14 +1256,15 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       if (fileType == 'epub') {
         state = state.copyWith(
           currentChapter: targetChapter,
-          epubBytes: fileBytes,
-          clearPdfBytes: true,
+          localFilePath: localPath,
+          clearLocalFilePath: false,
           clearErrorMessage: true,
           isPdf: false,
           isNovel: true,
           pages: const [],
           pdfPageCount: 0,
           currentPageIndex: 0,
+          currentBlockIndex: 0,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
           hasReachedStart: !isNext ? false : state.hasReachedStart,
@@ -1225,18 +1288,19 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           pages: const [],
           isNovel: false,
           isPdf: true,
-          clearEpubBytes: true,
+          clearLocalFilePath: false,
           clearErrorMessage: true,
-          pdfBytes: fileBytes,
+          localFilePath: localPath,
           pdfPageCount: 0,
           currentPageIndex: 0,
+          currentBlockIndex: 0,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
           hasReachedStart: !isNext ? false : state.hasReachedStart,
         );
         resetLoadingState();
       } else {
-        final images = await _extractImagesFromZip(fileBytes, targetChapterId);
+        final images = await _extractImagesFromZip(localPath, targetChapterId);
         if (images.isEmpty) {
           resetLoadingState();
           return;
@@ -1246,11 +1310,12 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           pages: images,
           isNovel: false,
           isPdf: false,
-          clearEpubBytes: true,
-          clearPdfBytes: true,
+          clearLocalFilePath: true,
+          localFilePath: null,
           clearErrorMessage: true,
           pdfPageCount: 0,
           currentPageIndex: isNext ? 0 : images.length - 1,
+          currentBlockIndex: 0,
           scrollOffset: 0,
           hasReachedEnd: isNext ? false : state.hasReachedEnd,
           hasReachedStart: !isNext ? false : state.hasReachedStart,

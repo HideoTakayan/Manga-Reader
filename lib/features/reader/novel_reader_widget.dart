@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:ui';
@@ -11,6 +12,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'epub/epub_models.dart';
 import 'epub/epub_parser.dart';
 import 'epub/epub_paginator.dart';
@@ -20,7 +22,7 @@ import '../../data/database_helper.dart';
 import '../../data/models.dart';
 
 class NovelReaderWidget extends StatefulWidget {
-  final Uint8List epubBytes;
+  final String epubPath;
   final String title;
   final String storageKey;
   final String? realMangaId;
@@ -28,7 +30,7 @@ class NovelReaderWidget extends StatefulWidget {
 
   const NovelReaderWidget({
     super.key,
-    required this.epubBytes,
+    required this.epubPath,
     required this.title,
     String? storageKey,
     this.realMangaId,
@@ -51,7 +53,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   final _verticalPositionsListener = ItemPositionsListener.create();
   int _verticalJumpGeneration = 0;
   final _pageController = PageController();
+  final _focusNode = FocusNode();
   final Map<int, GlobalKey> _chapterSectionKeys = {};
+  final Map<int, Map<int, GlobalKey>> _blockKeys = {};
   Offset? _readerPointerStart;
   DateTime? _readerPointerStartTime;
 
@@ -256,7 +260,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   @override
   void didUpdateWidget(covariant NovelReaderWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.epubBytes != widget.epubBytes ||
+    if (oldWidget.epubPath != widget.epubPath ||
         oldWidget.storageKey != widget.storageKey ||
         oldWidget.title != widget.title) {
       _resetForNewBook();
@@ -286,14 +290,15 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       await _loadTtsSettings(prefs);
 
       late final ParsedEpub book;
-      if (widget.epubBytes.length >= _lazyLoadingThresholdBytes) {
+      final fileLength = await File(widget.epubPath).length();
+      if (fileLength >= _lazyLoadingThresholdBytes) {
         final index = await compute(
           EpubParser.parseIndex,
-          EpubParseArgs(bytes: widget.epubBytes, title: widget.title),
+          EpubParseArgs(path: widget.epubPath, title: widget.title),
         );
         final loader = EpubLazyChapterLoader(
           index: index,
-          bytes: widget.epubBytes,
+          path: widget.epubPath,
         );
         book = ParsedEpub(
           title: index.title,
@@ -314,7 +319,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       } else {
         book = await compute(
           EpubParser.parse,
-          EpubParseArgs(bytes: widget.epubBytes, title: widget.title),
+          EpubParseArgs(path: widget.epubPath, title: widget.title),
         );
       }
       final saved = await _loadSavedPosition(prefs, book.chapters.length);
@@ -329,7 +334,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (_flowType == 1) {
-          _jumpVerticalToChapter(saved.$1, offsetRatio: saved.$3);
+          _jumpVerticalToChapter(saved.$1, offsetRatio: saved.$3, blockIndex: saved.$4);
         } else {
           _updateHorizontalWindow(saved.$1);
           final centerPagesCount = _getPagesForChapter(saved.$1).length;
@@ -414,7 +419,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     await _loadVoicesForLang(_ttsLang);
   }
 
-  Future<(int, int, double)> _loadSavedPosition(
+  Future<(int, int, double, int)> _loadSavedPosition(
     SharedPreferences prefs,
     int chapterCount,
   ) async {
@@ -426,6 +431,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           (map['chapter'] as num? ?? 0).toInt().clamp(0, chapterCount - 1),
           max(0, (map['page'] as num? ?? 0).toInt()),
           max<double>(0, (map['offset'] as num? ?? 0).toDouble()),
+          max(0, (map['blockIndex'] as num? ?? 0).toInt()),
         );
       } catch (_) {}
     }
@@ -438,25 +444,28 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         parsed.$1.clamp(0, chapterCount - 1),
         max(0, parsed.$2),
         max<double>(0, parsed.$3),
+        max(0, parsed.$4),
       );
     }
-    return (0, 0, 0.0);
+    return (0, 0, 0.0, 0);
   }
 
-  (int, int, double)? _decodePosition(String? value) {
+  (int, int, double, int)? _decodePosition(String? value) {
     if (value == null || !value.startsWith('flutter:')) return null;
     final parts = value.substring('flutter:'.length).split(':');
-    if (parts.length != 3) return null;
+    if (parts.length < 3) return null;
     return (
       int.tryParse(parts[0]) ?? 0,
       int.tryParse(parts[1]) ?? 0,
       double.tryParse(parts[2]) ?? 0,
+      parts.length > 3 ? (int.tryParse(parts[3]) ?? 0) : 0,
     );
   }
 
   String _encodePosition() {
     double ratio = 0.0;
     int pageWithinChapter = 0;
+    int blockIndex = 0;
     if (_flowType == 1) {
       final key = _chapterSectionKeys[_chapterIndex];
       if (key?.currentContext != null) {
@@ -475,6 +484,21 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           if (height > 0) {
             ratio = (max(0.0, -topInViewport) / height).clamp(0.0, 1.0);
           }
+          
+          final blocks = _blockKeys[_chapterIndex];
+          if (blocks != null) {
+            double minDistance = double.infinity;
+            for (final entry in blocks.entries) {
+              final bBox = entry.value.currentContext?.findRenderObject() as RenderBox?;
+              if (bBox != null && bBox.attached) {
+                final bTop = bBox.localToGlobal(Offset.zero).dy - viewportTop;
+                if (bTop >= -100 && bTop < minDistance) {
+                  minDistance = bTop;
+                  blockIndex = entry.key;
+                }
+              }
+            }
+          }
         }
       }
     } else {
@@ -482,7 +506,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       pageWithinChapter = _pageWithinCurrentChapter();
       ratio = pageWithinChapter.toDouble();
     }
-    return 'flutter:$_chapterIndex:$pageWithinChapter:${ratio.toStringAsFixed(4)}';
+    return 'flutter:$_chapterIndex:$pageWithinChapter:${ratio.toStringAsFixed(4)}:$blockIndex';
   }
 
   int _pageWithinCurrentChapter() {
@@ -509,10 +533,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     final position = _encodePosition();
     // Get the parts directly from encodePosition to save in DB
     final parts = position.substring('flutter:'.length).split(':');
-    final pageWithinChapter = parts.length == 3
+    final pageWithinChapter = parts.length >= 3
         ? (int.tryParse(parts[1]) ?? 0)
         : 0;
-    final ratio = parts.length == 3 ? (double.tryParse(parts[2]) ?? 0.0) : 0.0;
+    final ratio = parts.length >= 3 ? (double.tryParse(parts[2]) ?? 0.0) : 0.0;
+    final blockIndex = parts.length >= 4 ? (int.tryParse(parts[3]) ?? 0) : 0;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -521,6 +546,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         'chapter': _chapterIndex,
         'page': pageWithinChapter,
         'offset': ratio, // Save ratio instead of pixel offset
+        'blockIndex': blockIndex,
       }),
     );
     await DatabaseHelper.instance.saveReaderProgress(
@@ -528,6 +554,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         mangaId: _mangaId,
         chapterId: _chapterId,
         pageIndex: _flowType == 0 ? pageWithinChapter : _chapterIndex,
+        blockIndex: blockIndex,
         scrollOffset: ratio, // Store ratio in DB
         progressPercent: _book == null || _book!.chapters.isEmpty
             ? 0
@@ -755,7 +782,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     await _jumpChapterWithoutDrawer(index);
   }
 
-  void _jumpVerticalToChapter(int index, {double offsetRatio = 0.0}) {
+  void _jumpVerticalToChapter(int index, {double offsetRatio = 0.0, int blockIndex = 0}) {
     final generation = ++_verticalJumpGeneration;
     final safeRatio = offsetRatio.clamp(0.0, 1.0);
 
@@ -769,7 +796,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         await WidgetsBinding.instance.endOfFrame;
       }
 
-      if (safeRatio <= 0) return;
+      if (safeRatio <= 0 && blockIndex <= 0) return;
 
       const settleDelays = [
         Duration.zero,
@@ -783,8 +810,15 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         if (!mounted || generation != _verticalJumpGeneration) return;
         await WidgetsBinding.instance.endOfFrame;
 
-        final context = _chapterSectionKeys[index]?.currentContext;
-        final box = context?.findRenderObject() as RenderBox?;
+        RenderBox? box;
+        final blockKey = _blockKeys[index]?[blockIndex];
+        if (blockIndex > 0 && blockKey?.currentContext != null) {
+          box = blockKey!.currentContext!.findRenderObject() as RenderBox?;
+        } else {
+          final context = _chapterSectionKeys[index]?.currentContext;
+          box = context?.findRenderObject() as RenderBox?;
+        }
+        
         final viewportBox =
             _verticalViewportKey.currentContext?.findRenderObject()
                 as RenderBox?;
@@ -799,7 +833,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         final currentGlobalTop = box.localToGlobal(Offset.zero).dy;
         final viewportGlobalTop = viewportBox.localToGlobal(Offset.zero).dy;
         final currentViewportTop = currentGlobalTop - viewportGlobalTop;
-        final desiredViewportTop = -(box.size.height * safeRatio);
+        final desiredViewportTop = blockIndex > 0 ? 0.0 : -(box.size.height * safeRatio);
         final correction = currentViewportTop - desiredViewportTop;
         if (correction.abs() <= 1) continue;
 
@@ -820,6 +854,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   void _pruneChapterSectionKeys(int activeIndex) {
     // Keep keys only for a small window around the active index to prevent memory bloat
     _chapterSectionKeys.removeWhere(
+      (key, value) => (key - activeIndex).abs() > 3,
+    );
+    _blockKeys.removeWhere(
       (key, value) => (key - activeIndex).abs() > 3,
     );
   }
@@ -1197,21 +1234,65 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   ) async {
     final matches = <int, EpubChapter>{};
     final loader = _lazyChapterLoader;
-    for (var index = 0; index < _chapterCount; index++) {
-      if (sessionId != _searchSessionId) return matches;
-      final chapter = loader == null
-          ? _book!.chapters[index]
-          : await loader.load(index);
-      if (sessionId != _searchSessionId) return matches;
-      if (EpubParser.formatChapterText(
-        chapter,
-      ).toLowerCase().contains(normalizedQuery)) {
-        matches[index] = chapter;
+    final path = widget.epubPath;
+
+    if (loader != null) {
+      final result = await compute(_searchEpubLazyInIsolate, {
+        'path': path,
+        'chapters': loader.index.chapters,
+        'query': normalizedQuery,
+      });
+      if (sessionId == _searchSessionId) {
+        matches.addAll(result);
+      }
+    } else if (_book != null) {
+      final result = await compute(_searchEpubInMemoryInIsolate, {
+        'chapters': _book!.chapters,
+        'query': normalizedQuery,
+      });
+      if (sessionId == _searchSessionId) {
+        matches.addAll(result);
       }
     }
+
     loader?.retainAround(_chapterIndex);
     return matches;
   }
+
+// Static functions for isolate (must be static if inside class)
+  static Map<int, EpubChapter> _searchEpubLazyInIsolate(Map<String, dynamic> args) {
+  final path = args['path'] as String;
+  final chapters = args['chapters'] as List<EpubChapterReference>;
+  final query = args['query'] as String;
+  final matches = <int, EpubChapter>{};
+
+  for (var index = 0; index < chapters.length; index++) {
+    try {
+      final chapterRef = chapters[index];
+      final chapter = EpubParser.parseChapter(
+        EpubChapterParseArgs(path: path, chapter: chapterRef),
+      );
+      if (EpubParser.formatChapterText(chapter).toLowerCase().contains(query)) {
+        matches[index] = chapter;
+      }
+    } catch (_) {}
+  }
+  return matches;
+}
+
+  static Map<int, EpubChapter> _searchEpubInMemoryInIsolate(Map<String, dynamic> args) {
+  final chapters = args['chapters'] as List<EpubChapter>;
+  final query = args['query'] as String;
+  final matches = <int, EpubChapter>{};
+
+  for (var index = 0; index < chapters.length; index++) {
+    final chapter = chapters[index];
+    if (EpubParser.formatChapterText(chapter).toLowerCase().contains(query)) {
+      matches[index] = chapter;
+    }
+  }
+  return matches;
+}
 
   Future<void> _loadVoicesForLang(String lang) async {
     try {
@@ -1540,11 +1621,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       (label: 'Monospace', family: 'monospace'),
     ];
     const themePresets = [
-      (label: 'Tối', bg: 0xFF1C1C1E, text: 0xFFFFFFFF),
       (label: 'Sáng', bg: 0xFFFFFFFF, text: 0xFF1C1C1E),
+      (label: 'Tối', bg: 0xFF1C1C1E, text: 0xFFFFFFFF),
       (label: 'Sepia', bg: 0xFFF4ECD8, text: 0xFF5B4636),
-      (label: 'Đêm', bg: 0xFF000000, text: 0xFFDDDDDD),
-      (label: 'Biển', bg: 0xFF112233, text: 0xFFFFD700),
+      (label: 'Mắt', bg: 0xFFC7EDCC, text: 0xFF333333),
+      (label: 'AMOLED', bg: 0xFF000000, text: 0xFF888888),
     ];
 
     final totalChapters = _book?.chapters.length ?? 1;
@@ -1829,6 +1910,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     _bookSearchTimer?.cancel();
     _tts.stop();
     _pageController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -1869,12 +1951,46 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       );
     }
 
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: Color(_bgColor),
-      endDrawer: _buildTocDrawer(),
-      body: Stack(
-        children: [
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (event) {
+        if (event is! KeyDownEvent) return;
+        if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+            event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          if (_flowType == 0) {
+            _pageController.nextPage(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+            );
+          } else {
+            _verticalOffsetController.animateScroll(
+              offset: 500,
+              duration: const Duration(milliseconds: 200),
+            );
+          }
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+                   event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          if (_flowType == 0) {
+            _pageController.previousPage(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+            );
+          } else {
+            _verticalOffsetController.animateScroll(
+              offset: -500,
+              duration: const Duration(milliseconds: 200),
+            );
+          }
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: Color(_bgColor),
+        endDrawer: _buildTocDrawer(),
+        body: Stack(
+          children: [
           Positioned.fill(
             child: Listener(
               behavior: HitTestBehavior.translucent,
@@ -1904,6 +2020,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
             Positioned(left: 0, right: 0, bottom: 0, child: _buildTtsBar()),
         ],
       ),
+    ),
     );
   }
 
@@ -2041,6 +2158,22 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         },
       ),
     );
+    buttonItems.insert(
+      2,
+      ContextMenuButtonItem(
+        label: 'Dịch/Tra từ',
+        onPressed: () {
+          ContextMenuController.removeAny();
+          final selectedText = selection.textInside(text);
+          if (selectedText.trim().isNotEmpty) {
+            final url = Uri.parse(
+              'https://translate.google.com/?sl=auto&tl=vi&text=${Uri.encodeComponent(selectedText)}',
+            );
+            launchUrl(url, mode: LaunchMode.inAppBrowserView);
+          }
+        },
+      ),
+    );
 
     return AdaptiveTextSelectionToolbar.buttonItems(
       anchors: editableTextState.contextMenuAnchors,
@@ -2154,16 +2287,24 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (chapter.blocks.isNotEmpty)
-            ...chapter.blocks.map((block) {
+            ...chapter.blocks.asMap().entries.map((entry) {
+              final blockIndex = entry.key;
+              final block = entry.value;
+
+              _blockKeys[index] ??= {};
+              final key = _blockKeys[index]![blockIndex] ??= GlobalKey();
+
               if (block.type == EpubBlockType.image && block.image != null) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
+                return Container(
+                  key: isNear ? key : null,
+                  margin: const EdgeInsets.only(bottom: 16),
                   child: Image.memory(block.image!, fit: BoxFit.contain),
                 );
               } else if (block.type == EpubBlockType.divider) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(color: Colors.white24, thickness: 1),
+                return Padding(
+                  key: isNear ? key : null,
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: const Divider(color: Colors.white24, thickness: 1),
                 );
               } else {
                 double fontSize = _fontSize.toDouble();
@@ -2187,6 +2328,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   fontFamily: _fontFamily == 'Default' ? null : _fontFamily,
                 );
                 return Padding(
+                  key: isNear ? key : null,
                   padding: padding,
                   child: SelectableText.rich(
                     EpubPaginator.buildTextSpan(block, baseStyle),

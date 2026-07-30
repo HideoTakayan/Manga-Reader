@@ -551,8 +551,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     if (event is! KeyDownEvent) return;
 
     if (event.logicalKey == LogicalKeyboardKey.audioVolumeDown ||
-        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        event.logicalKey == LogicalKeyboardKey.arrowDown ||
+        event.logicalKey == LogicalKeyboardKey.arrowRight ||
+        event.logicalKey == LogicalKeyboardKey.space) {
       if (state.readingMode == ReadingMode.horizontal) {
+        if (!_pageController.hasClients) return;
         if (state.currentPageIndex < state.pages.length - 1) {
           _pageController.nextPage(
             duration: const Duration(milliseconds: 200),
@@ -571,7 +574,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         );
       }
     } else if (event.logicalKey == LogicalKeyboardKey.audioVolumeUp ||
-        event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        event.logicalKey == LogicalKeyboardKey.arrowUp ||
+        event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       if (state.readingMode == ReadingMode.horizontal) {
         if (state.currentPageIndex > 0) {
           _pageController.previousPage(
@@ -689,9 +693,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final state = ref.watch(readerProvider);
     final notifier = ref.read(readerProvider.notifier);
 
-    if (!state.isLoading && state.isNovel && state.epubBytes != null) {
+    if (!state.isLoading && state.isNovel && state.localFilePath != null) {
       return NovelReaderWidget(
-        epubBytes: state.epubBytes!,
+        epubPath: state.localFilePath!,
         storageKey: [
           state.mangaId,
           state.currentChapter?.id,
@@ -834,9 +838,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         notifier.toggleControls();
                       }
                     },
-                    child: state.isPdf && state.pdfBytes != null
+                    child: state.isPdf && state.localFilePath != null
                         ? PdfReaderView(
-                            pdfBytes: state.pdfBytes!,
+                            pdfPath: state.localFilePath!,
                             initialPage: state.currentPageIndex,
                             onDocumentLoaded: (pageCount) {
                               notifier.setPdfPageCount(pageCount);

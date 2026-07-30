@@ -372,6 +372,7 @@ class ReaderProgress {
   final String mangaId;
   final String chapterId;
   final int pageIndex;
+  final int blockIndex;
   final double scrollOffset;
   final String? epubCfi;
   final double progressPercent;
@@ -381,6 +382,7 @@ class ReaderProgress {
     required this.mangaId,
     required this.chapterId,
     this.pageIndex = 0,
+    this.blockIndex = 0,
     this.scrollOffset = 0,
     this.epubCfi,
     this.progressPercent = 0,
@@ -392,6 +394,7 @@ class ReaderProgress {
       mangaId: map['mangaId']?.toString() ?? '',
       chapterId: map['chapterId']?.toString() ?? '',
       pageIndex: _readInt(map['pageIndex']),
+      blockIndex: _readInt(map['blockIndex']),
       scrollOffset: _readDouble(map['scrollOffset']),
       epubCfi: map['epubCfi']?.toString(),
       progressPercent: _readDouble(map['progressPercent']),
@@ -406,6 +409,7 @@ class ReaderProgress {
       'mangaId': mangaId,
       'chapterId': chapterId,
       'pageIndex': pageIndex,
+      'blockIndex': blockIndex,
       'scrollOffset': scrollOffset,
       'epubCfi': epubCfi,
       'progressPercent': progressPercent,

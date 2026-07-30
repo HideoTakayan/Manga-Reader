@@ -16,6 +16,8 @@ import '../../services/folder_service.dart';
 import '../../core/utils/chapter_sort_helper.dart';
 import '../../core/utils/chapter_utils.dart';
 import '../shared/library_dialogs.dart';
+import '../shared/drive_image.dart';
+import '../catalog/catalog_cache_service.dart';
 import 'widgets/chapter_list_sliver.dart';
 import 'widgets/manga_header_section.dart';
 import 'widgets/manga_description_section.dart';
@@ -34,6 +36,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   List<ReaderBookmark> _bookmarks = [];
   LibraryStatusEntry? _libraryStatus;
   CloudManga? _manga;
+  Future<List<CloudManga>>? _recommendationsFuture;
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
 
@@ -172,13 +175,14 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             _manga = localData;
             _chapters = processedLocal;
             // Giữ trạng thái đang tải là true để xác minh mạng
+            _initRecommendations();
           });
         }
       }
 
       // --- 2. ĐỒNG BỘ MẠNG (Thử lấy dữ liệu mới) ---
       final mangas = await DriveService.instance.getMangas(forceRefresh: true);
-      final manga = mangas.firstWhere(
+      final finalManga = mangas.firstWhere(
         (c) => c.id == widget.mangaId,
         orElse: () => throw Exception('Không tìm thấy truyện trên máy chủ'),
       );
@@ -186,13 +190,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       final chapters = await DriveService.instance.getChapters(widget.mangaId);
 
       // Lưu thông tin mới vào CSDL cục bộ
-      await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(manga));
+      await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(finalManga));
       await _fetchHistory();
       await _fetchBookmarks();
 
       // 🔧 SỬA LỖI: Loại bỏ trùng lặp Nâng cao & Sắp xếp (Tập trung)
       // Gọi helper để xử lý logic gộp và sắp xếp nhất quán
-      final deduplicatedChapters = await ChapterUtils.mergeChapters(
+      final finalChapters = await ChapterUtils.mergeChapters(
         chapters,
         localChaptersList,
         widget.mangaId,
@@ -200,9 +204,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
       if (mounted) {
         setState(() {
-          _manga = manga;
-          _chapters = deduplicatedChapters;
+          _manga = finalManga;
+          _chapters = finalChapters;
           _isLoading = false;
+          _initRecommendations();
         });
       }
     } catch (e) {
@@ -226,6 +231,22 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         // Lỗi thực sự (Không có dữ liệu cục bộ, không có mạng)
         if (mounted) setState(() => _isLoading = false);
       }
+    }
+  }
+
+  void _initRecommendations() {
+    if (_recommendationsFuture == null && _manga != null) {
+      _recommendationsFuture = CatalogCacheService.instance
+          .getCachedCatalog()
+          .then((catalog) {
+        final recommendations = catalog.where((m) {
+          if (m.id == _manga!.id) return false;
+          // Trùng ít nhất 1 thể loại
+          return m.genres.any((g) => _manga!.genres.contains(g));
+        }).toList();
+        recommendations.shuffle();
+        return recommendations.take(10).toList();
+      });
     }
   }
 
@@ -493,6 +514,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     );
                   },
                 ),
+
+                _buildRecommendations(manga),
 
                 // Khoảng trống dưới cùng để không bị che bởi Bottom Dock
                 const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -1187,5 +1210,86 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Widget _buildRecommendations(CloudManga currentManga) {
+    if (currentManga.genres.isEmpty || _recommendationsFuture == null) {
+      return const SliverToBoxAdapter(child: SizedBox());
+    }
+
+    return SliverToBoxAdapter(
+      child: FutureBuilder<List<CloudManga>>(
+        future: _recommendationsFuture,
+        builder: (context, snapshot) {
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const SizedBox();
+          }
+          final recommendedMangas = snapshot.data!;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+                child: Text(
+                  'Có thể bạn sẽ thích',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 180,
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  scrollDirection: Axis.horizontal,
+                  itemCount: recommendedMangas.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (context, index) {
+                    final rm = recommendedMangas[index];
+                    return GestureDetector(
+                      onTap: () {
+                        context.push('/manga/${rm.id}');
+                      },
+                      child: SizedBox(
+                        width: 110,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: DriveImage(
+                                  fileId: rm.coverFileId,
+                                  fit: BoxFit.cover,
+                                  width: 110,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              rm.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 }

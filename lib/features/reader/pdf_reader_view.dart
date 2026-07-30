@@ -1,9 +1,8 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 
 class PdfReaderView extends StatefulWidget {
-  final Uint8List pdfBytes;
+  final String pdfPath;
   final int initialPage;
   final ValueChanged<int>? onPageChanged;
   final VoidCallback? onToggleControls;
@@ -11,7 +10,7 @@ class PdfReaderView extends StatefulWidget {
 
   const PdfReaderView({
     super.key,
-    required this.pdfBytes,
+    required this.pdfPath,
     this.initialPage = 0,
     this.onPageChanged,
     this.onToggleControls,
@@ -33,10 +32,10 @@ class _PdfReaderViewState extends State<PdfReaderView> {
   }
 
   void _initPdf() {
-    final activeBytes = widget.pdfBytes;
-    final document = PdfDocument.openData(activeBytes);
+    final activePath = widget.pdfPath;
+    final document = PdfDocument.openFile(activePath);
     document.then((doc) {
-      if (mounted && identical(activeBytes, widget.pdfBytes)) {
+      if (mounted && activePath == widget.pdfPath) {
         widget.onDocumentLoaded?.call(doc.pagesCount);
       }
     });
@@ -47,7 +46,7 @@ class _PdfReaderViewState extends State<PdfReaderView> {
     );
     // Fake loading delay to let PDF parser warm up
     Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted && identical(activeBytes, widget.pdfBytes)) {
+      if (mounted && activePath == widget.pdfPath) {
         setState(() => _isLoading = false);
       }
     });
@@ -56,7 +55,7 @@ class _PdfReaderViewState extends State<PdfReaderView> {
   @override
   void didUpdateWidget(PdfReaderView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.pdfBytes != widget.pdfBytes) {
+    if (oldWidget.pdfPath != widget.pdfPath) {
       _pdfController.dispose();
       _isLoading = true;
       _initPdf();

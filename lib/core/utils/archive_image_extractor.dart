@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -7,16 +7,23 @@ import 'package:path/path.dart' as p;
 class ArchiveImageExtractor {
   ArchiveImageExtractor._();
 
-  static Future<List<String>> extract(Uint8List bytes, String chapterId) async {
+  static Future<List<String>> extract(String filePath, String chapterId) async {
     final tempDir = await getTemporaryDirectory();
     final cacheDir = Directory(p.join(tempDir.path, 'reader_cache', chapterId));
 
     if (await cacheDir.exists()) {
+      final files = cacheDir.listSync().whereType<File>().toList();
+      if (files.isNotEmpty) {
+        final paths = files.map((f) => f.path).toList();
+        paths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
+        debugPrint('✅ Reusing extracted cache for chapter $chapterId');
+        return paths;
+      }
       await cacheDir.delete(recursive: true);
     }
     await cacheDir.create(recursive: true);
 
-    final args = {'bytes': bytes, 'outPath': cacheDir.path};
+    final args = {'filePath': filePath, 'outPath': cacheDir.path};
 
     return compute(_extractZipImagesToDisk, args);
   }
@@ -52,15 +59,54 @@ class ArchiveImageExtractor {
       }
     }
   }
+
+  static Future<void> cleanUpOldCache() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      
+      // 1. Dọn thư mục reader_cache (ảnh giải nén)
+      final cacheDir = Directory(p.join(tempDir.path, 'reader_cache'));
+      if (await cacheDir.exists()) {
+        final now = DateTime.now();
+        final entities = cacheDir.listSync();
+        for (final entity in entities) {
+          if (entity is Directory) {
+            final stat = await entity.stat();
+            if (now.difference(stat.modified).inDays >= 7) {
+              await entity.delete(recursive: true);
+              debugPrint('🧹 Cleaned old extracted cache: ${entity.path}');
+            }
+          }
+        }
+      }
+
+      // 2. Dọn file temp_online_*
+      final tempFiles = tempDir.listSync().whereType<File>().where(
+        (f) => p.basename(f.path).startsWith('temp_online_')
+      );
+      final now = DateTime.now();
+      for (final file in tempFiles) {
+        final stat = await file.stat();
+        if (now.difference(stat.modified).inDays >= 7) {
+          await file.delete();
+          debugPrint('🧹 Cleaned old temp online file: ${file.path}');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error cleaning up old cache: $e');
+    }
+  }
 }
 
 List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
-  final bytes = args['bytes'] as Uint8List;
+  final filePath = args['filePath'] as String;
   final outPath = args['outPath'] as String;
   final imagePaths = <String>[];
 
+  InputFileStream? inputStream;
   try {
-    final archive = ZipDecoder().decodeBytes(bytes);
+    inputStream = InputFileStream(filePath);
+    final archive = ZipDecoder().decodeBuffer(inputStream);
     final sortedFiles = archive.files.toList()
       ..sort((a, b) => _naturalCompare(a.name, b.name));
 
@@ -90,7 +136,11 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
       imagePaths.add(outFile.path);
       index++;
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('Lỗi giải nén: $e');
+  } finally {
+    inputStream?.close();
+  }
 
   return imagePaths;
 }

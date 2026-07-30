@@ -15,6 +15,7 @@ import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/follow_service.dart';
+import '../../core/utils/archive_image_extractor.dart';
 
 import 'widgets/continue_reading_section.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -63,6 +64,9 @@ class _HomeContentState extends State<_HomeContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Đồng bộ lịch sử đọc offline (khi không có mạng) lên Firestore
       SyncService.instance.syncPendingHistory();
+      
+      // Dọn rác cache để tránh đầy ổ cứng
+      ArchiveImageExtractor.cleanUpOldCache();
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {

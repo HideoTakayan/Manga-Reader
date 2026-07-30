@@ -779,7 +779,6 @@ class NotificationService {
     }
   }
 
-  // TODO: cần implement đăng ký nhận thông báo theo từng truyện riêng lẻ.
   // Hiện tại app dùng hệ thống "following" tập trung, nên các method này là stub.
   Stream<bool> streamSubscriptionStatus(String mangaId) => Stream.value(false);
   // ignore: avoid_returning_null_for_future

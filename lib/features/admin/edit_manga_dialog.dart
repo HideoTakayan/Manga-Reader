@@ -240,13 +240,16 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
                             color: Colors.black.withValues(alpha: 0.3),
                             blurRadius: 10,
                             offset: const Offset(0, 5),
-                          )
+                          ),
                         ],
                       ),
                       child: _newCoverFile != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(15),
-                              child: Image.file(_newCoverFile!, fit: BoxFit.cover),
+                              child: Image.file(
+                                _newCoverFile!,
+                                fit: BoxFit.cover,
+                              ),
                             )
                           : ClipRRect(
                               borderRadius: BorderRadius.circular(15),
@@ -263,7 +266,11 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
                         color: Colors.orange,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ],
                 ),
@@ -285,8 +292,11 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
               items: MangaContentType.values
                   .map(
                     (type) => DropdownMenuItem(
-                      value: type, 
-                      child: Text(type.label, style: const TextStyle(color: Colors.white)),
+                      value: type,
+                      child: Text(
+                        type.label,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     ),
                   )
                   .toList(),
@@ -318,7 +328,10 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             TextField(
               controller: _genresController,
               style: const TextStyle(color: Colors.white),
-              decoration: _inputDeco('Thể loại (cách nhau bởi dấu phẩy)', Icons.local_offer_outlined),
+              decoration: _inputDeco(
+                'Thể loại (cách nhau bởi dấu phẩy)',
+                Icons.local_offer_outlined,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -331,7 +344,10 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
                   .map(
                     (value) => DropdownMenuItem<String>(
                       value: value,
-                      child: Text(value, style: const TextStyle(color: Colors.white)),
+                      child: Text(
+                        value,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     ),
                   )
                   .toList(),
@@ -356,7 +372,9 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
           // Nút "Lưu" chuyển thành spinner nhỏ khi đang upload — tránh user bấm nhiều lần
@@ -375,3 +393,4 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
     );
   }
 }
+

@@ -38,6 +38,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   List<CloudManga> _filteredMangas = [];
   final TextEditingController _searchController = TextEditingController();
   bool _isLoadingMangas = true;
+  Timer? _debounceTimer;
 
   // Whitelist email được vào trang Admin
   final _adminEmails = ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
@@ -57,21 +58,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   void _onSearchChanged() {
-    final query = _searchController.text.trim().toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredMangas = _allMangas;
-      } else {
-        _filteredMangas = _allMangas.where((m) {
-          return m.title.toLowerCase().contains(query) ||
-              m.author.toLowerCase().contains(query);
-        }).toList();
-      }
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    setState(() {}); // Update the clear icon immediately
+
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      final query = _searchController.text.trim().toLowerCase();
+      setState(() {
+        if (query.isEmpty) {
+          _filteredMangas = _allMangas;
+        } else {
+          _filteredMangas = _allMangas.where((m) {
+            return m.title.toLowerCase().contains(query) ||
+                m.author.toLowerCase().contains(query);
+          }).toList();
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _authSubscription
         .cancel(); // Hủy subscription khi rời trang để tránh memory leak
@@ -481,11 +488,7 @@ class _AdminMangaCard extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black45,
-                  Colors.black87,
-                ],
+                colors: [Colors.transparent, Colors.black45, Colors.black87],
                 stops: [0.4, 0.7, 1.0],
               ),
             ),
@@ -535,10 +538,15 @@ class _AdminMangaCard extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -563,145 +571,169 @@ class _AdminMangaCard extends StatelessWidget {
                   showModalBottomSheet(
                     context: context,
                     backgroundColor: Theme.of(context).cardColor,
-                    builder: (ctx) => Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Điều hướng đến ChapterManagerPage để quản lý danh sách chapter
-                        ListTile(
-                          leading: Icon(
-                            Icons.list,
-                            color: Theme.of(context).iconTheme.color,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    builder: (ctx) => SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(height: 12),
+                          Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withAlpha(80),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
-                          title: Text(
-                            'Quản lý Chương',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    ChapterManagerPage(manga: manga),
-                              ),
-                            );
-                          },
-                        ),
-                        // Mở EditMangaDialog để sửa tên/tác giả/bìa/thể loại
-                        ListTile(
-                          leading: Icon(
-                            Icons.edit,
-                            color: Theme.of(context).iconTheme.color,
-                          ),
-                          title: Text(
-                            'Sửa Thông Tin',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            await showDialog(
-                              context: context,
-                              builder: (_) => EditMangaDialog(manga: manga),
-                            );
-                            onRefresh();
-                          },
-                        ),
-                        // Xóa truyện: xác nhận → loading overlay → gọi Drive API → refresh
-                        ListTile(
-                          leading: const Icon(
-                            Icons.delete,
-                            color: Colors.redAccent,
-                          ),
-                          title: const Text(
-                            'Xóa Truyện',
-                            style: TextStyle(color: Colors.redAccent),
-                          ),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            showDialog(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                backgroundColor: Theme.of(context).cardColor,
-                                title: Text(
-                                  'Xóa Truyện?',
-                                  style: Theme.of(context).textTheme.titleLarge,
+                          const SizedBox(height: 8),
+                          // Điều hướng đến ChapterManagerPage để quản lý danh sách chapter
+                          ListTile(
+                            leading: Icon(
+                              Icons.list,
+                              color: Theme.of(context).iconTheme.color,
+                            ),
+                            title: Text(
+                              'Quản lý Chương',
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      ChapterManagerPage(manga: manga),
                                 ),
-                                content: Text(
-                                  'Bạn có chắc muốn xóa truyện "${manga.title}" không? Hành động này không thể hoàn tác.',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext),
-                                    child: Text(
-                                      'Hủy',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium,
-                                    ),
+                              );
+                            },
+                          ),
+                          // Mở EditMangaDialog để sửa tên/tác giả/bìa/thể loại
+                          ListTile(
+                            leading: Icon(
+                              Icons.edit,
+                              color: Theme.of(context).iconTheme.color,
+                            ),
+                            title: Text(
+                              'Sửa Thông Tin',
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              final result = await showDialog(
+                                context: context,
+                                builder: (_) => EditMangaDialog(manga: manga),
+                              );
+                              if (result == true) {
+                                onRefresh();
+                              }
+                            },
+                          ),
+                          // Xóa truyện: xác nhận → loading overlay → gọi Drive API → refresh
+                          ListTile(
+                            leading: const Icon(
+                              Icons.delete,
+                              color: Colors.redAccent,
+                            ),
+                            title: const Text(
+                              'Xóa Truyện',
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              showDialog(
+                                context: context,
+                                builder: (dialogContext) => AlertDialog(
+                                  backgroundColor: Theme.of(context).cardColor,
+                                  title: Text(
+                                    'Xóa Truyện?',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleLarge,
                                   ),
-                                  TextButton(
-                                    onPressed: () async {
-                                      Navigator.pop(
-                                        dialogContext,
-                                      ); // Đóng dialog xác nhận
+                                  content: Text(
+                                    'Bạn có chắc muốn xóa truyện "${manga.title}" không? Hành động này không thể hoàn tác.',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext),
+                                      child: Text(
+                                        'Hủy',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        Navigator.pop(
+                                          dialogContext,
+                                        ); // Đóng dialog xác nhận
 
-                                      // Hiện loading overlay — dùng rootNavigator để pop đúng dialog này sau
-                                      showDialog(
-                                        context: context,
-                                        barrierDismissible: false,
-                                        useRootNavigator: true,
-                                        builder: (_) => const Center(
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      );
-
-                                      try {
-                                        await DriveService.instance.deleteManga(
-                                          manga.id,
+                                        // Hiện loading overlay — dùng rootNavigator để pop đúng dialog này sau
+                                        showDialog(
+                                          context: context,
+                                          barrierDismissible: false,
+                                          useRootNavigator: true,
+                                          builder: (_) => const Center(
+                                            child: CircularProgressIndicator(),
+                                          ),
                                         );
 
-                                        if (context.mounted) {
-                                          // Phải dùng rootNavigator để pop đúng loading dialog
-                                          Navigator.of(
-                                            context,
-                                            rootNavigator: true,
-                                          ).pop();
-                                          onRefresh();
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text('Đã xóa truyện'),
-                                            ),
-                                          );
+                                        try {
+                                          await DriveService.instance
+                                              .deleteManga(manga.id);
+
+                                          if (context.mounted) {
+                                            // Phải dùng rootNavigator để pop đúng loading dialog
+                                            Navigator.of(
+                                              context,
+                                              rootNavigator: true,
+                                            ).pop();
+                                            onRefresh();
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Đã xóa truyện'),
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            Navigator.of(
+                                              context,
+                                              rootNavigator: true,
+                                            ).pop();
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text('Lỗi: $e'),
+                                              ),
+                                            );
+                                          }
                                         }
-                                      } catch (e) {
-                                        if (context.mounted) {
-                                          Navigator.of(
-                                            context,
-                                            rootNavigator: true,
-                                          ).pop();
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(content: Text('Lỗi: $e')),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    child: const Text(
-                                      'Xóa',
-                                      style: TextStyle(color: Colors.red),
+                                      },
+                                      child: const Text(
+                                        'Xóa',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -815,6 +847,8 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             TextField(
               controller: _titleController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.sentences,
               decoration: _inputDeco('Tên truyện', Icons.title),
             ),
             const SizedBox(height: 16),
@@ -826,7 +860,10 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
                   .map(
                     (type) => DropdownMenuItem(
                       value: type,
-                      child: Text(type.label, style: const TextStyle(color: Colors.white)),
+                      child: Text(
+                        type.label,
+                        style: const TextStyle(color: Colors.white),
+                      ),
                     ),
                   )
                   .toList(),
@@ -842,6 +879,8 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             TextField(
               controller: _authorController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
               decoration: _inputDeco('Tác giả', Icons.person_outline),
             ),
             const SizedBox(height: 16),
@@ -855,7 +894,10 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             TextField(
               controller: _genresController,
               style: const TextStyle(color: Colors.white),
-              decoration: _inputDeco('Thể loại (cách nhau bởi dấu phẩy)', Icons.local_offer_outlined),
+              decoration: _inputDeco(
+                'Thể loại (cách nhau bởi dấu phẩy)',
+                Icons.local_offer_outlined,
+              ),
             ),
             const SizedBox(height: 20),
             // Vùng chọn ảnh bìa — style xịn hơn
@@ -863,10 +905,13 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
               onTap: _isUploading ? null : _pickCover,
               borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 20,
+                  horizontal: 16,
+                ),
                 decoration: BoxDecoration(
-                  color: _coverFile != null 
-                      ? Colors.green.withValues(alpha: 0.1) 
+                  color: _coverFile != null
+                      ? Colors.green.withValues(alpha: 0.1)
                       : Colors.white.withValues(alpha: 0.03),
                   border: Border.all(
                     color: _coverFile != null ? Colors.green : Colors.white24,
@@ -878,7 +923,9 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _coverFile != null ? Icons.check_circle : Icons.add_photo_alternate,
+                      _coverFile != null
+                          ? Icons.check_circle
+                          : Icons.add_photo_alternate,
                       color: _coverFile != null ? Colors.green : Colors.orange,
                       size: 28,
                     ),
@@ -889,7 +936,9 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
                             ? 'Tải lên Ảnh Bìa'
                             : 'Đã chọn: ${_coverFile!.path.split('/').last}',
                         style: TextStyle(
-                          color: _coverFile != null ? Colors.green : Colors.white70,
+                          color: _coverFile != null
+                              ? Colors.green
+                              : Colors.white70,
                           fontWeight: FontWeight.w600,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -902,7 +951,9 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
             if (_isUploading)
               const Padding(
                 padding: EdgeInsets.only(top: 24),
-                child: Center(child: CircularProgressIndicator(color: Colors.orange)),
+                child: Center(
+                  child: CircularProgressIndicator(color: Colors.orange),
+                ),
               ),
           ],
         ),
@@ -918,10 +969,15 @@ class _AddMangaDialogState extends State<_AddMangaDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
-          child: const Text('Lưu Truyện', style: TextStyle(fontWeight: FontWeight.bold)),
+          child: const Text(
+            'Lưu Truyện',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
       ],
     );
@@ -976,7 +1032,9 @@ class _AdminToolButton extends StatelessWidget {
           shadowColor: Colors.transparent,
           foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
     );

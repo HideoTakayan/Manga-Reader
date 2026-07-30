@@ -25,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -97,6 +97,14 @@ class DatabaseHelper {
       if (await _tableExists(db, 'comics') &&
           !await _columnExists(db, 'comics', 'contentType')) {
         await db.execute("ALTER TABLE comics ADD COLUMN contentType TEXT");
+      }
+    }
+    if (oldVersion < 15) {
+      if (await _tableExists(db, 'reader_progress') &&
+          !await _columnExists(db, 'reader_progress', 'blockIndex')) {
+        await db.execute(
+          'ALTER TABLE reader_progress ADD COLUMN blockIndex INTEGER DEFAULT 0',
+        );
       }
     }
   }
@@ -229,6 +237,7 @@ class DatabaseHelper {
         mangaId TEXT PRIMARY KEY,
         chapterId TEXT NOT NULL,
         pageIndex INTEGER DEFAULT 0,
+        blockIndex INTEGER DEFAULT 0,
         scrollOffset REAL DEFAULT 0,
         epubCfi TEXT,
         progressPercent REAL DEFAULT 0,

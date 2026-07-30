@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:xml/xml.dart';
@@ -10,37 +9,38 @@ import 'package:html/dom.dart' as html_dom;
 import 'epub_models.dart';
 
 class EpubParseArgs {
-  final Uint8List bytes;
+  final String path;
   final String title;
 
-  const EpubParseArgs({required this.bytes, required this.title});
+  const EpubParseArgs({required this.path, required this.title});
 }
 
 class EpubChapterParseArgs {
-  final Uint8List bytes;
+  final String path;
   final EpubChapterReference chapter;
 
-  const EpubChapterParseArgs({required this.bytes, required this.chapter});
+  const EpubChapterParseArgs({required this.path, required this.chapter});
 }
 
 class EpubParser {
   static ParsedEpub parse(EpubParseArgs args) {
     final stopwatch = Stopwatch()..start();
 
-    // 1. Unzip
-    final archive = ZipDecoder().decodeBytes(args.bytes);
-    final files = <String, ArchiveFile>{};
-    for (final file in archive) {
-      files[_normalizePath(file.name)] = file;
-    }
-    debugPrint(
+    final stream = InputFileStream(args.path);
+    try {
+      // 1. Unzip
+      final archive = ZipDecoder().decodeBuffer(stream);
+      final files = <String, ArchiveFile>{};
+      for (final file in archive) {
+        files[_normalizePath(file.name)] = file;
+      }
+      debugPrint(
       '[EpubParser] Unzip completed in ${stopwatch.elapsedMilliseconds}ms',
     );
     stopwatch.reset();
 
-    try {
-      // 2. Read container.xml to find OPF
-      final container = _readArchiveText(files, 'META-INF/container.xml');
+    // 2. Read container.xml to find OPF
+    final container = _readArchiveText(files, 'META-INF/container.xml');
       final containerXml = XmlDocument.parse(container);
       final opfPath = containerXml
           .findAllElements('rootfile')
@@ -119,14 +119,19 @@ class EpubParser {
     } catch (e) {
       debugPrint('[EpubParser] Lỗi parse EPUB: $e');
       rethrow;
+    } finally {
+      stream.close();
     }
   }
 
   /// Parses only EPUB metadata, spine and TOC. Chapter XHTML remains
   /// compressed until [parseChapter] requests a specific entry.
   static ParsedEpubIndex parseIndex(EpubParseArgs args) {
-    final files = decodeFiles(args.bytes);
-    final package = _readPackage(files);
+    final stream = InputFileStream(args.path);
+    try {
+      final archive = ZipDecoder().decodeBuffer(stream);
+      final files = {for (final file in archive) _normalizePath(file.name): file};
+      final package = _readPackage(files);
     final navTitles = _readNavTitles(files, package.manifest);
     final chapters = <EpubChapterReference>[];
     var index = 1;
@@ -148,18 +153,22 @@ class EpubParser {
       throw const FormatException('Không tìm thấy chapter trong EPUB.');
     }
     return ParsedEpubIndex(title: args.title, chapters: chapters);
+    } finally {
+      stream.close();
+    }
   }
 
   /// Parses one chapter on demand. The archive package keeps individual ZIP
   /// entries compressed until their [ArchiveFile.content] is accessed.
   static EpubChapter parseChapter(EpubChapterParseArgs args) {
-    final files = decodeFiles(args.bytes);
-    return buildChapter(files, args.chapter);
-  }
-
-  static Map<String, ArchiveFile> decodeFiles(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes);
-    return {for (final file in archive) _normalizePath(file.name): file};
+    final stream = InputFileStream(args.path);
+    try {
+      final archive = ZipDecoder().decodeBuffer(stream);
+      final files = {for (final file in archive) _normalizePath(file.name): file};
+      return buildChapter(files, args.chapter);
+    } finally {
+      stream.close();
+    }
   }
 
   static _EpubPackage _readPackage(Map<String, ArchiveFile> files) {

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdfx/pdfx.dart';
@@ -273,14 +273,11 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final file = File(chapter.localPath);
     if (!await file.exists()) return 'Không tìm thấy file local';
 
-    final bytes = await file.readAsBytes();
-    if (bytes.isEmpty) return 'File 0 byte';
-
     final path = chapter.localPath.toLowerCase();
     if (path.endsWith('.pdf')) {
       PdfDocument? document;
       try {
-        document = await PdfDocument.openData(bytes);
+        document = await PdfDocument.openFile(chapter.localPath);
         if (document.pagesCount <= 0) return 'PDF không có trang';
         return 'PDF hợp lệ (${document.pagesCount} trang)';
       } finally {
@@ -288,21 +285,28 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       }
     }
 
-    if (path.endsWith('.epub')) {
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final hasContainer = archive.files.any(
-        (file) => file.name.toLowerCase() == 'meta-inf/container.xml',
-      );
-      return hasContainer ? 'EPUB hợp lệ' : 'EPUB thiếu container.xml';
-    }
+    InputFileStream? inputStream;
+    try {
+      if (path.endsWith('.epub')) {
+        inputStream = InputFileStream(chapter.localPath);
+        final archive = ZipDecoder().decodeBuffer(inputStream);
+        final hasContainer = archive.files.any(
+          (f) => f.name.toLowerCase() == 'meta-inf/container.xml',
+        );
+        return hasContainer ? 'EPUB hợp lệ' : 'EPUB thiếu container.xml';
+      }
 
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final imageCount = archive.files.where((file) {
-      if (!file.isFile) return false;
-      return _isImagePath(file.name);
-    }).length;
-    if (imageCount <= 0) return 'Archive không có ảnh';
-    return 'Archive hợp lệ ($imageCount ảnh)';
+      inputStream = InputFileStream(chapter.localPath);
+      final archive = ZipDecoder().decodeBuffer(inputStream);
+      final imageCount = archive.files.where((f) {
+        if (!f.isFile) return false;
+        return _isImagePath(f.name);
+      }).length;
+      if (imageCount <= 0) return 'Archive không có ảnh';
+      return 'Archive hợp lệ ($imageCount ảnh)';
+    } finally {
+      inputStream?.close();
+    }
   }
 
   bool _isImagePath(String path) {

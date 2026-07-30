@@ -172,9 +172,10 @@ class NovelService {
     String title, {
     String? sourcePath,
   }) async {
+    InputFileStream? inputStream;
     try {
-      final bytes = await File(epubPath).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      inputStream = InputFileStream(epubPath);
+      final archive = ZipDecoder().decodeBuffer(inputStream);
       Uint8List? coverBytes;
 
       // Tìm file ảnh chứa từ 'cover' hoặc 'bìa'
@@ -222,6 +223,8 @@ class NovelService {
       }
     } catch (e) {
       debugPrint('Lỗi giải nén ảnh bìa EPUB: $e');
+    } finally {
+      inputStream?.close();
     }
     return '';
   }

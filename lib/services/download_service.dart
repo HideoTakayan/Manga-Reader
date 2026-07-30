@@ -821,6 +821,68 @@ class DownloadService {
     }
   }
 
+  /// Tự động chuyển đổi temp file thành file download chính thức
+  Future<bool> saveTempAsOffline({
+    required String chapterId,
+    required String mangaId,
+    required String mangaTitle,
+    required String chapterTitle,
+    required String fileType,
+    required File tempFile,
+    Manga? mangaInfo,
+  }) async {
+    try {
+      if (!await tempFile.exists()) return false;
+
+      // 1. Kiểm tra đã tải chưa
+      final isDownloaded = await DatabaseHelper.instance.isChapterDownloaded(chapterId);
+      if (isDownloaded) return true;
+
+      // 2. Lưu manga info
+      if (mangaInfo != null) {
+        await DatabaseHelper.instance.saveLocalManga(mangaInfo);
+        if (!await FolderService.hasCover(mangaTitle) && mangaInfo.coverUrl.isNotEmpty) {
+          final coverBytes = await DriveService.instance.downloadFileWithProgress(mangaInfo.coverUrl, onProgress: (_, __) {});
+          if (coverBytes != null) {
+            final coverPath = await FolderService.getCoverPath(mangaTitle);
+            await File(coverPath).writeAsBytes(coverBytes);
+          }
+        }
+      }
+
+      // 3. Chuẩn bị file đích
+      final mangaFolderPath = await FolderService.getMangaPathByTitle(mangaTitle);
+      final safeChapterTitle = FolderService.sanitize(chapterTitle);
+      final safeChapterId = FolderService.sanitize(chapterId);
+      final baseFileName = safeChapterTitle.isEmpty ? safeChapterId : '${safeChapterTitle}_$safeChapterId';
+      String fileName = baseFileName;
+      if (!fileName.toLowerCase().endsWith('.$fileType')) {
+        fileName = '$fileName.$fileType';
+      }
+      final filePath = '$mangaFolderPath/$fileName';
+
+      // 4. Copy (thay vì rename, để temp cache vẫn còn dùng được nếu cần)
+      await tempFile.copy(filePath);
+
+      // 5. Lưu vào DB
+      await DatabaseHelper.instance.saveDownload(
+        chapterId: chapterId,
+        mangaId: mangaId,
+        mangaTitle: mangaTitle,
+        chapterTitle: chapterTitle,
+        localPath: filePath,
+        fileSize: await File(filePath).length(),
+      );
+      await DownloadCache.instance.addChapter(chapterId, mangaId);
+
+      debugPrint('✅ Tự động lưu offline thành công: $chapterTitle');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Lỗi tự động lưu offline: $e');
+      return false;
+    }
+  }
+
   /// Hủy
   void dispose() {
     _downloadController.close();

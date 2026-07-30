@@ -26,7 +26,9 @@ void main() {
       ..addFile(ArchiveFile('readme.txt', 1, [1]));
 
     final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
-    final imagePaths = await ArchiveImageExtractor.extract(bytes, 'test_chapter');
+    final tempFile = File('${Directory.systemTemp.path}/test_archive.zip');
+    await tempFile.writeAsBytes(bytes);
+    final imagePaths = await ArchiveImageExtractor.extract(tempFile.path, 'test_chapter');
 
     expect(imagePaths.length, 2);
     expect(File(imagePaths[0]).readAsBytesSync(), [2, 2]);
@@ -34,8 +36,10 @@ void main() {
   });
 
   test('returns empty list for invalid archive bytes', () async {
+    final tempFile = File('${Directory.systemTemp.path}/invalid_archive.zip');
+    await tempFile.writeAsBytes([1, 2, 3]);
     final imagePaths = await ArchiveImageExtractor.extract(
-      Uint8List.fromList([1, 2, 3]),
+      tempFile.path,
       'test_chapter',
     );
 

@@ -1,5 +1,3 @@
-﻿import 'dart:typed_data';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_reader/features/reader/epub/epub_lazy_chapter_loader.dart';
 import 'package:manga_reader/features/reader/epub/epub_models.dart';
@@ -26,7 +24,7 @@ void main() {
     EpubLazyChapterLoader createLoader({int maxCachedChapters = 3}) {
       return EpubLazyChapterLoader(
         index: index,
-        bytes: Uint8List.fromList([80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        path: 'dummy.epub',
         maxCachedChapters: maxCachedChapters,
         parser: (reference) async {
           parseCounts.update(

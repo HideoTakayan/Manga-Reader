@@ -1,7 +1,5 @@
-﻿import 'dart:collection';
-import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'dart:collection';
 
 import 'epub_models.dart';
 import 'epub_parser.dart';
@@ -16,19 +14,18 @@ class EpubLazyChapterLoader {
   final LinkedHashMap<int, EpubChapter> _cache = LinkedHashMap();
   final Map<int, Future<EpubChapter>> _pending = {};
   
-  final Map<String, ArchiveFile> _archive;
-
   EpubLazyChapterLoader({
     required this.index,
-    required Uint8List bytes,
+    required String path,
     this.maxCachedChapters = 5,
     EpubChapterParser? parser,
-  }) : _archive = EpubParser.decodeFiles(bytes),
-       assert(maxCachedChapters > 0) {
+  }) : assert(maxCachedChapters > 0) {
     _parser = parser ??
         ((chapter) async {
-          // Decode directly in the UI thread for now.
-          return EpubParser.buildChapter(_archive, chapter);
+          // Decode directly using the file path on demand.
+          return EpubParser.parseChapter(
+            EpubChapterParseArgs(path: path, chapter: chapter),
+          );
         });
   }
 

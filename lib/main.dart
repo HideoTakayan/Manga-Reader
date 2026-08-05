@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:manga_reader/services/auth_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'firebase_options.dart';
 import 'data/drive_service.dart';
@@ -45,6 +46,19 @@ Future<void> main() async {
       Future.microtask(() => SyncService.instance.syncPendingHistory());
     }
   });
+
+  // Khôi phục thủ công phiên đăng nhập nếu Firebase Auth bị mất session
+  if (FirebaseAuth.instance.currentUser == null) {
+    await AuthService().restoreSession();
+  }
+
+  // Đợi Firebase Auth load xong session từ ổ cứng trước khi khởi động UI.
+  // Đảm bảo GoRouter không bị sai lệch state ở frame đầu tiên.
+  try {
+    await FirebaseAuth.instance.authStateChanges().first.timeout(const Duration(seconds: 2));
+  } catch (e) {
+    debugPrint('⚠️ Timeout waiting for auth state: $e');
+  }
 
   try {
     await DriveService.instance.restorePreviousSession();

@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // AuthService: không phải Singleton — mỗi caller tạo instance mới.
 // Thiết kế này OK vì FirebaseAuth/GoogleSignIn đều là Singleton bên dưới.
@@ -61,6 +62,11 @@ class AuthService {
         if (!user.emailVerified) {
           await _auth.signOut();
           throw Exception('Vui lòng xác minh email trước khi đăng nhập.');
+        } else {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('auth_provider', 'email');
+          await prefs.setString('auth_email', email.trim().toLowerCase());
+          await prefs.setString('auth_password', password.trim());
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -121,6 +127,9 @@ class AuthService {
 
       // 4. Đăng nhập Firebase
       final userCredential = await _auth.signInWithCredential(credential);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_provider', 'google');
 
       // 5. Đảm bảo Firestore profile tồn tại (edge case: auth tồn tại nhưng doc bị xóa)
       final userDoc = await _db
@@ -194,7 +203,42 @@ class AuthService {
 
   /// Đăng xuất cả Firebase Auth lẫn Google Sign-In cùng lúc
   Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_provider');
+    await prefs.remove('auth_email');
+    await prefs.remove('auth_password');
     await Future.wait([_auth.signOut(), _googleSignIn.signOut()]);
+  }
+
+  /// Khôi phục phiên đăng nhập thủ công nếu Firebase Auth bị mất session trên Android
+  Future<void> restoreSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final provider = prefs.getString('auth_provider');
+    if (provider == 'google') {
+      try {
+        final googleUser = await _googleSignIn.signInSilently();
+        if (googleUser != null) {
+          final googleAuth = await googleUser.authentication;
+          final credential = GoogleAuthProvider.credential(
+            accessToken: googleAuth.accessToken,
+            idToken: googleAuth.idToken,
+          );
+          await _auth.signInWithCredential(credential);
+        }
+      } catch (e) {
+        // ignore
+      }
+    } else if (provider == 'email') {
+      final e = prefs.getString('auth_email');
+      final p = prefs.getString('auth_password');
+      if (e != null && p != null) {
+        try {
+          await login(e, p);
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
   }
 
   User? get currentUser => _auth.currentUser;

@@ -49,11 +49,14 @@ class GoRouterRefreshStream extends ChangeNotifier {
 
 // Cấu hình GoRouter chính của ứng dụng
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/', // Mặc định vào thẳng Home, redirect sẽ tự chặn nếu chưa đăng nhập
-  refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
+  initialLocation:
+      '/', // Mặc định vào thẳng Home, redirect sẽ tự chặn nếu chưa đăng nhập
+  refreshListenable: GoRouterRefreshStream(
+    FirebaseAuth.instance.authStateChanges(),
+  ),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
-    final isGoingToLogin = state.matchedLocation == '/login';
+    final isGoingToLogin = state.uri.path == '/login';
 
     // Chưa đăng nhập mà không ở trang login -> Đẩy ra trang login
     if (user == null && !isGoingToLogin) {
@@ -237,7 +240,6 @@ final GoRouter appRouter = GoRouter(
     ),
   ],
 );
-
 
 class _AdminRouteGuard extends StatelessWidget {
   final Widget child;

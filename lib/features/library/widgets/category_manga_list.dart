@@ -8,6 +8,7 @@ import '../../../services/library_status_service.dart';
 import '../../../data/database_helper.dart';
 import '../../shared/drive_image.dart';
 import '../../../services/novel_service.dart';
+import '../../../services/folder_service.dart';
 
 enum LibrarySortMode { updatedDesc, titleAsc, readingStatus }
 
@@ -67,22 +68,33 @@ class CategoryMangaList extends StatelessWidget {
             // Offline mode: đọc từ SQLite, wrap thành CloudManga với status='Offline'
             final localMangas = await DatabaseHelper.instance
                 .getAllLocalMangas();
-            return localMangas
-                .map(
-                  (m) => CloudManga(
-                    id: m.id,
-                    title: m.title,
-                    coverFileId: m.coverUrl,
-                    author: m.author,
-                    description: m.description,
-                    updatedAt: DateTime.now(),
-                    genres: m.genres,
-                    status: 'Offline',
-                    chapterOrder: [],
-                    contentType: m.contentType,
-                  ),
-                )
-                .toList();
+            final List<CloudManga> result = [];
+            for (final m in localMangas) {
+              String coverPath = m.coverUrl;
+              try {
+                if (!coverPath.startsWith('/') && !coverPath.contains('\\')) {
+                  if (await FolderService.hasCover(m.title)) {
+                    coverPath = await FolderService.getCoverPath(m.title);
+                  }
+                }
+              } catch (_) {}
+
+              result.add(
+                CloudManga(
+                  id: m.id,
+                  title: m.title,
+                  coverFileId: coverPath,
+                  author: m.author,
+                  description: m.description,
+                  updatedAt: DateTime.now(),
+                  genres: m.genres,
+                  status: 'Offline',
+                  chapterOrder: [],
+                  contentType: m.contentType,
+                ),
+              );
+            }
+            return result;
           }
         }
 

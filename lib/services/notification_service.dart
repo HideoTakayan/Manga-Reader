@@ -671,19 +671,24 @@ class NotificationService {
   void _startListening() {
     // Nếu đã có subscription đang chạy (chưa stop), không khởi động thêm.
     if (_subscription != null) return;
-    _subscription = streamUserNotifications().listen((notifs) {
-      for (var n in notifs) {
-        final id = n.id;
-        if (_processedIds.contains(id)) continue;
+    _subscription = streamUserNotifications().listen(
+      (notifs) {
+        for (var n in notifs) {
+          final id = n.id;
+          if (_processedIds.contains(id)) continue;
 
-        if (n.createdAt.isAfter(_startTime)) {
-          _processedIds.add(id);
-          showGeneralNotification(title: n.title, body: n.body);
-        } else {
-          _processedIds.add(id);
+          if (n.createdAt.isAfter(_startTime)) {
+            _processedIds.add(id);
+            showGeneralNotification(title: n.title, body: n.body);
+          } else {
+            _processedIds.add(id);
+          }
         }
-      }
-    });
+      },
+      onError: (e) {
+        debugPrint('⚠️ Notification stream error (Offline/Network): $e');
+      },
+    );
   }
 
   void _stopListening({bool clearStreamCache = false}) {

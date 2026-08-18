@@ -88,7 +88,7 @@ class DownloadQueuePage extends StatelessWidget {
               final confirm = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  backgroundColor: const Color(0xFF1C1C1E),
+                  backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   title: const Text(
                     'Xóa hàng đợi?',
@@ -127,30 +127,170 @@ class DownloadQueuePage extends StatelessWidget {
           ),
         ],
       ),
-      // Toàn bộ body là 1 StreamBuilder lắng nghe DownloadService — tự rebuild khi có thay đổi
       body: StreamBuilder<Map<String, DownloadTask>>(
         stream: DownloadService.instance.downloadStream,
         builder: (context, snapshot) {
           final queue = snapshot.data ?? {};
-          if (queue.isEmpty) {
-            return Center(
+          final currentConcurrency = DownloadService.instance.maxConcurrentDownloads;
+          final activeCount = queue.values
+              .where((t) => t.status == DownloadStatus.downloading)
+              .length;
+
+          // Widget điều khiển đa luồng tải
+          Widget buildConcurrencyBar() {
+            return Container(
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+              ),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.download_done,
-                    size: 64,
-                    color: theme.iconTheme.color?.withValues(alpha: 0.3),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.bolt_rounded,
+                          color: theme.colorScheme.primary,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Cấu hình Tải đa luồng',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              activeCount > 0
+                                  ? 'Đang tải: $activeCount/$currentConcurrency luồng đồng thời'
+                                  : 'Tối đa $currentConcurrency chương tải song song',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (activeCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                                ),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Đang tải',
+                                style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Không có tải xuống nào',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.textTheme.bodySmall?.color,
-                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [1, 2, 3, 4, 6].map((threads) {
+                      final isSelected = currentConcurrency == threads;
+                      return Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                          child: InkWell(
+                            onTap: () {
+                              DownloadService.instance.setConcurrentDownloads(threads);
+                            },
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? theme.colorScheme.primary
+                                    : Colors.white.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? theme.colorScheme.primary
+                                      : Colors.white.withValues(alpha: 0.1),
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '$threads luồng',
+                                  style: TextStyle(
+                                    color: isSelected ? Colors.white : Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
+            );
+          }
+
+          if (queue.isEmpty) {
+            return Column(
+              children: [
+                buildConcurrencyBar(),
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.download_done,
+                          size: 64,
+                          color: theme.iconTheme.color?.withValues(alpha: 0.3),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Không có tải xuống nào',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: theme.textTheme.bodySmall?.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             );
           }
 
@@ -161,17 +301,26 @@ class DownloadQueuePage extends StatelessWidget {
             groupedByManga.putIfAbsent(task.mangaId, () => []).add(task);
           }
 
-          return ListView.builder(
-            itemCount: groupedByManga.length,
-            itemBuilder: (context, index) {
-              final mangaId = groupedByManga.keys.elementAt(index);
-              final tasks = groupedByManga[mangaId]!;
-              return _MangaDownloadGroup(
-                mangaId: mangaId,
-                mangaTitle: tasks.first.mangaTitle,
-                tasks: tasks,
-              );
-            },
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: buildConcurrencyBar(),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final mangaId = groupedByManga.keys.elementAt(index);
+                    final tasks = groupedByManga[mangaId]!;
+                    return _MangaDownloadGroup(
+                      mangaId: mangaId,
+                      mangaTitle: tasks.first.mangaTitle,
+                      tasks: tasks,
+                    );
+                  },
+                  childCount: groupedByManga.length,
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -240,7 +389,7 @@ class _MangaDownloadGroup extends StatelessWidget {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (context) => AlertDialog(
-                          backgroundColor: const Color(0xFF1C1C1E),
+                          backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                           title: const Text(
                             'Xóa tất cả?',
@@ -368,9 +517,9 @@ class _ChapterDownloadItem extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               CircularProgressIndicator(
-                value: task.progress, // 0.0 → 1.0
+                value: task.progress > 0 ? task.progress : null,
                 strokeWidth: 4,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
                 backgroundColor: Colors.grey.withValues(alpha: 0.2),
               ),
               Text(
@@ -395,7 +544,22 @@ class _ChapterDownloadItem extends StatelessWidget {
           ),
         );
       case DownloadStatus.paused:
-        return const Icon(Icons.pause_circle, color: Colors.orange, size: 32);
+        return SizedBox(
+          width: 40,
+          height: 40,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: task.progress > 0 ? task.progress : 0.0,
+                strokeWidth: 3.5,
+                valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+                backgroundColor: Colors.grey.withValues(alpha: 0.2),
+              ),
+              const Icon(Icons.pause, color: Colors.orange, size: 18),
+            ],
+          ),
+        );
       case DownloadStatus.failed:
         return const Icon(Icons.error, color: Colors.red, size: 32);
       default:
@@ -412,7 +576,7 @@ class _ChapterDownloadItem extends StatelessWidget {
     switch (task.status) {
       case DownloadStatus.completed:
         return Text(
-          'Đã tải • ${_formatBytes(task.totalBytes ?? 0)}',
+          'Đã tải xong • ${_formatBytes(task.totalBytes ?? task.downloadedBytes ?? 0)}',
           style: theme.textTheme.bodySmall?.copyWith(color: Colors.green),
         );
       case DownloadStatus.downloading:
@@ -421,11 +585,27 @@ class _ChapterDownloadItem extends StatelessWidget {
         final total = _formatBytes(task.totalBytes ?? 0);
         return Text(
           'Đang tải $percent% • $downloaded / $total',
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.primaryColor),
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
         );
       case DownloadStatus.queued:
-        return Text('Đang chờ...', style: theme.textTheme.bodySmall);
+        if (task.progress > 0 && task.downloadedBytes != null) {
+          final percent = (task.progress * 100).toInt();
+          return Text(
+            'Đang chờ tiếp tục ($percent%)...',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange.shade300),
+          );
+        }
+        return Text('Đang chờ đến lượt tải...', style: theme.textTheme.bodySmall);
       case DownloadStatus.paused:
+        final percent = (task.progress * 100).toInt();
+        if (task.downloadedBytes != null && task.downloadedBytes! > 0) {
+          final downloaded = _formatBytes(task.downloadedBytes!);
+          final total = task.totalBytes != null ? ' / ${_formatBytes(task.totalBytes!)}' : '';
+          return Text(
+            'Đã tạm dừng ($percent%) • $downloaded$total',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
+          );
+        }
         return Text(
           'Đã tạm dừng',
           style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange),

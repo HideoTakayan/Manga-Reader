@@ -16,6 +16,8 @@ class CloudManga {
   final int likeCount;
   final List<String> chapterOrder; // Danh sách ID chương/file theo thứ tự
   final MangaContentType contentType;
+  final String? uploaderGroupId;
+  final String? uploaderGroupName;
 
   CloudManga({
     required this.id,
@@ -30,6 +32,8 @@ class CloudManga {
     this.likeCount = 0,
     this.chapterOrder = const [],
     this.contentType = MangaContentType.manga,
+    this.uploaderGroupId,
+    this.uploaderGroupName,
   });
 
   /// Chuyển đối tượng sang Map để ghi vào Firestore hoặc truyền qua API.
@@ -49,6 +53,8 @@ class CloudManga {
       'likeCount': likeCount,
       'chapterOrder': chapterOrder,
       'contentType': contentTypeToJson(contentType),
+      'uploaderGroupId': uploaderGroupId,
+      'uploaderGroupName': uploaderGroupName,
     };
   }
 
@@ -68,6 +74,8 @@ class CloudManga {
       likeCount: map['likeCount'] ?? 0,
       chapterOrder: List<String>.from(map['chapterOrder'] ?? []),
       contentType: parseContentType(map['contentType'], genres: genres),
+      uploaderGroupId: map['uploaderGroupId'],
+      uploaderGroupName: map['uploaderGroupName'],
     );
   }
 }

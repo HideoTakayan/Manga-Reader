@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'services/firebase_forum_repository.dart';
 import 'models/forum_comment.dart';
@@ -230,69 +231,113 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
               ),
             ),
             child: SafeArea(
-              child: Column(
-                children: [
-                  if (_replyingTo != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.reply_rounded,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Đang phản hồi @${_replyingTo!.authorName}',
-                              style: TextStyle(
-                                fontSize: 13,
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseAuth.instance.currentUser != null ? FirebaseFirestore.instance.collection('users').doc(FirebaseAuth.instance.currentUser!.uid).snapshots() : const Stream.empty(),
+                builder: (context, snapshot) {
+                  bool isBanned = false;
+                  bool isMuted = false;
+                  DateTime? mutedUntil;
+
+                  if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
+                    final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+                    if (data['isBanned'] == true) {
+                      isBanned = true;
+                    }
+                    if (data['mutedUntil'] != null) {
+                      mutedUntil = (data['mutedUntil'] as Timestamp).toDate();
+                      if (mutedUntil.isAfter(DateTime.now())) {
+                        isMuted = true;
+                      }
+                    }
+                  }
+
+                  if (isBanned) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text(
+                        'Bạn đã bị cấm bình luận.',
+                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  if (isMuted) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text(
+                        'Bạn đang bị cấm ngôn (Tới ${mutedUntil != null ? "${mutedUntil.day}/${mutedUntil.month}" : "Không rõ"}).',
+                        style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      if (_replyingTo != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.reply_rounded,
+                                size: 16,
                                 color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.bold,
                               ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Đang phản hồi @${_replyingTo!.authorName}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 16),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  setState(() => _replyingTo = null);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _commentController,
+                              focusNode: _commentFocusNode,
+                              decoration: const InputDecoration(
+                                hintText: 'Viết bình luận...',
+                                border: InputBorder.none,
+                              ),
+                              onChanged: (_) => setState(() {}),
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close, size: 16),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            onPressed: () {
-                              setState(() => _replyingTo = null);
-                            },
+                            icon: _isSubmitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
+                            color: const Color(0xFFFF5252),
+                            onPressed: _isSubmitting ? null : _submitComment,
                           ),
                         ],
                       ),
-                    ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _commentController,
-                          focusNode: _commentFocusNode,
-                          decoration: const InputDecoration(
-                            hintText: 'Viết bình luận...',
-                            border: InputBorder.none,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                      IconButton(
-                        icon: _isSubmitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.send),
-                        color: const Color(0xFFFF5252),
-                        onPressed: _isSubmitting ? null : _submitComment,
-                      ),
                     ],
-                  ),
-                ],
+                  );
+                }
               ),
             ),
           ),

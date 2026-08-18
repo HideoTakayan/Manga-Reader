@@ -140,10 +140,29 @@ class DownloadService {
   Stream<Map<String, DownloadTask>> get downloadStream =>
       _downloadController.stream;
 
-  // Số lượng tải xuống đồng thời tối đa
-  static const int _maxConcurrentDownloads = 4;
+  // Cấu hình tải đa luồng đồng thời
+  static const String _concurrencyPrefsKey = 'download_max_concurrent_threads';
+  static const int _defaultConcurrentDownloads = 3;
+  int _maxConcurrentDownloads = _defaultConcurrentDownloads;
   int _activeDownloads = 0;
   final Map<String, Future<void>> _activeTaskFutures = {};
+
+  int get maxConcurrentDownloads => _maxConcurrentDownloads;
+  int get activeDownloads => _activeDownloads;
+
+  /// Thay đổi số luồng tải đồng thời (1 đến 6 luồng)
+  Future<void> setConcurrentDownloads(int count) async {
+    final clamped = count.clamp(1, 6);
+    if (_maxConcurrentDownloads == clamped) return;
+    _maxConcurrentDownloads = clamped;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_concurrencyPrefsKey, clamped);
+    } catch (_) {}
+    debugPrint('⚡ Số luồng tải đồng thời cập nhật: $_maxConcurrentDownloads luồng');
+    _notifyListeners();
+    _processQueue();
+  }
 
   /// Thêm chương vào hàng đợi tải xuống
   Future<void> addToQueue({
@@ -193,9 +212,15 @@ class DownloadService {
     _processQueue();
   }
 
-  /// Xử lý hàng đợi tải xuống
+  /// Xử lý hàng đợi tải xuống đa luồng
   void _processQueue() {
-    if (_activeDownloads == 0 && _downloadQueue.isEmpty) {
+    final hasActiveOrQueued = _downloadQueue.values.any(
+      (t) =>
+          t.status == DownloadStatus.downloading ||
+          t.status == DownloadStatus.queued,
+    );
+
+    if (_activeDownloads == 0 && !hasActiveOrQueued) {
       WakelockPlus.disable();
       BackgroundService.stop();
     } else {
@@ -226,7 +251,7 @@ class DownloadService {
     }
   }
 
-  /// Tải một chương
+  /// Tải một chương với hỗ trợ tiếp tục (Resume)
   Future<void> _downloadChapter(DownloadTask task) async {
     _activeDownloads++;
     task.status = DownloadStatus.downloading;
@@ -241,42 +266,44 @@ class DownloadService {
       if (canShowNotification) {
         await _showDownloadProgressSafely(
           notifId,
-          0,
-          'Đang chuẩn bị...',
+          (task.progress * 100).toInt(),
+          task.progress > 0 ? 'Đang tiếp tục tải...' : 'Đang chuẩn bị...',
           task.chapterTitle,
         );
       }
 
-      debugPrint('📥 Bắt đầu tải: ${task.chapterTitle}');
+      debugPrint('📥 Bắt đầu tải: ${task.chapterTitle} (Tiến độ hiện tại: ${(task.progress * 100).toInt()}%)');
       // 1. Tạo thư mục đích (Theo tên truyện)
       final mangaFolderPath = await FolderService.getMangaPathByTitle(
         task.mangaTitle,
       );
-      // --- Siêu dữ liệu & Ảnh bìa (Hỗ trợ nguồn cục bộ) ---
-      try {
-        final manga = await DatabaseHelper.instance.getLocalManga(task.mangaId);
-        if (manga != null) {
-          await FolderService.saveMangaDetails(manga);
 
-          if (!await FolderService.hasCover(task.mangaTitle) &&
-              manga.coverUrl.isNotEmpty) {
-            final coverBytes = await DriveService.instance
-                .downloadFileWithProgress(
-                  manga.coverUrl,
-                  onProgress: (_, __) {},
+      // Lưu metadata & ảnh bìa chạy ngầm (Background) để không làm trễ luồng tải file chương
+      Future.microtask(() async {
+        try {
+          final manga = await DatabaseHelper.instance.getLocalManga(task.mangaId);
+          if (manga != null) {
+            await FolderService.saveMangaDetails(manga);
+
+            if (!await FolderService.hasCover(task.mangaTitle) &&
+                manga.coverUrl.isNotEmpty) {
+              final coverBytes = await DriveService.instance
+                  .downloadFileWithProgress(
+                    manga.coverUrl,
+                    onProgress: (_, __) {},
+                  );
+              if (coverBytes != null) {
+                final coverPath = await FolderService.getCoverPath(
+                  task.mangaTitle,
                 );
-            if (coverBytes != null) {
-              final coverPath = await FolderService.getCoverPath(
-                task.mangaTitle,
-              );
-              await File(coverPath).writeAsBytes(coverBytes);
+                await File(coverPath).writeAsBytes(coverBytes);
+              }
             }
           }
+        } catch (e) {
+          debugPrint('⚠️ Local Metadata Background Error: $e');
         }
-      } catch (e) {
-        debugPrint('⚠️ Local Metadata Error: $e');
-      }
-      // -----------------------------------------------
+      });
 
       // 2. Chuẩn bị file đích
       final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
@@ -313,7 +340,7 @@ class DownloadService {
           final now = DateTime.now();
           if (now.difference(lastUiUpdateTime).inMilliseconds > 250 ||
               received == total) {
-            _notifyListeners();
+            _notifyProgressOnly(); // Chỉ phát Stream UI, không ghi SharedPreferences liên tục
             lastUiUpdateTime = now;
           }
 
@@ -331,11 +358,23 @@ class DownloadService {
       );
 
       if (!success) {
-        if (await partFile.exists()) await partFile.delete();
-        if (task.status == DownloadStatus.paused ||
-            task.status == DownloadStatus.cancelled) {
-          // Xử lý ở logic bên dưới
+        if (task.status == DownloadStatus.cancelled) {
+          if (await partFile.exists()) await partFile.delete();
+          if (await file.exists()) await file.delete();
+          _notifyListeners();
+          if (canShowNotification) {
+            await _cancelNotificationSafely(notifId);
+          }
+          return;
+        } else if (task.status == DownloadStatus.paused) {
+          // GIỮ partFile để tiếp tục tải (Resume) mà không bị mất dữ liệu
+          _notifyListeners();
+          if (canShowNotification) {
+            await _cancelNotificationSafely(notifId);
+          }
+          return;
         } else {
+          // Lỗi mạng hoặc server: giữ partFile để retry có thể tiếp tục Range
           throw Exception('Không thể tải file từ Google Drive');
         }
       } else {
@@ -355,11 +394,7 @@ class DownloadService {
       }
 
       if (task.status == DownloadStatus.paused) {
-        if (await file.exists()) await file.delete();
-        if (await partFile.exists()) await partFile.delete();
-        task.progress = 0.0;
-        task.downloadedBytes = null;
-        task.totalBytes = null;
+        // GIỮ partFile để tiếp tục tải
         _notifyListeners();
         if (canShowNotification) {
           await _cancelNotificationSafely(notifId);
@@ -480,7 +515,6 @@ class DownloadService {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
-
     task.status = DownloadStatus.cancelled;
 
     _downloadQueue.remove(chapterId);
@@ -493,7 +527,28 @@ class DownloadService {
       } catch (e) {
         debugPrint('⚠️ Download cancel wait failed for $chapterId: $e');
       }
+    } else {
+      // Nếu task đang pause hoặc chưa tải, chủ động xóa file .part
+      try {
+        final mangaFolderPath = await FolderService.getMangaPathByTitle(task.mangaTitle);
+        final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
+        final safeChapterId = FolderService.sanitize(task.chapterId);
+        final baseFileName = safeChapterTitle.isEmpty
+            ? safeChapterId
+            : '${safeChapterTitle}_$safeChapterId';
+        String fileName = baseFileName;
+        if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
+          fileName = '$fileName.${task.fileType}';
+        }
+        final partFile = File('$mangaFolderPath/$fileName.part');
+        final file = File('$mangaFolderPath/$fileName');
+        if (await partFile.exists()) await partFile.delete();
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
     }
+
+    _cancelNotificationSafely(task.chapterId.hashCode);
+    _processQueue();
   }
 
   void pauseDownload(String chapterId) {
@@ -508,17 +563,16 @@ class DownloadService {
     }
   }
 
-  /// Tiếp tục tải xuống
+  /// Tiếp tục tải xuống (Resume từ vị trí đã tải)
   void resumeDownload(String chapterId) {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
     if (task.status == DownloadStatus.paused) {
       task.status = DownloadStatus.queued;
-      task.progress = 0.0; // Đặt lại tiến trình
       _notifyListeners();
       _processQueue();
-      debugPrint('▶️ Tiếp tục: ${task.chapterTitle}');
+      debugPrint('▶️ Tiếp tục tải: ${task.chapterTitle} (${(task.progress * 100).toInt()}%)');
     }
   }
 
@@ -564,6 +618,8 @@ class DownloadService {
       }
     }
     _notifyListeners();
+    WakelockPlus.disable();
+    BackgroundService.stop();
     debugPrint('⏸️ Tạm dừng tất cả downloads');
   }
 
@@ -583,9 +639,12 @@ class DownloadService {
   void clearQueue() {
     for (final task in _downloadQueue.values) {
       task.status = DownloadStatus.cancelled;
+      _cancelNotificationSafely(task.chapterId.hashCode);
     }
     _downloadQueue.clear();
     _notifyListeners();
+    WakelockPlus.disable();
+    BackgroundService.stop();
     debugPrint('🗑️ Đã xóa hàng đợi');
   }
 
@@ -689,6 +748,11 @@ class DownloadService {
     return 0.0;
   }
 
+  /// Cập nhật tiến độ tải cho UI (không ghi đĩa SharedPreferences liên tục)
+  void _notifyProgressOnly() {
+    _downloadController.add(Map.from(_downloadQueue));
+  }
+
   /// Thông báo cho các trình lắng nghe & Lưu trữ hàng đợi
   void _notifyListeners() {
     _downloadController.add(Map.from(_downloadQueue));
@@ -717,25 +781,18 @@ class DownloadService {
 
   Future<void> restoreQueue() async {
     try {
-      try {
-        final downloadDir = Directory(FolderService.downloadPath);
-        if (await downloadDir.exists()) {
-          await for (final entity in downloadDir.list(recursive: true)) {
-            if (entity is File && entity.path.endsWith('.part')) {
-              await entity.delete();
-              debugPrint('🧹 Deleted orphaned .part file: ${entity.path}');
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('⚠️ Error cleaning up .part files: $e');
+      final prefs = await SharedPreferences.getInstance();
+
+      // Khôi phục cấu hình số luồng tải đồng thời
+      final savedConcurrency = prefs.getInt(_concurrencyPrefsKey);
+      if (savedConcurrency != null && savedConcurrency >= 1 && savedConcurrency <= 6) {
+        _maxConcurrentDownloads = savedConcurrency;
       }
 
-      final prefs = await SharedPreferences.getInstance();
       final List<String>? jsonList = prefs.getStringList(_queuePrefsKey);
 
       if (jsonList != null && jsonList.isNotEmpty) {
-        debugPrint('📥 Restoring ${jsonList.length} tasks from queue...');
+        debugPrint('📥 Khôi phục ${jsonList.length} tác vụ trong hàng đợi...');
         for (final jsonStr in jsonList) {
           try {
             final task = DownloadTask.fromJson(jsonDecode(jsonStr));
@@ -748,6 +805,31 @@ class DownloadService {
                 task.status == DownloadStatus.cancelled) {
               continue;
             }
+
+            // Kiểm tra dung lượng partFile hiện tại để cập nhật progress thực tế
+            try {
+              final mangaFolderPath = await FolderService.getMangaPathByTitle(task.mangaTitle);
+              final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
+              final safeChapterId = FolderService.sanitize(task.chapterId);
+              final baseFileName = safeChapterTitle.isEmpty
+                  ? safeChapterId
+                  : '${safeChapterTitle}_$safeChapterId';
+              String fileName = baseFileName;
+              if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
+                fileName = '$fileName.${task.fileType}';
+              }
+              final partFile = File('$mangaFolderPath/$fileName.part');
+              if (await partFile.exists()) {
+                final partLength = await partFile.length();
+                if (partLength > 0) {
+                  task.downloadedBytes = partLength;
+                  if (task.totalBytes != null && task.totalBytes! > 0) {
+                    task.progress = (partLength / task.totalBytes!).clamp(0.0, 1.0);
+                  }
+                }
+              }
+            } catch (_) {}
+
             _downloadQueue[task.chapterId] = task;
           } catch (e) {
             debugPrint('⚠️ Error parsing task: $e');
@@ -755,9 +837,9 @@ class DownloadService {
         }
 
         _notifyListeners();
-        // Tự động tiếp tục nếu hàng đợi không trống
-        if (_downloadQueue.isNotEmpty) {
-          // Chờ một chút để các dịch vụ khác khởi tạo
+        // Tự động tiếp tục nếu có tác vụ queued
+        final hasQueued = _downloadQueue.values.any((t) => t.status == DownloadStatus.queued);
+        if (hasQueued) {
           Future.delayed(const Duration(seconds: 2), () {
             _processQueue();
           });

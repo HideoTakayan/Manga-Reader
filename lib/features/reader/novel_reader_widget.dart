@@ -1025,7 +1025,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF2C2C2E),
+      backgroundColor: Theme.of(context).cardColor,
       isScrollControlled: true,
       builder: (context) => SafeArea(
         child: SizedBox(
@@ -1102,7 +1102,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     final controller = TextEditingController();
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF2C2C2E),
+      backgroundColor: Theme.of(context).cardColor,
       isScrollControlled: true,
       builder: (context) {
         var results = <int>[];
@@ -1563,7 +1563,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     ];
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF2C2C2E),
+      backgroundColor: Theme.of(context).cardColor,
       builder: (context) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -2010,7 +2010,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               bottom: _floatingActionBottomPadding,
               child: FloatingActionButton.small(
                 heroTag: 'epub-reader-settings-${widget.storageKey}',
-                backgroundColor: const Color(0xFF2C2C2E),
+                backgroundColor: Theme.of(context).cardColor,
                 foregroundColor: Colors.white,
                 onPressed: _showReaderSettings,
                 child: const Icon(Icons.tune),
@@ -2088,7 +2088,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   Widget _buildTocDrawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Theme.of(context).cardColor,
       child: SafeArea(
         child: Column(
           children: [

@@ -571,8 +571,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return AlertDialog(
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       title: Text(
         widget.contentType.isNovel

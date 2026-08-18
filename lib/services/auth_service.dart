@@ -10,6 +10,39 @@ class AuthService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  static bool isPersistedLoggedIn = false;
+  static String persistedUid = '';
+  static String persistedEmail = '';
+  static String persistedName = '';
+
+  /// Khởi tạo trạng thái đăng nhập từ bộ nhớ máy khi app khởi động
+  static Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasPersisted = prefs.getBool('is_logged_in') ?? false;
+      final currentFirebaseUser = FirebaseAuth.instance.currentUser;
+      if (currentFirebaseUser != null) {
+        isPersistedLoggedIn = true;
+        persistedUid = currentFirebaseUser.uid;
+        persistedEmail = currentFirebaseUser.email ?? '';
+        persistedName = currentFirebaseUser.displayName ?? '';
+        await prefs.setBool('is_logged_in', true);
+        await prefs.setString('user_uid', currentFirebaseUser.uid);
+        await prefs.setString('user_email', currentFirebaseUser.email ?? '');
+        await prefs.setString('user_name', currentFirebaseUser.displayName ?? '');
+      } else if (hasPersisted) {
+        isPersistedLoggedIn = true;
+        persistedUid = prefs.getString('user_uid') ?? '';
+        persistedEmail = prefs.getString('user_email') ?? '';
+        persistedName = prefs.getString('user_name') ?? '';
+      } else {
+        isPersistedLoggedIn = false;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   /// Đăng ký tài khoản email/password + tạo Firestore profile + gửi email xác thực
   Future<void> register(String email, String password, String name) async {
     final normalizedEmail = email.trim().toLowerCase();
@@ -67,6 +100,14 @@ class AuthService {
           await prefs.setString('auth_provider', 'email');
           await prefs.setString('auth_email', email.trim().toLowerCase());
           await prefs.setString('auth_password', password.trim());
+          await prefs.setBool('is_logged_in', true);
+          await prefs.setString('user_uid', user.uid);
+          await prefs.setString('user_email', user.email ?? '');
+          await prefs.setString('user_name', user.displayName ?? 'User');
+          isPersistedLoggedIn = true;
+          persistedUid = user.uid;
+          persistedEmail = user.email ?? '';
+          persistedName = user.displayName ?? 'User';
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -130,6 +171,14 @@ class AuthService {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_provider', 'google');
+      await prefs.setBool('is_logged_in', true);
+      await prefs.setString('user_uid', userCredential.user!.uid);
+      await prefs.setString('user_email', userCredential.user!.email ?? '');
+      await prefs.setString('user_name', userCredential.user!.displayName ?? 'User');
+      isPersistedLoggedIn = true;
+      persistedUid = userCredential.user!.uid;
+      persistedEmail = userCredential.user!.email ?? '';
+      persistedName = userCredential.user!.displayName ?? 'User';
 
       // 5. Đảm bảo Firestore profile tồn tại (edge case: auth tồn tại nhưng doc bị xóa)
       final userDoc = await _db
@@ -203,7 +252,15 @@ class AuthService {
 
   /// Đăng xuất cả Firebase Auth lẫn Google Sign-In cùng lúc
   Future<void> logout() async {
+    isPersistedLoggedIn = false;
+    persistedUid = '';
+    persistedEmail = '';
+    persistedName = '';
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_logged_in', false);
+    await prefs.remove('user_uid');
+    await prefs.remove('user_email');
+    await prefs.remove('user_name');
     await prefs.remove('auth_provider');
     await prefs.remove('auth_email');
     await prefs.remove('auth_password');

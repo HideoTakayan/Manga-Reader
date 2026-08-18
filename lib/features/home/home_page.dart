@@ -99,23 +99,31 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   Future<_HomeData> _loadData({bool forceRefresh = false}) async {
-    final mangas = await DriveService.instance.getMangas(
+    // Chạy song song lấy danh sách truyện và Banner để tối đa hoá tốc độ
+    final mangasFuture = DriveService.instance.getMangas(
       forceRefresh: forceRefresh,
     );
+    final bannerFuture = FirebaseFirestore.instance
+        .collection('app_settings')
+        .doc('home_banner')
+        .get()
+        .timeout(const Duration(seconds: 2))
+        .catchError((_) => throw Exception());
+
+    final results = await Future.wait([
+      mangasFuture,
+      bannerFuture.then<DocumentSnapshot?>((d) => d).catchError((_) => null),
+    ]);
+
+    final mangas = results[0] as List<CloudManga>;
+    final bannerDoc = results[1] as DocumentSnapshot?;
 
     List<String> mangaBannerIds = [];
     List<String> novelBannerIds = [];
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('app_settings')
-          .doc('home_banner')
-          .get();
-      if (doc.exists) {
-        mangaBannerIds = List<String>.from(doc.data()?['mangaIds'] ?? []);
-        novelBannerIds = List<String>.from(doc.data()?['novelIds'] ?? []);
-      }
-    } catch (e) {
-      debugPrint('Lỗi tải banner: $e');
+    if (bannerDoc != null && bannerDoc.exists) {
+      final data = bannerDoc.data() as Map<String, dynamic>?;
+      mangaBannerIds = List<String>.from(data?['mangaIds'] ?? []);
+      novelBannerIds = List<String>.from(data?['novelIds'] ?? []);
     }
 
     return _HomeData(mangas, mangaBannerIds, novelBannerIds);
@@ -388,35 +396,64 @@ class _HomeContentState extends State<_HomeContent> {
               final allMangas = visibleCloudMangas.map(_fromCloud).toList();
 
               if (allMangas.isEmpty) {
-                // AlwaysScrollableScrollPhysics: cho phép kéo refresh ngay cả khi empty
                 return CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     SliverFillRemaining(
                       child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _selectedContentType.isNovel
-                                  ? 'Chưa có novel nào.'
-                                  : 'Chưa có truyện tranh nào.',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            // Gợi ý thêm khi chưa đăng nhập Drive OAuth
-                            if (authSnapshot.data == null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Text(
-                                  '(Bạn cần đăng nhập trong trang Quản trị để xem truyện)',
-                                  style: Theme.of(context).textTheme.bodySmall,
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.wifi_off_rounded,
+                                  size: 48,
+                                  color: Colors.white54,
                                 ),
                               ),
-                            TextButton(
-                              onPressed: _refresh,
-                              child: const Text('Tải lại'),
-                            ),
-                          ],
+                              const SizedBox(height: 16),
+                              Text(
+                                _selectedContentType.isNovel
+                                    ? 'Chưa có novel nào hoặc đang ngoại tuyến'
+                                    : 'Chưa có truyện tranh nào hoặc đang ngoại tuyến',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Bạn có thể xem các truyện & novel đã tải về máy trong Thư viện.',
+                                style: TextStyle(color: Colors.white38, fontSize: 13),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () => context.go('/my-library'),
+                                icon: const Icon(Icons.download_done_rounded, size: 18),
+                                label: const Text('Mở Thư viện & Truyện đã tải', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _refresh,
+                                child: const Text('Thử tải lại', style: TextStyle(color: Colors.white60)),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

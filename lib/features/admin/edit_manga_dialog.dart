@@ -174,9 +174,10 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
       }
 
       if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cập nhật & Đã gửi thông báo!')),
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop(true);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Đã cập nhật thông tin truyện thành công!')),
         );
       }
     } catch (e) {
@@ -210,8 +211,9 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return AlertDialog(
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       title: const Text(
         'Chỉnh Sửa Truyện',

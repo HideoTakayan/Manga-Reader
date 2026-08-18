@@ -22,6 +22,7 @@ import '../features/forum/forum_create_post_page.dart';
 import '../features/notification/notification_list_page.dart';
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/chapter_manager_page.dart';
+import '../features/group/group_dashboard_page.dart';
 import '../features/downloads/download_queue_page.dart';
 import '../features/backup/backup_restore_page.dart';
 import '../features/storage/storage_manager_page.dart';
@@ -29,6 +30,7 @@ import '../features/library/reading_analytics_page.dart';
 import '../features/reader/local_novel_reader_page.dart';
 import '../data/models_cloud.dart';
 import '../services/novel_service.dart';
+import '../services/auth_service.dart';
 import '../config/admin_config.dart';
 
 // Stream wrapper để GoRouter tự động reload khi trạng thái Firebase Auth thay đổi
@@ -56,17 +58,19 @@ final GoRouter appRouter = GoRouter(
   ),
   redirect: (context, state) {
     final user = FirebaseAuth.instance.currentUser;
+    final isAuthenticated = user != null || AuthService.isPersistedLoggedIn;
     final isGoingToLogin = state.uri.path == '/login';
 
-    // Chưa đăng nhập mà không ở trang login -> Đẩy ra trang login
-    if (user == null && !isGoingToLogin) {
+    // Bắt buộc đăng nhập: nếu chưa đăng nhập và không phải đang ở trang /login -> chuyển đến /login
+    if (!isAuthenticated && !isGoingToLogin) {
       return '/login';
     }
+
     // Đã đăng nhập mà cố vào trang login -> Đẩy về trang chủ
-    if (user != null && isGoingToLogin) {
+    if (isAuthenticated && isGoingToLogin) {
       return '/';
     }
-    // Cho phép đi tiếp
+
     return null;
   },
   routes: [
@@ -157,6 +161,15 @@ final GoRouter appRouter = GoRouter(
                       ForumPostDetailPage(postId: state.pathParameters['id']!),
                 ),
               ],
+            ),
+          ],
+        ),
+        // Index 6: Nhóm dịch
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/group',
+              builder: (_, __) => const GroupDashboardPage(),
             ),
           ],
         ),

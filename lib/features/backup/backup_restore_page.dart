@@ -36,7 +36,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     final replace = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Import backup', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const Text(

@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:manga_reader/services/auth_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'firebase_options.dart';
@@ -19,45 +20,72 @@ import 'core/utils/archive_image_extractor.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  PaintingBinding.instance.imageCache
-    ..maximumSize = 100
-    ..maximumSizeBytes = 80 << 20; // ~80MB
+  try {
+    PaintingBinding.instance.imageCache
+      ..maximumSize = 100
+      ..maximumSizeBytes = 80 << 20; // ~80MB
+  } catch (_) {}
 
   await _initFirebase();
 
   // Khởi tạo hệ thống thư mục
-  await FolderService.init();
+  try {
+    await FolderService.init();
+  } catch (e) {
+    debugPrint('⚠️ FolderService init error: $e');
+  }
 
-  // Dọn dẹp cache của Reader từ các phiên đọc trước (tránh rác hệ thống)
-  ArchiveImageExtractor.clearCache();
+  // Dọn dẹp cache rác cũ hơn 7 ngày từ các phiên trước
+  try {
+    ArchiveImageExtractor.cleanUpOldCache();
+  } catch (_) {}
 
   // Đăng ký ngôn ngữ tiếng Việt cho timeago
-  timeago.setLocaleMessages('vi', timeago.ViMessages());
+  try {
+    timeago.setLocaleMessages('vi', timeago.ViMessages());
+  } catch (_) {}
 
   // Khởi tạo Hệ thống Thông báo (Cục bộ + Trình lắng nghe Firestore)
-  await NotificationService.instance.initialize();
-  await BackgroundService.initialize();
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('⚠️ NotificationService init error: $e');
+  }
 
-  // Fix #9: Tự động sync lịch sử đọc khi user đăng nhập (hoặc kết nối mạng trở lại).
-  // authStateChanges bắn event mỗi khi login state thay đổi — đây là hook tự nhiên
-  // để trigger sync mà không cần package connectivity_plus.
-  FirebaseAuth.instance.authStateChanges().listen((user) {
-    if (user != null) {
-      Future.microtask(() => SyncService.instance.syncPendingHistory());
-    }
-  });
+  try {
+    await BackgroundService.initialize();
+  } catch (e) {
+    debugPrint('⚠️ BackgroundService init error: $e');
+  }
+
+  // Khởi tạo trạng thái đăng nhập từ bộ nhớ máy (hỗ trợ đọc offline khi mất mạng)
+  try {
+    await AuthService.init();
+  } catch (e) {
+    debugPrint('⚠️ AuthService.init error: $e');
+  }
+
+  // Tự động sync lịch sử đọc khi user đăng nhập (hoặc kết nối mạng trở lại).
+  try {
+    FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (user != null) {
+        AuthService.isPersistedLoggedIn = true;
+        AuthService.persistedUid = user.uid;
+        AuthService.persistedEmail = user.email ?? '';
+        AuthService.persistedName = user.displayName ?? '';
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('is_logged_in', true);
+        await prefs.setString('user_uid', user.uid);
+        Future.microtask(() => SyncService.instance.syncPendingHistory());
+      }
+    });
+  } catch (_) {}
 
   // Khôi phục thủ công phiên đăng nhập nếu Firebase Auth bị mất session
   if (FirebaseAuth.instance.currentUser == null) {
-    await AuthService().restoreSession();
-  }
-
-  // Đợi Firebase Auth load xong session từ ổ cứng trước khi khởi động UI.
-  // Đảm bảo GoRouter không bị sai lệch state ở frame đầu tiên.
-  try {
-    await FirebaseAuth.instance.authStateChanges().first.timeout(const Duration(seconds: 2));
-  } catch (e) {
-    debugPrint('⚠️ Timeout waiting for auth state: $e');
+    try {
+      await AuthService().restoreSession().timeout(const Duration(seconds: 1));
+    } catch (_) {}
   }
 
   try {
@@ -66,7 +94,9 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('⚠️ Drive Session Restore Failed: $e');
   }
+
   runApp(const ProviderScope(child: MangaApp()));
+
   Future.microtask(() async {
     try {
       await DriveService.instance.getMangas();
@@ -96,11 +126,13 @@ class MangaApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Luôn bắt buộc Dark Mode
+    final themeMode = ref.watch(themeProvider);
+
     return MaterialApp.router(
       title: 'Manga Reader',
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.dark, // Bắt buộc chế độ tối (Dark Mode)
+      theme: AppTheme.getTheme(themeMode),
+      darkTheme: AppTheme.getTheme(themeMode),
+      themeMode: ThemeMode.dark, // Luôn duy trì giao diện tối bảo vệ mắt
       routerConfig: appRouter,
       debugShowCheckedModeBanner: false,
       builder: EasyLoading.init(

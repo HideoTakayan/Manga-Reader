@@ -25,7 +25,7 @@ class LibraryDialogs {
             return StatefulBuilder(
               builder: (context, setDialogState) {
                 return AlertDialog(
-                  backgroundColor: const Color(0xFF212121),
+                  backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),

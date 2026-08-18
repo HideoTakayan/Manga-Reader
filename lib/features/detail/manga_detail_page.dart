@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../services/follow_service.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
@@ -15,6 +18,7 @@ import '../../services/download_service.dart';
 import '../../services/folder_service.dart';
 import '../../core/utils/chapter_sort_helper.dart';
 import '../../core/utils/chapter_utils.dart';
+import '../../core/utils/archive_image_extractor.dart';
 import '../shared/library_dialogs.dart';
 import '../shared/drive_image.dart';
 import '../catalog/catalog_cache_service.dart';
@@ -64,7 +68,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     super.dispose();
   }
 
-  /// Tải dữ liệu tổng hợp cho trang chi tiết (Chiến lược ưu tiên ngoại tuyến)
+  /// Tải dữ liệu tổng hợp cho trang chi tiết (Chiến lược ưu tiên ngoại tuyến & tức thì)
   Future<void> _fetchData() async {
     if (_manga == null) {
       if (mounted) setState(() => _isLoading = true);
@@ -75,12 +79,23 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       CloudManga? localData;
       List<CloudChapter> localChaptersList = [];
 
-      // A. Thử thông tin trong CSDL
+      // A. Thử thông tin trong SQLite CSDL cục bộ
       Manga? dbManga = await DatabaseHelper.instance.getLocalManga(
         widget.mangaId,
       );
 
-      // B. Nếu không có thông tin CSDL, khôi phục metadata từ các Chương đã Tải (Tương thích ngược)
+      // B. Nếu chưa có trong local_mangas, tìm trong Catalog Cache
+      if (dbManga == null) {
+        try {
+          final cachedCatalog = await CatalogCacheService.instance.getCachedCatalog();
+          final match = cachedCatalog.where((m) => m.id == widget.mangaId).firstOrNull;
+          if (match != null) {
+            dbManga = _cloudToLocal(match);
+          }
+        } catch (_) {}
+      }
+
+      // C. Nếu vẫn chưa có thông tin CSDL, khôi phục metadata từ các Chương đã Tải
       if (dbManga == null) {
         final downloads = await DatabaseHelper.instance.getDownloadsByManga(
           widget.mangaId,
@@ -100,21 +115,31 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             id: widget.mangaId,
             title: title,
             coverUrl: coverPath,
-            author: 'Vô danh (Offline)',
+            author: 'Chế độ Ngoại tuyến',
             description:
-                'Không có thông tin chi tiết (Tải từ phiên bản cũ hoặc chưa đồng bộ). Bạn vẫn có thể đọc bình thường.',
-            genres: [],
+                'Truyện đã tải về máy. Bạn có thể đọc ngoại tuyến bất cứ lúc nào mà không cần kết nối mạng.',
+            genres: const [],
             contentType: MangaContentType.manga,
           );
         }
       }
 
       if (dbManga != null) {
+        // Tối ưu ảnh bìa: Nếu có file cover cục bộ trên máy, ưu tiên dùng đường dẫn file
+        String coverPath = dbManga.coverUrl;
+        try {
+          if (!coverPath.startsWith('/') && !coverPath.contains('\\')) {
+            if (await FolderService.hasCover(dbManga.title)) {
+              coverPath = await FolderService.getCoverPath(dbManga.title);
+            }
+          }
+        } catch (_) {}
+
         // Tạo wrapper CloudManga cho Giao diện
         localData = CloudManga(
           id: dbManga.id,
           title: dbManga.title,
-          coverFileId: dbManga.coverUrl,
+          coverFileId: coverPath,
           author: dbManga.author,
           status: 'Offline',
           description: dbManga.description,
@@ -127,12 +152,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         final downloadedMaps = await DatabaseHelper.instance
             .getDownloadsByManga(widget.mangaId);
 
-        // 🔧 SỬA LỖI: Loại bỏ các chương tải xuống bị trùng lặp (phòng trường hợp DB có duplicate)
+        // Loại bỏ các chương tải xuống bị trùng lặp
         final Map<String, Map<String, dynamic>> uniqueDownloads = {};
         for (final d in downloadedMaps) {
           final chapterId = _readString(d, 'chapterId');
           if (chapterId.isEmpty) continue;
-          // Giữ entry mới nhất (downloadDate cao nhất)
           if (!uniqueDownloads.containsKey(chapterId) ||
               _readInt(d, 'downloadDate') >
                   _readInt(uniqueDownloads[chapterId]!, 'downloadDate')) {
@@ -143,11 +167,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         localChaptersList = uniqueDownloads.values.map((d) {
           final chapterId = _readString(d, 'chapterId');
           final chapterTitle = _readString(d, 'chapterTitle');
+          final localPath = _readString(d, 'localPath');
+          final ext = localPath.toLowerCase();
+          final fileType = ext.endsWith('.pdf') ? 'pdf' : ext.endsWith('.epub') ? 'epub' : 'cbz';
+          
           return CloudChapter(
             id: chapterId,
             title: chapterTitle.isEmpty ? chapterId : chapterTitle,
             fileId: chapterId,
-            fileType: 'cbz',
+            fileType: fileType,
             uploadedAt: DateTime.fromMillisecondsSinceEpoch(
               _readInt(d, 'downloadDate'),
             ),
@@ -155,15 +183,14 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           );
         }).toList();
 
-        // Sắp xếp số tăng dần (Khớp với Chế độ Trực tuyến)
+        // Sắp xếp số tăng dần
         localChaptersList = ChapterSortHelper.sort(localChaptersList);
       }
 
       await _fetchLocalReaderData();
 
-      // Hiển thị dữ liệu cục bộ ngay lập tức nếu có
+      // Hiển thị dữ liệu cục bộ NGAY LẬP TỨC (Không để màn hình chờ quay tròn khi offline)
       if (localData != null && mounted) {
-        // FIX: Xử lý deduplicate và sort ngay cho data offline để tránh hiển thị trùng/lộn xộn
         final processedLocal = await ChapterUtils.mergeChapters(
           [],
           localChaptersList,
@@ -174,64 +201,83 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           setState(() {
             _manga = localData;
             _chapters = processedLocal;
-            // Giữ trạng thái đang tải là true để xác minh mạng
+            _isLoading = false; // HIỂN THỊ TỨC THÌ!
             _initRecommendations();
           });
         }
       }
 
-      // --- 2. ĐỒNG BỘ MẠNG (Thử lấy dữ liệu mới) ---
-      final mangas = await DriveService.instance.getMangas(forceRefresh: true);
-      final finalManga = mangas.firstWhere(
-        (c) => c.id == widget.mangaId,
-        orElse: () => throw Exception('Không tìm thấy truyện trên máy chủ'),
-      );
+      // --- 2. ĐỒNG BỘ MẠNG TRỰC TUYẾN (Chạy ngầm, timeout nhanh 4s để không làm nghẽn máy) ---
+      try {
+        final mangasFuture = DriveService.instance.getMangas().timeout(const Duration(seconds: 4));
+        final chaptersFuture = DriveService.instance.getChapters(widget.mangaId).timeout(const Duration(seconds: 4));
 
-      final chapters = await DriveService.instance.getChapters(widget.mangaId);
+        final results = await Future.wait([mangasFuture, chaptersFuture]);
+        final mangas = results[0] as List<CloudManga>;
+        final chapters = results[1] as List<CloudChapter>;
 
-      // Lưu thông tin mới vào CSDL cục bộ
-      await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(finalManga));
-      await _fetchHistory();
-      await _fetchBookmarks();
+        final finalManga = mangas.where((c) => c.id == widget.mangaId).firstOrNull ?? _manga;
 
-      // 🔧 SỬA LỖI: Loại bỏ trùng lặp Nâng cao & Sắp xếp (Tập trung)
-      // Gọi helper để xử lý logic gộp và sắp xếp nhất quán
-      final finalChapters = await ChapterUtils.mergeChapters(
-        chapters,
-        localChaptersList,
-        widget.mangaId,
-      );
+        if (finalManga != null) {
+          // Lưu thông tin mới vào CSDL cục bộ
+          await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(finalManga));
+          await _fetchHistory();
+          await _fetchBookmarks();
 
-      if (mounted) {
-        setState(() {
-          _manga = finalManga;
-          _chapters = finalChapters;
-          _isLoading = false;
-          _initRecommendations();
-        });
-      }
-    } catch (e) {
-      debugPrint('⚠️ Network fetch failed (Offline Mode): $e');
+          final finalChapters = await ChapterUtils.mergeChapters(
+            chapters,
+            localChaptersList,
+            widget.mangaId,
+          );
 
-      // Nếu chúng ta có dữ liệu cục bộ, coi đó là trạng thái thành công (Chế độ Ngoại tuyến)
-      if (_manga != null) {
-        if (mounted) {
-          setState(() => _isLoading = false);
-          if (e.toString().contains('SocketException') ||
-              e.toString().contains('ClientException')) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Đang xem chế độ Offline'),
-                duration: Duration(seconds: 2),
-              ),
-            );
+          if (mounted) {
+            setState(() {
+              _manga = finalManga;
+              _chapters = finalChapters;
+              _isLoading = false;
+              _initRecommendations();
+            });
+            _preloadTargetChapter();
           }
         }
-      } else {
-        // Lỗi thực sự (Không có dữ liệu cục bộ, không có mạng)
-        if (mounted) setState(() => _isLoading = false);
+      } catch (e) {
+        debugPrint('⚠️ Network sync skipped (Offline Mode): $e');
+        if (mounted && _manga != null) {
+          setState(() => _isLoading = false);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error in detail _fetchData: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
+  }
+
+  /// Tự động tải trước chương đầu hoặc chương đang đọc dở vào RAM/Temp để khi bấm Đọc sẽ mở trong 0.05s
+  void _preloadTargetChapter() {
+    if (_chapters.isEmpty) return;
+    Future.microtask(() async {
+      try {
+        final targetChapterId = _history?.chapterId ?? _chapters.first.id;
+        final targetChapter = _chapters.firstWhereOrNull((c) => c.id == targetChapterId);
+        if (targetChapter == null) return;
+
+        final isDownloaded = await DatabaseHelper.instance.isChapterDownloaded(targetChapterId);
+        if (isDownloaded) return;
+
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File('${tempDir.path}/temp_online_$targetChapterId');
+        if (await tempFile.exists() && await tempFile.length() > 0) return;
+
+        debugPrint('🚀 Smart preloading target chapter: ${targetChapter.title}');
+        final success = await DriveService.instance.downloadFileToFile(targetChapterId, tempFile);
+        if (success && targetChapter.fileType != 'pdf' && targetChapter.fileType != 'epub') {
+          await ArchiveImageExtractor.extract(tempFile.path, targetChapterId);
+          debugPrint('✅ Preloaded & extracted target chapter: ${targetChapter.title}');
+        }
+      } catch (_) {}
+    });
   }
 
   void _initRecommendations() {

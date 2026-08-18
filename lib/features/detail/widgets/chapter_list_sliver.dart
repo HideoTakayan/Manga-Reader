@@ -101,48 +101,62 @@ class ChapterListSliver extends StatelessWidget {
 
                     // Nếu đang tải
                     if (task?.status == DownloadStatus.downloading) {
-                      return SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              value: task!.progress,
-                              strokeWidth: 3,
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                Colors.blue,
-                              ),
-                              backgroundColor: Colors.grey.withValues(
-                                alpha: 0.3,
-                              ),
+                      return Tooltip(
+                        message: 'Đang tải ${(task!.progress * 100).toInt()}% • Bấm để tạm dừng',
+                        child: InkWell(
+                          onTap: () => DownloadService.instance.pauseDownload(ch.id),
+                          borderRadius: BorderRadius.circular(16),
+                          child: SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: task.progress > 0 ? task.progress : null,
+                                  strokeWidth: 3,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    theme.colorScheme.primary,
+                                  ),
+                                  backgroundColor: Colors.grey.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
+                                Text(
+                                  '${(task.progress * 100).toInt()}%',
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: theme.brightness == Brightness.dark
+                                        ? Colors.white
+                                        : Colors.black,
+                                  ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              '${(task.progress * 100).toInt()}%',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: theme.brightness == Brightness.dark
-                                    ? Colors.white
-                                    : Colors.black,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       );
                     }
 
                     // Nếu đang chờ trong queue
                     if (task?.status == DownloadStatus.queued) {
-                      return SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            Colors.orange,
+                      return Tooltip(
+                        message: 'Đang chờ tải • Bấm để tạm dừng',
+                        child: InkWell(
+                          onTap: () => DownloadService.instance.pauseDownload(ch.id),
+                          borderRadius: BorderRadius.circular(16),
+                          child: SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.orange,
+                              ),
+                              backgroundColor: Colors.grey.withValues(alpha: 0.3),
+                            ),
                           ),
-                          backgroundColor: Colors.grey.withValues(alpha: 0.3),
                         ),
                       );
                     }
@@ -151,10 +165,11 @@ class ChapterListSliver extends StatelessWidget {
                     if (task?.status == DownloadStatus.paused) {
                       return IconButton(
                         icon: const Icon(
-                          Icons.pause_circle,
+                          Icons.play_circle_outline_rounded,
                           size: 28,
                           color: Colors.orange,
                         ),
+                        tooltip: 'Tiếp tục tải (${(task!.progress * 100).toInt()}%)',
                         onPressed: () {
                           DownloadService.instance.resumeDownload(ch.id);
                         },

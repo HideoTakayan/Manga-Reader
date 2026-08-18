@@ -34,7 +34,7 @@
       }
 
       function isSafeProfileUpdate() {
-        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64'];
+        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'groupId'];
         let diffKeys = request.resource.data.diff(resource.data).affectedKeys();
         let hasValidKeys = diffKeys.hasOnly(allowedKeys);
         let isValidUid = !diffKeys.hasAny(['uid']) || request.resource.data.uid == request.auth.uid;
@@ -43,7 +43,7 @@
       }
 
       function isSafeProfileCreate() {
-        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'createdAt', 'following', 'followers', 'isOnline', 'lastSeen'];
+        let allowedKeys = ['name', 'avatar', 'bio', 'readNotificationIds', 'authProvider', 'hasPassword', 'email', 'uid', 'displayName', 'updatedAt', 'avatarUrl', 'avatarBase64', 'createdAt', 'following', 'followers', 'isOnline', 'lastSeen', 'groupId'];
         let payload = request.resource.data;
 
         return payload.keys().hasOnly(allowedKeys)
@@ -164,11 +164,11 @@
       }
 
       match /users/{userId} {
-        allow read: if isOwner(userId) || isAdmin();
+        allow read: if signedIn();
         allow create: if isOwner(userId) && isSafeProfileCreate();
         allow update: if (isOwner(userId) && isSafeProfileUpdate()) ||
           (isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'isBanned', 'mutedUntil', 'mutedReason', 'mutedBy', 'moderationUpdatedAt'
+            'isBanned', 'mutedUntil', 'mutedReason', 'mutedBy', 'moderationUpdatedAt', 'groupId'
           ]));
         allow delete: if isAdmin();
 
@@ -250,7 +250,14 @@
               && exists(/databases/$(database)/documents/users/$(request.auth.uid)/following/$(resource.data.comicId))
             )
           );
-        allow create, update, delete: if isAdmin();
+        allow create: if isAdmin() || (
+          signedIn()
+          && request.resource.data.keys().hasOnly(['mangaId', 'title', 'body', 'timestamp', 'type'])
+          && request.resource.data.mangaId is string
+          && request.resource.data.title is string
+          && request.resource.data.body is string
+        );
+        allow update, delete: if isAdmin();
       }
 
       match /app_settings/{settingId} {
@@ -572,6 +579,38 @@
                 exists(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)) &&
                 isActiveForumContent(get(/databases/$(database)/documents/forumMessages/$(request.resource.data.targetId)).data)
             ));
+        allow update, delete: if isAdmin();
+      }
+
+      function isSelfJoin(resourceData, requestData) {
+        return requestData.members.size() == resourceData.members.size() + 1 &&
+               requestData.members.hasAll(resourceData.members) &&
+               requestData.members.hasAll([request.auth.uid]);
+      }
+
+      function isSelfLeave(resourceData, requestData) {
+        return resourceData.members.size() == requestData.members.size() + 1 &&
+               resourceData.members.hasAll(requestData.members) &&
+               !requestData.members.hasAny([request.auth.uid]);
+      }
+
+      match /scanlation_groups/{groupId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.leaderId == request.auth.uid;
+        allow update: if signedIn() && (
+          resource.data.leaderId == request.auth.uid ||
+          isAdmin() ||
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+            (isSelfJoin(resource.data, request.resource.data) || isSelfLeave(resource.data, request.resource.data))
+          )
+        );
+        allow delete: if isAdmin();
+      }
+
+      match /drive_access_requests/{requestId} {
+        allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+        allow create: if signedIn();
         allow update, delete: if isAdmin();
       }
 

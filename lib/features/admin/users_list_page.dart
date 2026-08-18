@@ -69,6 +69,49 @@ class UsersListPage extends StatelessWidget {
                 trailing: isBanned
                     ? const Icon(Icons.block, color: Colors.red)
                     : null,
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(isBanned ? 'Gỡ cấm người dùng' : 'Cấm người dùng'),
+                      content: Text(
+                        isBanned
+                            ? 'Bạn có chắc chắn muốn gỡ cấm cho người dùng "$name" không?'
+                            : 'Bạn có chắc chắn muốn cấm người dùng "$name" không? Người này sẽ không thể nhắn tin hoặc bình luận.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Hủy'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(doc.id)
+                                .update({'isBanned': !isBanned});
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  isBanned
+                                      ? 'Đã gỡ cấm $name'
+                                      : 'Đã cấm $name',
+                                ),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            isBanned ? 'Gỡ cấm' : 'Cấm',
+                            style: TextStyle(
+                              color: isBanned ? Colors.green : Colors.red,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               );
             },
           );

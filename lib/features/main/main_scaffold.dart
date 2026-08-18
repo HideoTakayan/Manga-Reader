@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/ui_service.dart';
 import '../../config/admin_config.dart';
 
@@ -11,14 +12,7 @@ abstract class _Branch {
   static const admin = 3;
   static const settings = 4;
   static const forum = 5;
-}
-
-// ── UI tab indices (NavigationBar) ─────────────────────────────────────────
-abstract class _Tab {
-  static const forumForUser = 3;
-  static const settingsForUser = 4;
-  static const forumForAdmin = 4;
-  static const settingsForAdmin = 5;
+  static const group = 6;
 }
 
 // MainScaffold là shell bao quanh toàn bộ app — chứa bottom navigation bar
@@ -28,37 +22,74 @@ class MainScaffold extends StatelessWidget {
   const MainScaffold({super.key, required this.navigationShell});
 
   /// Chuyển router branch index → UI tab index để highlight đúng tab.
-  int _branchToTab(int branchIndex, bool isAdmin) {
+  int _branchToTab(int branchIndex, bool isAdmin, bool hasGroup) {
+    if (branchIndex == 0 || branchIndex == 1 || branchIndex == 2) return branchIndex;
+
+    int currentTab = 3;
+
     if (isAdmin) {
-      if (branchIndex == _Branch.forum) return _Tab.forumForAdmin;
-      if (branchIndex == _Branch.settings) return _Tab.settingsForAdmin;
-      return branchIndex; // home, library, follow, admin giữ nguyên
-    } else {
-      if (branchIndex == _Branch.forum) return _Tab.forumForUser;
-      if (branchIndex == _Branch.settings) return _Tab.settingsForUser;
-      if (branchIndex == _Branch.admin) return 0; // fallback home nếu vô nhầm
-      return branchIndex;
+      if (branchIndex == _Branch.admin) return currentTab;
+      currentTab++;
+    } else if (branchIndex == _Branch.admin) {
+      return 0; // fallback home nếu vô nhầm
     }
+
+    if (hasGroup && !isAdmin) {
+      if (branchIndex == _Branch.group) return currentTab;
+      currentTab++;
+    } else if (branchIndex == _Branch.group) {
+      return 0; // fallback
+    }
+
+    if (branchIndex == _Branch.forum) return currentTab;
+    currentTab++;
+
+    if (branchIndex == _Branch.settings) return currentTab;
+
+    return 0;
   }
 
   /// Chuyển UI tab index → router branch index khi user tap tab.
-  int _tabToBranch(int tabIndex, bool isAdmin) {
+  int _tabToBranch(int tabIndex, bool isAdmin, bool hasGroup) {
+    if (tabIndex == 0 || tabIndex == 1 || tabIndex == 2) return tabIndex;
+
+    int currentTab = 3;
+
     if (isAdmin) {
-      if (tabIndex == _Tab.forumForAdmin) return _Branch.forum;
-      if (tabIndex == _Tab.settingsForAdmin) return _Branch.settings;
-      return tabIndex;
-    } else {
-      if (tabIndex == _Tab.forumForUser) return _Branch.forum;
-      if (tabIndex == _Tab.settingsForUser) return _Branch.settings;
-      return tabIndex;
+      if (tabIndex == currentTab) return _Branch.admin;
+      currentTab++;
     }
+
+    if (hasGroup && !isAdmin) {
+      if (tabIndex == currentTab) return _Branch.group;
+      currentTab++;
+    }
+
+    if (tabIndex == currentTab) return _Branch.forum;
+    currentTab++;
+
+    if (tabIndex == currentTab) return _Branch.settings;
+
+    return 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
-    final isAdmin = AdminConfig.isAdmin(currentUserEmail);
-    final navIndex = _branchToTab(navigationShell.currentIndex, isAdmin);
+    final user = FirebaseAuth.instance.currentUser;
+    final isAdmin = AdminConfig.isAdmin(user?.email);
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: user != null
+          ? FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots()
+          : const Stream.empty(),
+      builder: (context, snapshot) {
+        bool hasGroup = false;
+        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+          hasGroup = data['groupId'] != null && data['groupId'].toString().isNotEmpty;
+        }
+
+        final navIndex = _branchToTab(navigationShell.currentIndex, isAdmin, hasGroup);
 
     return Scaffold(
       body: navigationShell,
@@ -80,7 +111,13 @@ class MainScaffold extends StatelessWidget {
                       backgroundColor: Theme.of(
                         context,
                       ).bottomNavigationBarTheme.backgroundColor,
-                      indicatorColor: Colors.redAccent.withValues(alpha: 0.15),
+                      indicatorColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+                      iconTheme: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.selected)) {
+                          return IconThemeData(color: Theme.of(context).colorScheme.primary);
+                        }
+                        return const IconThemeData(color: Colors.white54);
+                      }),
                       labelTextStyle: WidgetStateProperty.all(
                         const TextStyle(
                           fontSize: 11,
@@ -91,7 +128,7 @@ class MainScaffold extends StatelessWidget {
                     child: NavigationBar(
                       selectedIndex: navIndex,
                       onDestinationSelected: (index) {
-                        final targetBranch = _tabToBranch(index, isAdmin);
+                        final targetBranch = _tabToBranch(index, isAdmin, hasGroup);
                         navigationShell.goBranch(
                           targetBranch,
                           initialLocation:
@@ -120,6 +157,12 @@ class MainScaffold extends StatelessWidget {
                             selectedIcon: Icon(Icons.admin_panel_settings),
                             label: 'Quản trị',
                           ),
+                        if (hasGroup && !isAdmin)
+                          const NavigationDestination(
+                            icon: Icon(Icons.groups_outlined),
+                            selectedIcon: Icon(Icons.groups),
+                            label: 'Nhóm dịch',
+                          ),
                         const NavigationDestination(
                           icon: Icon(Icons.forum_outlined),
                           selectedIcon: Icon(Icons.forum),
@@ -137,6 +180,8 @@ class MainScaffold extends StatelessWidget {
           );
         },
       ),
+    );
+      },
     );
   }
 }

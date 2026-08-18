@@ -30,7 +30,9 @@ class _DriveImageState extends State<DriveImage> {
   @override
   Widget build(BuildContext context) {
     if (widget.fileId.startsWith('/') ||
-        widget.fileId.contains(Platform.pathSeparator)) {
+        widget.fileId.startsWith('\\') ||
+        widget.fileId.contains('/') ||
+        widget.fileId.contains('\\')) {
       final file = File(widget.fileId);
       if (file.existsSync()) {
         return Image.file(

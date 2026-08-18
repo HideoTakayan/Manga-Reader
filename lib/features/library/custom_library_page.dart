@@ -233,7 +233,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                           ? Colors.white
                                           : Colors.white70,
                                     ),
-                                    backgroundColor: const Color(0xFF2C2C2E),
+                                    backgroundColor: Theme.of(context).cardColor,
                                     onSelected: (value) {
                                       setState(() {
                                         if (value) {
@@ -440,7 +440,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1C1C1E),
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
           title: const Text(
             'Gỡ bỏ',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -827,7 +827,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 final confirm = await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
-                                    backgroundColor: const Color(0xFF1C1C1E),
+                                    backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                                     title: const Text(
                                       'Tải xuống?',
                                       style: TextStyle(color: Colors.white),

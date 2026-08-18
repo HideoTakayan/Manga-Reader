@@ -110,7 +110,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Xóa chapter lỗi?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
@@ -199,7 +199,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Xóa chapter đã đọc xong?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
@@ -321,7 +321,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Xóa tải xuống?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(

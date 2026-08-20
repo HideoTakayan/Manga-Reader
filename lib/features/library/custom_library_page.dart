@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
@@ -649,7 +650,32 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             )
                           : const Text('Thư viện')),
                 actions: isSelectionMode
-                    ? []
+                    ? [
+                        Builder(
+                          builder: (tabCtx) {
+                            return IconButton(
+                              icon: const Icon(Icons.select_all, color: Colors.white),
+                              tooltip: 'Chọn tất cả trong mục',
+                              onPressed: () async {
+                                final tabIndex = DefaultTabController.of(tabCtx).index;
+                                final currentCat = categories[tabIndex.clamp(0, categories.length - 1)];
+                                final ids = await LibraryService.instance.streamMangasInCategory(currentCat).first;
+                                if (!mounted) return;
+                                setState(() {
+                                  if (_selectedMangaIds.containsAll(ids)) {
+                                    _selectedMangaIds.removeAll(ids);
+                                    if (_selectedMangaIds.isEmpty) {
+                                      _clearSelection();
+                                    }
+                                  } else {
+                                    _selectedMangaIds.addAll(ids);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ]
                     : [
                         IconButton(
                           icon: const Icon(Icons.sync_outlined),
@@ -748,7 +774,15 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                   tabAlignment: TabAlignment.start,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   labelPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  tabs: categories.map((cat) => Tab(text: cat)).toList(),
+                  tabs: categories.map((cat) {
+                    return GestureDetector(
+                      onLongPress: () {
+                        HapticFeedback.mediumImpact();
+                        context.push('/settings/categories');
+                      },
+                      child: Tab(text: cat),
+                    );
+                  }).toList(),
                 ),
               ),
               body: TabBarView(

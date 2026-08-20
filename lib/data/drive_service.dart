@@ -86,10 +86,19 @@ class DriveService {
     }
   }
 
-  String mediaUrl(String fileId) =>
-      'https://drive.google.com/uc?export=view&id=$fileId';
+  String mediaUrl(String fileId) => DriveConfig.getCdnOrDirectUrl(fileId);
 
   String getThumbnailLink(String fileId) => mediaUrl(fileId);
+
+  /// Gửi ping nhẹ khởi động kết nối TLS 1.3 với máy chủ CDN khi app mở
+  Future<void> preheatCdn() async {
+    if (DriveConfig.cdnProxyUrl.trim().isEmpty) return;
+    try {
+      final uri = Uri.parse(DriveConfig.cdnProxyUrl.trim());
+      await _httpClient.get(uri).timeout(const Duration(seconds: 3));
+      debugPrint('⚡ CDN Proxy connection pre-warmed');
+    } catch (_) {}
+  }
 
   // Stream phát sự kiện khi trạng thái đăng nhập Google thay đổi.
   final _authController = StreamController<GoogleSignInAccount?>.broadcast();
@@ -1199,12 +1208,17 @@ class DriveService {
           existingBytes = await file.length();
         }
 
+        final cdnUrl = DriveConfig.getDownloadUrl(fileId);
         final apiMediaUrl = Uri.parse(
           'https://www.googleapis.com/drive/v3/files/$fileId'
           '?alt=media&key=${DriveConfig.apiKey}',
         );
 
-        final req1 = http.Request('GET', apiMediaUrl);
+        final initialUrl = DriveConfig.cdnProxyUrl.trim().isNotEmpty
+            ? Uri.parse(cdnUrl)
+            : apiMediaUrl;
+
+        final req1 = http.Request('GET', initialUrl);
         if (existingBytes > 0) {
           req1.headers['Range'] = 'bytes=$existingBytes-';
         }
@@ -1372,13 +1386,18 @@ class DriveService {
           print('Đang tải file: $fileId');
         }
 
+        final cdnUrl = DriveConfig.getDownloadUrl(fileId);
         final apiMediaUrl = Uri.parse(
           'https://www.googleapis.com/drive/v3/files/$fileId'
           '?alt=media&key=${DriveConfig.apiKey}',
         );
 
+        final initialUrl = DriveConfig.cdnProxyUrl.trim().isNotEmpty
+            ? Uri.parse(cdnUrl)
+            : apiMediaUrl;
+
         http.StreamedResponse response = await _httpClient
-            .send(http.Request('GET', apiMediaUrl))
+            .send(http.Request('GET', initialUrl))
             .timeout(const Duration(seconds: 300));
 
         if (response.statusCode != 200 ||

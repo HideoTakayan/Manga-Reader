@@ -8,7 +8,8 @@ import 'forum_share_page.dart';
 import 'forum_discussion_page.dart';
 
 class ForumShellPage extends StatelessWidget {
-  const ForumShellPage({super.key});
+  final int initialIndex;
+  const ForumShellPage({super.key, this.initialIndex = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +17,7 @@ class ForumShellPage extends StatelessWidget {
 
     return DefaultTabController(
       length: 3,
+      initialIndex: initialIndex.clamp(0, 2),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Diễn đàn'),
@@ -36,7 +38,7 @@ class ForumShellPage extends StatelessWidget {
           ],
           bottom: const TabBar(
             tabs: [
-              Tab(text: 'Diễn đàn'),
+              Tab(text: 'Chat tổng'),
               Tab(text: 'Chia sẻ truyện'),
               Tab(text: 'Thảo luận'),
             ],

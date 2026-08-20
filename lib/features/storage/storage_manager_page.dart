@@ -4,9 +4,12 @@ import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdfx/pdfx.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../../data/database_helper.dart';
 import '../../services/download_service.dart';
+import '../../core/utils/archive_image_extractor.dart';
 
 class StorageManagerPage extends StatefulWidget {
   const StorageManagerPage({super.key});
@@ -91,11 +94,24 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     final sortedGroups = groups.values.toList()
       ..sort((a, b) => b.totalBytes.compareTo(a.totalBytes));
 
+    int cacheBytes = 0;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final cacheDir = Directory(p.join(tempDir.path, 'reader_cache'));
+      if (await cacheDir.exists()) {
+        final list = cacheDir.listSync(recursive: true).whereType<File>();
+        for (final f in list) {
+          cacheBytes += await f.length();
+        }
+      }
+    } catch (_) {}
+
     return _StorageSnapshot(
       totalBytes: totalBytes,
       totalChapters: rows.length,
       missingCount: missingCount,
       zeroByteCount: zeroByteCount,
+      cacheBytes: cacheBytes,
       groups: sortedGroups,
     );
   }
@@ -537,6 +553,11 @@ class _StorageSummaryCard extends StatelessWidget {
                   label: '${snapshot.groups.length} truyện',
                 ),
                 _MetricChip(
+                  icon: Icons.photo_library_outlined,
+                  label: 'Cache ảnh: ${_formatBytes(snapshot.cacheBytes)}',
+                  color: Colors.blueAccent,
+                ),
+                _MetricChip(
                   icon: snapshot.brokenCount == 0
                       ? Icons.verified
                       : Icons.warning_amber,
@@ -547,8 +568,24 @@ class _StorageSummaryCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (snapshot.brokenCount > 0) ...[
+            if (snapshot.cacheBytes > 0) ...[
               const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () async {
+                  await ArchiveImageExtractor.clearCache();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Đã dọn dẹp bộ nhớ đệm ảnh đọc truyện')),
+                    );
+                    onDeleteRead();
+                  }
+                },
+                icon: const Icon(Icons.cleaning_services),
+                label: Text('Dọn dẹp cache ảnh (${_formatBytes(snapshot.cacheBytes)})'),
+              ),
+            ],
+            if (snapshot.brokenCount > 0) ...[
+              const SizedBox(height: 8),
               FilledButton.icon(
                 onPressed: onDeleteBroken,
                 icon: const Icon(Icons.cleaning_services_outlined),
@@ -681,6 +718,7 @@ class _StorageSnapshot {
   final int totalChapters;
   final int missingCount;
   final int zeroByteCount;
+  final int cacheBytes;
   final List<_MangaStorageGroup> groups;
 
   const _StorageSnapshot({
@@ -688,6 +726,7 @@ class _StorageSnapshot {
     required this.totalChapters,
     required this.missingCount,
     required this.zeroByteCount,
+    required this.cacheBytes,
     required this.groups,
   });
 
@@ -697,6 +736,7 @@ class _StorageSnapshot {
       totalChapters: 0,
       missingCount: 0,
       zeroByteCount: 0,
+      cacheBytes: 0,
       groups: [],
     );
   }

@@ -23,6 +23,8 @@ import '../features/notification/notification_list_page.dart';
 import '../features/admin/admin_dashboard_page.dart';
 import '../features/admin/chapter_manager_page.dart';
 import '../features/group/group_dashboard_page.dart';
+import '../features/group/group_profile_page.dart';
+import '../data/models_group.dart';
 import '../features/downloads/download_queue_page.dart';
 import '../features/backup/backup_restore_page.dart';
 import '../features/storage/storage_manager_page.dart';
@@ -145,14 +147,22 @@ final GoRouter appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/forum',
-              builder: (_, __) => const ForumShellPage(),
+              builder: (context, state) {
+                final tabStr = state.uri.queryParameters['tab'];
+                final initialIndex = int.tryParse(tabStr ?? '') ?? 0;
+                return ForumShellPage(initialIndex: initialIndex);
+              },
               routes: [
                 GoRoute(
                   path: 'create',
                   builder: (context, state) {
                     final type =
                         state.uri.queryParameters['type'] ?? 'discussion';
-                    return ForumCreatePostPage(type: type);
+                    final manga = state.extra as CloudManga?;
+                    return ForumCreatePostPage(
+                      type: type,
+                      initialManga: manga,
+                    );
                   },
                 ),
                 GoRoute(
@@ -190,10 +200,11 @@ final GoRouter appRouter = GoRouter(
         mangaId: state.uri.queryParameters['mangaId'],
       ),
     ),
-    // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?genre=Action
+    // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?q=...&genre=...&type=...
     GoRoute(
       path: '/search-global',
       builder: (context, state) => SearchPage(
+        initialQuery: state.uri.queryParameters['q'],
         initialGenre: state.uri.queryParameters['genre'],
         initialContentType: state.uri.queryParameters['type'],
       ),
@@ -249,6 +260,15 @@ final GoRouter appRouter = GoRouter(
         }
         final manga = state.extra as CloudManga;
         return ChapterManagerPage(manga: manga);
+      },
+    ),
+    // Route hồ sơ nhóm dịch công khai
+    GoRoute(
+      path: '/group/profile/:id',
+      builder: (context, state) {
+        final groupId = state.pathParameters['id']!;
+        final group = state.extra as ScanlationGroup?;
+        return GroupProfilePage(groupId: groupId, initialGroup: group);
       },
     ),
   ],

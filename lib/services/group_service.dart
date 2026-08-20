@@ -8,6 +8,7 @@ class GroupService {
   GroupService._();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final Map<String, ScanlationGroup> _groupCache = {};
 
   String _generateInviteCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -156,5 +157,21 @@ class GroupService {
         return group;
       });
     });
+  }
+
+  /// Lấy thông tin nhóm theo ID (dành cho người xem công khai, có cache trong bộ nhớ)
+  Future<ScanlationGroup?> getGroupById(String groupId) async {
+    if (_groupCache.containsKey(groupId)) {
+      return _groupCache[groupId];
+    }
+    try {
+      final doc = await _firestore.collection('scanlation_groups').doc(groupId).get();
+      if (!doc.exists) return null;
+      final group = ScanlationGroup.fromFirestore(doc);
+      _groupCache[groupId] = group;
+      return group;
+    } catch (_) {
+      return null;
+    }
   }
 }

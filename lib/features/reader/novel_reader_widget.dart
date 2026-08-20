@@ -8,7 +8,6 @@ import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +19,8 @@ import 'epub/epub_lazy_chapter_loader.dart';
 
 import '../../data/database_helper.dart';
 import '../../data/models.dart';
+import '../../services/tts_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class NovelReaderWidget extends StatefulWidget {
   final String epubPath;
@@ -45,7 +46,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   static const _supportedFontFamilies = {'Default', 'serif', 'monospace'};
   static const _lazyLoadingThresholdBytes = 8 * 1024 * 1024;
 
-  final _tts = FlutterTts();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _verticalViewportKey = GlobalKey();
   final _verticalItemController = ItemScrollController();
@@ -77,19 +77,14 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   bool _showTtsPanel = false;
   bool _showControls = true;
   bool _isTtsPlaying = false;
-  bool _isTtsFromSelection = false;
   double _ttsRate = 0.5;
   double _ttsPitch = 1.0;
   String _ttsLang = 'vi-VN';
   List<Map<String, String>> _availableVoices = [];
   Map<String, String>? _selectedVoice;
-  String? _lastTtsText;
-  List<String> _ttsChunks = [];
-  int _ttsChunkIndex = 0;
 
   Timer? _progressTimer;
   Timer? _ttsSettingsTimer;
-  Timer? _sleepTimer;
   Timer? _bookSearchTimer;
   int _searchSessionId = 0;
   int _sleepTimeMinutes = 0;
@@ -120,9 +115,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   String get _resolvedBookKey =>
       _bookKey.isEmpty ? _stableKeyHash.toString() : _bookKey;
 
-  String get _mangaId => 'epub_$_resolvedBookKey';
+  String get _mangaId => widget.realMangaId ?? 'epub_$_resolvedBookKey';
 
-  String get _chapterId => 'epub_${_resolvedBookKey}_chapter_$_chapterIndex';
+  String get _chapterId => widget.realChapterId ?? 'epub_${_resolvedBookKey}_chapter_$_chapterIndex';
 
   String get _progressPrefsKey => 'epub_flutter_progress_$_mangaId';
   double get _horizontalBlockSpacing => _fontSize.toDouble() * _lineHeight;
@@ -253,8 +248,47 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _syncTtsState();
+    TtsService.instance.addListener(_onTtsServiceChanged);
+    TtsService.instance.onNextChapterRequested = () async {
+      if (mounted) {
+        final old = _chapterIndex;
+        await _nextChapter();
+        if (_chapterIndex != old && mounted) {
+          final nextText = EpubParser.formatChapterText(_currentChapter);
+          if (nextText.trim().isNotEmpty) {
+            await _startTts(nextText);
+          }
+        }
+      }
+    };
     _init();
+  }
+
+  void _onTtsServiceChanged() {
+    if (mounted) {
+      setState(() {
+        _isTtsPlaying = TtsService.instance.isPlaying;
+        _ttsRate = TtsService.instance.rate;
+        _ttsPitch = TtsService.instance.pitch;
+        _ttsLang = TtsService.instance.lang;
+        _availableVoices = TtsService.instance.availableVoices;
+        _selectedVoice = TtsService.instance.selectedVoice;
+        _sleepTimeMinutes = TtsService.instance.sleepMinutesRemaining;
+      });
+    }
+  }
+
+  void _syncTtsState() {
+    _isTtsPlaying = TtsService.instance.isPlaying;
+    _ttsRate = TtsService.instance.rate;
+    _ttsPitch = TtsService.instance.pitch;
+    _ttsLang = TtsService.instance.lang;
+    _availableVoices = TtsService.instance.availableVoices;
+    _selectedVoice = TtsService.instance.selectedVoice;
+    _sleepTimeMinutes = TtsService.instance.sleepMinutesRemaining;
   }
 
   @override
@@ -367,23 +401,16 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   void _resetForNewBook() {
     _progressTimer?.cancel();
     _ttsSettingsTimer?.cancel();
-    _sleepTimer?.cancel();
     _bookSearchTimer?.cancel();
-    _tts.stop();
     if (_verticalItemController.isAttached) {
       _verticalItemController.jumpTo(index: 0);
     }
-    _lastTtsText = null;
-    _ttsChunks = [];
-    _ttsChunkIndex = 0;
     _book = null;
     _lazyChapterLoader?.clear();
     _lazyChapterLoader = null;
     _chapterIndex = 0;
     _horizontalPageIndex = 0;
     _isCurrentBookmark = false;
-    _isTtsPlaying = false;
-    _isTtsFromSelection = false;
     _chapterSectionKeys.clear();
     _chapterPagesCache.clear();
     _windowCenterChapter = -1;
@@ -391,32 +418,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Future<void> _loadTtsSettings(SharedPreferences prefs) async {
-    final prefix = 'tts_book_$_resolvedBookKey';
-    _ttsRate =
-        prefs.getDouble('${prefix}_rate') ?? prefs.getDouble('tts_rate') ?? 0.5;
-    _ttsPitch =
-        prefs.getDouble('${prefix}_pitch') ??
-        prefs.getDouble('tts_pitch') ??
-        1.0;
-    _ttsLang =
-        prefs.getString('${prefix}_lang') ??
-        prefs.getString('tts_lang') ??
-        'vi-VN';
-    await _applyTtsSettings(restartIfPlaying: false);
-
-    _tts.setCompletionHandler(() => unawaited(_playNextTtsChunk()));
-    _tts.setErrorHandler((msg) {
-      debugPrint('TTS Error: $msg');
-      _ttsChunks = [];
-      _ttsChunkIndex = 0;
-      if (mounted) {
-        setState(() => _isTtsPlaying = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('TTS lỗi: $msg')));
-      }
-    });
-    await _loadVoicesForLang(_ttsLang);
+    _syncTtsState();
   }
 
   Future<(int, int, double, int)> _loadSavedPosition(
@@ -1010,6 +1012,32 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     if (mounted) setState(() => _isCurrentBookmark = true);
   }
 
+  Future<void> _saveQuote(String quote) async {
+    final position = _encodePosition();
+    final now = DateTime.now();
+    await DatabaseHelper.instance.saveBookmark(
+      ReaderBookmark(
+        id: '$_mangaId-$_chapterId-${position.hashCode}-${now.millisecondsSinceEpoch}',
+        mangaId: _mangaId,
+        chapterId: _chapterId,
+        pageIndex: _flowType == 0 ? _pageWithinCurrentChapter() : _chapterIndex,
+        scrollOffset: 0,
+        epubCfi: position,
+        note: quote,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã lưu trích dẫn vào Bookmark'),
+          backgroundColor: Colors.blueAccent,
+        ),
+      );
+    }
+  }
+
   String _chapterPreview(EpubChapter chapter, {int maxLength = 110}) {
     final text = EpubParser.formatChapterText(
       chapter,
@@ -1035,7 +1063,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               const ListTile(
                 leading: Icon(Icons.bookmarks, color: Colors.amber),
                 title: Text(
-                  'Danh sách bookmark',
+                  'Danh sách bookmark & trích dẫn',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -1056,6 +1084,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                             const Divider(height: 1, color: Colors.white12),
                         itemBuilder: (context, index) {
                           final bookmark = bookmarks[index];
+                          final isQuote = bookmark.note != null && bookmark.note!.isNotEmpty;
                           final parsed = _decodePosition(bookmark.epubCfi);
                           final chapterIndex = parsed?.$1.clamp(
                             0,
@@ -1065,21 +1094,39 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                               ? null
                               : _chapterAt(chapterIndex);
                           return ListTile(
-                            leading: const Icon(
-                              Icons.bookmark,
-                              color: Colors.amber,
+                            leading: Icon(
+                              isQuote ? Icons.format_quote : Icons.bookmark,
+                              color: isQuote ? Colors.cyanAccent : Colors.amber,
                             ),
                             title: Text(
-                              chapter?.title ?? 'Vị trí đã lưu',
-                              style: const TextStyle(color: Colors.white),
+                              isQuote ? '“${bookmark.note}”' : (chapter?.title ?? 'Vị trí đã lưu'),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
+                                fontWeight: isQuote ? FontWeight.w500 : FontWeight.normal,
+                              ),
+                              maxLines: isQuote ? 3 : 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              chapter == null
-                                  ? 'Không xác định được chương'
-                                  : _chapterPreview(chapter),
-                              maxLines: 2,
+                              isQuote
+                                  ? (chapter?.title ?? 'Trích dẫn')
+                                  : (chapter == null
+                                      ? 'Không xác định được chương'
+                                      : _chapterPreview(chapter)),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white60),
+                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
+                              onPressed: () async {
+                                await DatabaseHelper.instance.deleteBookmark(bookmark.id);
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  _showBookmarks();
+                                }
+                              },
                             ),
                             onTap: () {
                               Navigator.pop(context);
@@ -1294,212 +1341,51 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   return matches;
 }
 
-  Future<void> _loadVoicesForLang(String lang) async {
-    try {
-      final voices = await _tts.getVoices;
-      if (voices == null || !mounted) return;
-      final parsed = <Map<String, String>>[];
-      for (final voice in voices) {
-        if (voice is! Map) continue;
-        final locale = voice['locale']?.toString() ?? '';
-        final name = voice['name']?.toString() ?? '';
-        if (locale.toLowerCase().contains(lang.toLowerCase()) ||
-            lang.toLowerCase().contains(locale.toLowerCase())) {
-          parsed.add({'name': name, 'locale': locale});
-        }
-      }
-      setState(() {
-        _availableVoices = parsed;
-        _selectedVoice = parsed.firstOrNull;
-      });
-      if (_selectedVoice != null) {
-        await _tts.setVoice({
-          'name': _selectedVoice!['name']!,
-          'locale': _selectedVoice!['locale']!,
-        });
-      }
-    } catch (e) {
-      debugPrint('TTS getVoices error: $e');
-    }
-  }
-
   Future<void> _setTtsVoice(Map<String, String> voice) async {
-    setState(() => _selectedVoice = voice);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'tts_book_${_resolvedBookKey}_voice_name_$_ttsLang',
-      voice['name']!,
-    );
-    _scheduleTtsSettingsApply(restartIfPlaying: true);
+    await TtsService.instance.setVoice(voice);
+    _syncTtsState();
   }
 
   Future<void> _setTtsRate(double value) async {
-    if (!mounted) return;
-    setState(() => _ttsRate = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('tts_book_${_resolvedBookKey}_rate', value);
-    _scheduleTtsSettingsApply(restartIfPlaying: true);
+    await TtsService.instance.setRate(value);
+    _syncTtsState();
   }
 
   Future<void> _setTtsPitch(double value) async {
-    if (!mounted) return;
-    setState(() => _ttsPitch = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('tts_book_${_resolvedBookKey}_pitch', value);
-    _scheduleTtsSettingsApply(restartIfPlaying: true);
+    await TtsService.instance.setPitch(value);
+    _syncTtsState();
   }
 
   Future<void> _setTtsLang(String lang) async {
-    if (!mounted) return;
-    setState(() => _ttsLang = lang);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('tts_book_${_resolvedBookKey}_lang', lang);
-    await _loadVoicesForLang(lang);
-    _scheduleTtsSettingsApply(restartIfPlaying: true);
-  }
-
-  void _scheduleTtsSettingsApply({required bool restartIfPlaying}) {
-    _ttsSettingsTimer?.cancel();
-    _ttsSettingsTimer = Timer(const Duration(milliseconds: 250), () {
-      _applyTtsSettings(restartIfPlaying: restartIfPlaying);
-    });
-  }
-
-  Future<void> _applyTtsSettings({required bool restartIfPlaying}) async {
-    final text = _lastTtsText;
-    final shouldRestart = restartIfPlaying && _isTtsPlaying && text != null;
-    final restartChunkIndex = _ttsChunkIndex;
-    if (shouldRestart) {
-      _isTtsPlaying = false;
-      await _tts.stop();
-    }
-    await _tts.setLanguage(_ttsLang);
-    await _tts.setSpeechRate(_ttsRate);
-    await _tts.setPitch(_ttsPitch);
-    if (_selectedVoice != null) {
-      await _tts.setVoice({
-        'name': _selectedVoice!['name']!,
-        'locale': _selectedVoice!['locale']!,
-      });
-    }
-    if (shouldRestart && mounted) {
-      await _startTts(text, startChunkIndex: restartChunkIndex);
-    }
+    await TtsService.instance.setLanguage(lang);
+    _syncTtsState();
   }
 
   Future<void> _toggleTts() async {
-    if (_isTtsPlaying) {
-      await _tts.stop();
-      _ttsChunks = [];
-      _ttsChunkIndex = 0;
-      _isTtsFromSelection = false;
-      if (mounted) {
-        setState(() => _isTtsPlaying = false);
-      }
+    if (TtsService.instance.isPlaying) {
+      await TtsService.instance.pause();
       return;
     }
 
     if (_flowType == 0 && _windowPages.isEmpty) return;
 
     final text = _flowType == 0
-        ? _windowPages[_horizontalPageIndex.clamp(0, _windowPages.length - 1)]
-              .text
+        ? _windowPages[_horizontalPageIndex.clamp(0, _windowPages.length - 1)].text
         : EpubParser.formatChapterText(_currentChapter);
     if (text.trim().isEmpty) return;
     await _startTts(text);
   }
 
   Future<void> _startTts(String text, {int startChunkIndex = 0}) async {
-    final chunks = _splitTtsChunks(text);
-    if (chunks.isEmpty) return;
-    _lastTtsText = text;
-    _ttsChunks = chunks;
-    _ttsChunkIndex = startChunkIndex.clamp(0, chunks.length - 1).toInt();
-    await _applyTtsSettings(restartIfPlaying: false);
-    if (!mounted) return;
-    setState(() => _isTtsPlaying = true);
-    await _speakCurrentTtsChunk();
-  }
-
-  Future<void> _speakCurrentTtsChunk() async {
-    if (!_isTtsPlaying || _ttsChunks.isEmpty) return;
-    final chunk = _ttsChunks[_ttsChunkIndex].trim();
-    if (chunk.isEmpty) {
-      await _playNextTtsChunk();
-      return;
-    }
-    await _tts.speak(chunk);
-  }
-
-  Future<void> _playNextTtsChunk() async {
-    if (!_isTtsPlaying || _ttsChunks.isEmpty) return;
-    _ttsChunkIndex++;
-    if (_ttsChunkIndex >= _ttsChunks.length) {
-      _ttsChunks = [];
-      _ttsChunkIndex = 0;
-      if (mounted) {
-        setState(() => _isTtsPlaying = false);
-      }
-
-      if (_isTtsFromSelection && _flowType == 1) {
-        _isTtsFromSelection = false;
-        final oldChapter = _chapterIndex;
-        await _nextChapter();
-
-        if (_chapterIndex != oldChapter) {
-          if (mounted) {
-            final nextText = EpubParser.formatChapterText(_currentChapter);
-            if (nextText.trim().isNotEmpty) {
-              await _startTts(nextText);
-            }
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Đã đọc hết sách')));
-          }
-        }
-      }
-      return;
-    }
-    await _speakCurrentTtsChunk();
-  }
-
-  List<String> _splitTtsChunks(String text) {
-    const maxChars = 2800;
-    final source = text
-        .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .trim();
-    if (source.isEmpty) return const [];
-
-    final chunks = <String>[];
-    final buffer = StringBuffer();
-    final pieces = source.split(RegExp(r'(?<=[.!?…。！？])\s+|\n\s*\n'));
-    for (final rawPiece in pieces) {
-      final piece = rawPiece.trim();
-      if (piece.isEmpty) continue;
-      if (piece.length > maxChars) {
-        if (buffer.isNotEmpty) {
-          chunks.add(buffer.toString().trim());
-          buffer.clear();
-        }
-        for (var i = 0; i < piece.length; i += maxChars) {
-          chunks.add(piece.substring(i, min(i + maxChars, piece.length)));
-        }
-        continue;
-      }
-      if (buffer.length + piece.length + 1 > maxChars && buffer.isNotEmpty) {
-        chunks.add(buffer.toString().trim());
-        buffer.clear();
-      }
-      buffer.writeln(piece);
-    }
-    if (buffer.toString().trim().isNotEmpty) {
-      chunks.add(buffer.toString().trim());
-    }
-    return chunks;
+    await TtsService.instance.startReading(
+      mangaId: _mangaId,
+      chapterId: _chapterId,
+      chapterTitle: _currentChapter.title,
+      mangaTitle: widget.title,
+      epubPath: widget.epubPath,
+      text: text,
+      startChunkIndex: startChunkIndex,
+    );
   }
 
   Future<void> _startTtsFromSelection(
@@ -1511,7 +1397,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     if (start >= sourceText.length) return;
     final text = sourceText.substring(start).trim();
     if (text.isEmpty) return;
-    _isTtsFromSelection = true;
     await _startTts(text);
   }
 
@@ -1525,25 +1410,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     if (start >= end) return;
     final text = sourceText.substring(start, end).trim();
     if (text.isEmpty) return;
-    _isTtsFromSelection = false;
     await _startTts(text);
   }
 
   void _setSleepTimer(int minutes) {
-    _sleepTimer?.cancel();
+    TtsService.instance.setSleepTimer(minutes);
     setState(() => _sleepTimeMinutes = minutes);
-    if (minutes <= 0) return;
-    _sleepTimer = Timer(Duration(minutes: minutes), () {
-      _tts.stop();
-      _ttsChunks = [];
-      _ttsChunkIndex = 0;
-      if (mounted) {
-        setState(() {
-          _isTtsPlaying = false;
-          _sleepTimeMinutes = 0;
-        });
-      }
-    });
   }
 
   void _showColorSettings() {
@@ -1902,13 +1774,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _verticalJumpGeneration++;
+    TtsService.instance.removeListener(_onTtsServiceChanged);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _progressTimer?.cancel();
     _ttsSettingsTimer?.cancel();
-    _sleepTimer?.cancel();
     _bookSearchTimer?.cancel();
-    _tts.stop();
     _pageController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -2170,6 +2042,19 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               'https://translate.google.com/?sl=auto&tl=vi&text=${Uri.encodeComponent(selectedText)}',
             );
             launchUrl(url, mode: LaunchMode.inAppBrowserView);
+          }
+        },
+      ),
+    );
+    buttonItems.insert(
+      3,
+      ContextMenuButtonItem(
+        label: 'Lưu trích dẫn',
+        onPressed: () async {
+          ContextMenuController.removeAny();
+          final selectedText = selection.textInside(text).trim();
+          if (selectedText.isNotEmpty) {
+            await _saveQuote(selectedText);
           }
         },
       ),

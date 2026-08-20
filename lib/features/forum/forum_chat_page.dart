@@ -239,6 +239,22 @@ class _ForumChatPageState extends State<ForumChatPage> {
     }
   }
 
+  void _mentionUser(String authorName) {
+    final currentText = _messageController.text;
+    final mention = '@$authorName ';
+    if (currentText.isEmpty) {
+      _messageController.text = mention;
+    } else if (currentText.endsWith(' ')) {
+      _messageController.text = '$currentText$mention';
+    } else {
+      _messageController.text = '$currentText $mention';
+    }
+    _messageController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _messageController.text.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -405,6 +421,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           _focusNode.requestFocus();
                         });
                       },
+                      onMention: () => _mentionUser(message.authorName),
                     );
                   },
                 ),

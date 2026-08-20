@@ -6,6 +6,7 @@ import '../../data/drive_service.dart';
 import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum GenreFilterState { none, included, excluded }
 
@@ -15,9 +16,15 @@ enum SearchSortMode { updated, views, title }
 // Hỗ trợ: tìm theo tên/tác giả + filter thể loại (include/exclude) + filter trạng thái.
 // initialGenre: mở trang với genre được pre-select (navigate từ genre chip ở HomePage)
 class SearchPage extends StatefulWidget {
+  final String? initialQuery;
   final String? initialGenre;
   final String? initialContentType;
-  const SearchPage({super.key, this.initialGenre, this.initialContentType});
+  const SearchPage({
+    super.key,
+    this.initialQuery,
+    this.initialGenre,
+    this.initialContentType,
+  });
 
   @override
   State<SearchPage> createState() => _SearchPageState();
@@ -37,21 +44,84 @@ class _SearchPageState extends State<SearchPage> {
 
   // Debounce timer: chỏ 200ms sau khi user dừng gõ mới filter
   Timer? _debounce;
+  final TextEditingController _textController = TextEditingController();
+  List<String> _recentSearches = [];
 
   @override
   void initState() {
     super.initState();
     contentType = parseContentType(widget.initialContentType);
+    if (widget.initialQuery != null && widget.initialQuery!.trim().isNotEmpty) {
+      query = widget.initialQuery!.trim();
+      _textController.text = query;
+    }
     if (widget.initialGenre != null) {
       genreFilters[widget.initialGenre!] = GenreFilterState.included;
     }
+    _loadRecentSearches();
     _loadMangas();
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _textController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _recentSearches = prefs.getStringList('recent_searches_${contentType.name}') ?? [];
+      });
+    }
+  }
+
+  Future<void> _saveRecentSearch(String term) async {
+    final trimmed = term.trim();
+    if (trimmed.isEmpty) return;
+    final list = List<String>.from(_recentSearches);
+    list.remove(trimmed);
+    list.insert(0, trimmed);
+    if (list.length > 8) list.removeRange(8, list.length);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('recent_searches_${contentType.name}', list);
+    if (mounted) {
+      setState(() => _recentSearches = list);
+    }
+  }
+
+  Future<void> _clearRecentSearches() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Xóa lịch sử tìm kiếm?'),
+        content: const Text(
+          'Toàn bộ từ khóa tìm kiếm gần đây sẽ bị xóa khỏi máy của bạn.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xóa', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('recent_searches_${contentType.name}');
+    if (mounted) {
+      setState(() => _recentSearches = []);
+    }
   }
 
   // Load toàn bộ catalog một lần duy nhất — filter chạy client-side sau đó
@@ -273,20 +343,38 @@ class _SearchPageState extends State<SearchPage> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: TextField(
+            controller: _textController,
             autofocus: true,
             onChanged: (val) {
               // Debounce 200ms: chỏ user dừng gõ mới rebuild kết quả
               if (_debounce?.isActive ?? false) _debounce!.cancel();
               _debounce = Timer(const Duration(milliseconds: 200), () {
                 setState(() => query = val);
+                if (val.trim().length >= 2) {
+                  _saveRecentSearch(val);
+                }
               });
+            },
+            onSubmitted: (val) {
+              if (val.trim().isNotEmpty) {
+                _saveRecentSearch(val);
+              }
             },
             style: Theme.of(context).textTheme.bodyLarge,
             decoration: InputDecoration(
               hintText: contentType.isNovel ? 'Tìm novel...' : 'Tìm truyện...',
               hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // Adjust for center alignment
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              suffixIcon: query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                      onPressed: () {
+                        _textController.clear();
+                        setState(() => query = '');
+                      },
+                    )
+                  : null,
             ),
           ),
         ),
@@ -324,11 +412,86 @@ class _SearchPageState extends State<SearchPage> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Builder(
-              builder: (context) {
-                final normalizedQuery = CatalogCacheService.instance.normalize(
-                  query,
-                );
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (query.isEmpty && _recentSearches.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.history_rounded, size: 18, color: Colors.orangeAccent.withValues(alpha: 0.9)),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Tìm kiếm gần đây',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            InkWell(
+                              onTap: _clearRecentSearches,
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Text('Xóa tất cả', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _recentSearches.map((term) {
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                _textController.text = term;
+                                setState(() => query = term);
+                                _saveRecentSearch(term);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.search, size: 14, color: Colors.white54),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      term,
+                                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(color: Colors.white10, height: 1),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final normalizedQuery = CatalogCacheService.instance.normalize(
+                        query,
+                      );
                 final mangas = allMangas.where((c) {
                   final searchText = CatalogCacheService.instance.normalize(
                     '${c.title} ${c.author} ${c.genres.join(' ')}',
@@ -508,6 +671,9 @@ class _SearchPageState extends State<SearchPage> {
                 );
               },
             ),
+          ),
+        ],
+      ),
     );
   }
 }

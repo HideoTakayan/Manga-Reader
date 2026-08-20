@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
 import '../../../data/models_cloud.dart';
+import '../../../data/models_group.dart';
 import '../../../services/interaction_service.dart';
+import '../../../services/group_service.dart';
+import '../../../services/library_status_service.dart';
 import '../../shared/drive_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
@@ -109,25 +113,48 @@ class MangaHeaderSection extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.person_outline,
-                          size: 16,
-                          color: Colors.white70,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            manga.author,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
+                    InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: manga.author.trim().isEmpty
+                          ? null
+                          : () {
+                              context.push(
+                                Uri(
+                                  path: '/search-global',
+                                  queryParameters: {
+                                    'q': manga.author.trim(),
+                                    'type': manga.contentType.name,
+                                  },
+                                ).toString(),
+                              );
+                            },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.person_outline,
+                              size: 16,
+                              color: Colors.orangeAccent,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                manga.author,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Colors.white54,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -161,6 +188,52 @@ class MangaHeaderSection extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (manga.uploaderGroupId != null && manga.uploaderGroupId!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      FutureBuilder<ScanlationGroup?>(
+                        future: GroupService.instance.getGroupById(manga.uploaderGroupId!),
+                        builder: (context, snapshot) {
+                          final group = snapshot.data;
+                          if (group == null) return const SizedBox.shrink();
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () {
+                              context.push(
+                                '/group/profile/${group.id}',
+                                extra: group,
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.groups_2_outlined,
+                                    size: 16,
+                                    color: Colors.lightBlueAccent,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      'Nhóm dịch: ${group.name}',
+                                      style: const TextStyle(
+                                        color: Colors.lightBlueAccent,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.lightBlueAccent,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     StreamBuilder<Map<String, int>>(
                       stream: InteractionService.instance.streamMangaStats(
@@ -211,6 +284,8 @@ class MangaHeaderSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     _RatingWidget(mangaId: manga.id),
+                    const SizedBox(height: 10),
+                    _ReadingStatusChip(mangaId: manga.id),
                   ],
                 ),
               ),
@@ -317,5 +392,150 @@ class _RatingWidgetState extends State<_RatingWidget> {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
+class _ReadingStatusChip extends StatefulWidget {
+  final String mangaId;
+  const _ReadingStatusChip({required this.mangaId});
+
+  @override
+  State<_ReadingStatusChip> createState() => _ReadingStatusChipState();
+}
+
+class _ReadingStatusChipState extends State<_ReadingStatusChip> {
+  LibraryStatusEntry? _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStatus();
+  }
+
+  Future<void> _loadStatus() async {
+    final entry = await LibraryStatusService.instance.getEntry(widget.mangaId);
+    if (mounted) setState(() => _entry = entry);
+  }
+
+  void _showStatusDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Text(
+                    'Trạng thái đọc',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const Divider(color: Colors.white12),
+                ...MangaReadingStatus.values.map((status) {
+                  final isSelected = _entry?.status == status;
+                  final (label, icon, color) = _statusInfo(status);
+                  return ListTile(
+                    leading: Icon(icon, color: color),
+                    title: Text(
+                      label,
+                      style: TextStyle(
+                        color: isSelected ? color : Colors.white,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                    trailing: isSelected ? Icon(Icons.check, color: color) : null,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await LibraryStatusService.instance.setStatus(widget.mangaId, status);
+                      _loadStatus();
+                    },
+                  );
+                }),
+                if (_entry != null) ...[
+                  const Divider(color: Colors.white12),
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    title: const Text('Xóa trạng thái', style: TextStyle(color: Colors.redAccent)),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await LibraryStatusService.instance.removeEntry(widget.mangaId);
+                      _loadStatus();
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  (String, IconData, Color) _statusInfo(MangaReadingStatus status) {
+    switch (status) {
+      case MangaReadingStatus.reading:
+        return ('Đang đọc', Icons.menu_book, Colors.tealAccent);
+      case MangaReadingStatus.completed:
+        return ('Đã hoàn thành', Icons.check_circle_outline, Colors.greenAccent);
+      case MangaReadingStatus.paused:
+        return ('Tạm dừng', Icons.pause_circle_outline, Colors.amberAccent);
+      case MangaReadingStatus.planToRead:
+        return ('Dự định đọc', Icons.bookmark_outline, Colors.blueAccent);
+      case MangaReadingStatus.dropped:
+        return ('Bỏ dở', Icons.cancel_outlined, Colors.redAccent);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _entry?.status;
+    final (label, icon, color) = status != null
+        ? _statusInfo(status)
+        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Colors.white60);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: _showStatusDialog,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: (status != null ? color : Colors.white).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: (status != null ? color : Colors.white30).withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
   }
 }

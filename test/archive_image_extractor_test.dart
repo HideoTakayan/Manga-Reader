@@ -40,7 +40,7 @@ void main() {
     await tempFile.writeAsBytes([1, 2, 3]);
     final imagePaths = await ArchiveImageExtractor.extract(
       tempFile.path,
-      'test_chapter',
+      'invalid_test_chapter',
     );
 
     expect(imagePaths, isEmpty);

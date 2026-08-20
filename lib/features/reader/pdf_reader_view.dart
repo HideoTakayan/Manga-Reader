@@ -48,15 +48,17 @@ class PdfReaderViewState extends State<PdfReaderView> {
   }
 
   void _initControllers(PdfDocument doc) {
+    final pageCount = doc.pagesCount;
+    final targetPage = (widget.initialPage + 1).clamp(1, pageCount > 0 ? pageCount : 1);
     if (widget.scrollDirection == Axis.vertical) {
       _pdfPinchController = PdfControllerPinch(
         document: Future.value(doc),
-        initialPage: widget.initialPage + 1,
+        initialPage: targetPage,
       );
     } else {
       _pdfController = PdfController(
         document: Future.value(doc),
-        initialPage: widget.initialPage + 1,
+        initialPage: targetPage,
       );
     }
     setState(() => _isLoading = false);
@@ -92,13 +94,15 @@ class PdfReaderViewState extends State<PdfReaderView> {
       }
     } else if (oldWidget.initialPage != widget.initialPage && !_isLoading) {
       // Jump to the new page when bookmark is clicked
+      final pageCount = _document?.pagesCount ?? 1;
+      final targetPage = (widget.initialPage + 1).clamp(1, pageCount > 0 ? pageCount : 1);
       if (widget.scrollDirection == Axis.vertical) {
-        if (_pdfPinchController != null && _pdfPinchController!.page != widget.initialPage + 1) {
-          _pdfPinchController!.jumpToPage(widget.initialPage + 1);
+        if (_pdfPinchController != null && _pdfPinchController!.page != targetPage) {
+          _pdfPinchController!.jumpToPage(targetPage);
         }
       } else {
-        if (_pdfController != null && _pdfController!.page != widget.initialPage + 1) {
-          _pdfController!.jumpToPage(widget.initialPage + 1);
+        if (_pdfController != null && _pdfController!.page != targetPage) {
+          _pdfController!.jumpToPage(targetPage);
         }
       }
     }

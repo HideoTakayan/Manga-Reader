@@ -13,8 +13,13 @@ import 'widgets/manga_picker_sheet.dart';
 
 class ForumCreatePostPage extends StatefulWidget {
   final String type; // 'discussion' or 'manga_share'
+  final CloudManga? initialManga;
 
-  const ForumCreatePostPage({super.key, this.type = 'discussion'});
+  const ForumCreatePostPage({
+    super.key,
+    this.type = 'discussion',
+    this.initialManga,
+  });
 
   @override
   State<ForumCreatePostPage> createState() => _ForumCreatePostPageState();
@@ -34,6 +39,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
   @override
   void initState() {
     super.initState();
+    _selectedManga = widget.initialManga;
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
         setState(() {

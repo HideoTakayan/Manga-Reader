@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 
 // Trang danh sách truyện đang theo dõi.
@@ -19,6 +20,14 @@ class FollowingPage extends StatefulWidget {
 class _FollowingPageState extends State<FollowingPage> {
   // _refreshKey: tăng lên khi pull-to-refresh → FutureBuilder tạo Future mới
   int _refreshKey = 0;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // Lọc từ toàn bộ catalog Drive chỉ lấy các manga user đang theo dõi
   Future<List<CloudManga>> _getFollowedMangas(List<String> followedIds) async {
@@ -152,95 +161,201 @@ class _FollowingPageState extends State<FollowingPage> {
               );
             }
 
-            return RefreshIndicator(
-              onRefresh: _handleRefresh,
-              child: ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                itemCount: mangas.length,
-                itemBuilder: (context, index) {
-                  final manga = mangas[index];
-                  return Container(
-                    height: 120,
-                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            final query =
+                CatalogCacheService.instance.normalize(_searchQuery);
+            final filteredMangas = mangas.where((m) {
+              if (query.isEmpty) return true;
+              final normTitle =
+                  CatalogCacheService.instance.normalize(m.title);
+              final normAuthor =
+                  CatalogCacheService.instance.normalize(m.author);
+              return normTitle.contains(query) ||
+                  normAuthor.contains(query);
+            }).toList();
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Container(
+                    height: 38,
                     decoration: BoxDecoration(
                       color: Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      borderRadius: BorderRadius.circular(19),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => context.push('/detail/${manga.id}'),
-                      child: Row(
-                        children: [
-                          DriveImage(
-                            fileId: manga.coverFileId,
-                            width: 85,
-                            height: 120,
-                            fit: BoxFit.cover,
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    manga.title,
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                    child: TextField(
+                      controller: _searchController,
+                      style:
+                          const TextStyle(fontSize: 13, color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Tìm theo tên truyện hoặc tác giả...',
+                        hintStyle: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 13,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 16,
+                          color: Colors.white54,
+                        ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(
+                                  Icons.clear,
+                                  size: 14,
+                                  color: Colors.white54,
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      onChanged: (val) =>
+                          setState(() => _searchQuery = val.trim()),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _handleRefresh,
+                    child: filteredMangas.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 120),
+                              Center(
+                                child: Text(
+                                  'Không tìm thấy truyện phù hợp',
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 14,
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Tác giả: ${manga.author}',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            itemCount: filteredMangas.length,
+                            itemBuilder: (context, index) {
+                              final manga = filteredMangas[index];
+                              return Container(
+                                height: 120,
+                                margin: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).cardColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const Spacer(),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  ],
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () =>
+                                      context.push('/detail/${manga.id}'),
+                                  child: Row(
                                     children: [
-                                      _ContentTypeBadge(type: manga.contentType),
-                                      Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.redAccent.withValues(alpha: 0.15),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.play_arrow_rounded,
-                                          color: Colors.redAccent,
-                                          size: 20,
+                                      DriveImage(
+                                        fileId: manga.coverFileId,
+                                        width: 85,
+                                        height: 120,
+                                        fit: BoxFit.cover,
+                                      ),
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                manga.title,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 16,
+                                                    ),
+                                                maxLines: 2,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Tác giả: ${manga.author}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: Colors.grey,
+                                                    ),
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                              ),
+                                              const Spacer(),
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  _ContentTypeBadge(
+                                                    type: manga.contentType,
+                                                  ),
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(6),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.redAccent
+                                                          .withValues(
+                                                        alpha: 0.15,
+                                                      ),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.play_arrow_rounded,
+                                                      color: Colors.redAccent,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              );
+                            },
                           ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             );
           },
         );

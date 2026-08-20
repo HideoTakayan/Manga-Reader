@@ -273,9 +273,12 @@ class NotificationService {
         <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
     var followingIds = <String>{};
     var readIds = <String>{};
+    var dismissedIds = <String>{};
 
     void emitMerged() {
-      final merged = [...globalNotifs, ...forumNotifs];
+      final merged = [...globalNotifs, ...forumNotifs]
+          .where((note) => !dismissedIds.contains(note.id))
+          .toList();
       merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _latestUserNotifications = merged;
       controller.add(merged);
@@ -285,6 +288,7 @@ class NotificationService {
       final mergedById = <String, AppNotification>{};
       for (final sourceMap in globalBySource.values) {
         for (final entry in sourceMap.entries) {
+          if (dismissedIds.contains(entry.key)) continue;
           mergedById[entry.key] = entry.value.copyWith(
             isRead: readIds.contains(entry.key),
           );
@@ -418,11 +422,13 @@ class NotificationService {
           (snapshot) {
             final data = snapshot.data();
             readIds = Set<String>.from(data?['readNotificationIds'] ?? []);
+            dismissedIds = Set<String>.from(data?['dismissedNotificationIds'] ?? []);
             rebuildGlobalNotifs();
           },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('User notification state stream error: $error');
             readIds = <String>{};
+            dismissedIds = <String>{};
             rebuildGlobalNotifs();
           },
         );
@@ -651,6 +657,75 @@ class NotificationService {
     }
 
     await commitBatchIfNeeded(force: true);
+  }
+
+  Future<void> deleteNotification(AppNotification note) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+
+    if (note.source == 'forum') {
+      try {
+        await _db
+            .collection('users')
+            .doc(userId)
+            .collection('forum_notifications')
+            .doc(note.id)
+            .delete();
+      } catch (e) {
+        debugPrint('Error deleting forum notification: $e');
+      }
+    }
+
+    await _db
+        .collection('users')
+        .doc(userId)
+        .set({
+          'dismissedNotificationIds': FieldValue.arrayUnion([note.id]),
+        }, SetOptions(merge: true));
+  }
+
+  Future<void> clearReadNotifications(List<AppNotification> notifications) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null || notifications.isEmpty) return;
+
+    final readNotes = notifications.where((n) => n.isRead).toList();
+    if (readNotes.isEmpty) return;
+
+    final dismissedIds = <String>[];
+    var batch = _db.batch();
+    var batchWrites = 0;
+
+    Future<void> commitBatchIfNeeded({bool force = false}) async {
+      if (batchWrites == 0 || (!force && batchWrites < 450)) return;
+      await batch.commit();
+      batch = _db.batch();
+      batchWrites = 0;
+    }
+
+    for (final note in readNotes) {
+      dismissedIds.add(note.id);
+      if (note.source == 'forum') {
+        final ref = _db
+            .collection('users')
+            .doc(userId)
+            .collection('forum_notifications')
+            .doc(note.id);
+        batch.delete(ref);
+        batchWrites++;
+        await commitBatchIfNeeded();
+      }
+    }
+
+    await commitBatchIfNeeded(force: true);
+
+    if (dismissedIds.isNotEmpty) {
+      await _db
+          .collection('users')
+          .doc(userId)
+          .set({
+            'dismissedNotificationIds': FieldValue.arrayUnion(dismissedIds),
+          }, SetOptions(merge: true));
+    }
   }
 
   final Set<String> _processedIds = {};

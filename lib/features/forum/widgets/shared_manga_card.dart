@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../shared/drive_image.dart';
 
 class SharedMangaCard extends StatelessWidget {
   final String mangaId;
@@ -39,15 +39,12 @@ class SharedMangaCard extends StatelessWidget {
                 topLeft: Radius.circular(8),
                 bottomLeft: Radius.circular(8),
               ),
-              child: CachedNetworkImage(
-                imageUrl: coverUrl,
+              child: SizedBox(
                 width: 80,
                 height: 120,
-                fit: BoxFit.cover,
-                errorWidget: (context, url, error) => const SizedBox(
-                  width: 80,
-                  height: 120,
-                  child: Center(child: Icon(Icons.error)),
+                child: DriveImage(
+                  fileId: coverUrl,
+                  fit: BoxFit.cover,
                 ),
               ),
             ),

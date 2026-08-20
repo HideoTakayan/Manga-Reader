@@ -7,6 +7,9 @@ import 'package:path/path.dart' as p;
 class ArchiveImageExtractor {
   ArchiveImageExtractor._();
 
+  static const int maxCacheSizeBytes = 500 * 1024 * 1024; // 500MB
+  static const int targetCacheSizeBytes = 300 * 1024 * 1024; // 300MB
+
   static Future<List<String>> extract(String filePath, String chapterId) async {
     final tempDir = await getTemporaryDirectory();
     final cacheDir = Directory(p.join(tempDir.path, 'reader_cache', chapterId));
@@ -60,34 +63,56 @@ class ArchiveImageExtractor {
     }
   }
 
+  /// Tự động dọn dẹp cache cũ theo thời gian (>= 3 ngày) và theo tổng dung lượng (> 500MB)
   static Future<void> cleanUpOldCache() async {
     try {
       final tempDir = await getTemporaryDirectory();
-      
+
       // 1. Dọn thư mục reader_cache (ảnh giải nén)
       final cacheDir = Directory(p.join(tempDir.path, 'reader_cache'));
       if (await cacheDir.exists()) {
         final now = DateTime.now();
-        final entities = cacheDir.listSync();
-        for (final entity in entities) {
-          if (entity is Directory) {
-            final stat = await entity.stat();
-            if (now.difference(stat.modified).inDays >= 7) {
-              await entity.delete(recursive: true);
-              debugPrint('🧹 Cleaned old extracted cache: ${entity.path}');
-            }
+        final entities = cacheDir.listSync().whereType<Directory>().toList();
+
+        // 1.1 Xóa các folder đã cũ hơn 3 ngày
+        final remainingDirs = <(Directory, DateTime, int)>[];
+        for (final dir in entities) {
+          final stat = await dir.stat();
+          if (now.difference(stat.modified).inDays >= 3) {
+            await dir.delete(recursive: true);
+            debugPrint('🧹 Cleaned old extracted cache (>=3d): ${dir.path}');
+          } else {
+            int dirSize = 0;
+            try {
+              for (final f in dir.listSync().whereType<File>()) {
+                dirSize += await f.length();
+              }
+            } catch (_) {}
+            remainingDirs.add((dir, stat.modified, dirSize));
+          }
+        }
+
+        // 1.2 Nếu tổng dung lượng còn lại vượt quá 500MB, xóa tiếp các folder cũ nhất (LRU)
+        int totalSize = remainingDirs.fold(0, (sum, item) => sum + item.$3);
+        if (totalSize > maxCacheSizeBytes) {
+          remainingDirs.sort((a, b) => a.$2.compareTo(b.$2)); // Cũ nhất lên đầu
+          for (final item in remainingDirs) {
+            if (totalSize <= targetCacheSizeBytes) break;
+            await item.$1.delete(recursive: true);
+            totalSize -= item.$3;
+            debugPrint('🧹 LRU Cleaned extracted cache (${item.$3 ~/ 1024} KB): ${item.$1.path}');
           }
         }
       }
 
       // 2. Dọn file temp_online_*
       final tempFiles = tempDir.listSync().whereType<File>().where(
-        (f) => p.basename(f.path).startsWith('temp_online_')
+        (f) => p.basename(f.path).startsWith('temp_online_'),
       );
       final now = DateTime.now();
       for (final file in tempFiles) {
         final stat = await file.stat();
-        if (now.difference(stat.modified).inDays >= 7) {
+        if (now.difference(stat.modified).inDays >= 2) {
           await file.delete();
           debugPrint('🧹 Cleaned old temp online file: ${file.path}');
         }
@@ -117,7 +142,6 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
       if (!_isSupportedImage(name)) continue;
 
       final content = file.content;
-      // Guard null và kiểu không hợp lệ (content có thể null khi ZIP entry bị corrupt)
       if (content == null) continue;
       Uint8List fileBytes;
       if (content is Uint8List) {
@@ -129,7 +153,6 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
       }
 
       final ext = p.extension(name);
-      // Đặt tên file theo thứ tự index để dễ quản lý, tránh lỗi tên file chứa ký tự lạ
       final fileName = 'page_${index.toString().padLeft(4, '0')}$ext';
       final outFile = File(p.join(outPath, fileName));
       outFile.writeAsBytesSync(fileBytes);
@@ -149,7 +172,10 @@ bool _isSupportedImage(String name) {
   return name.endsWith('.jpg') ||
       name.endsWith('.jpeg') ||
       name.endsWith('.png') ||
-      name.endsWith('.webp');
+      name.endsWith('.webp') ||
+      name.endsWith('.avif') ||
+      name.endsWith('.bmp') ||
+      name.endsWith('.gif');
 }
 
 int _naturalCompare(String a, String b) {

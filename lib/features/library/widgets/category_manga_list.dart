@@ -6,6 +6,7 @@ import '../../../data/content_type.dart';
 import '../../../services/library_service.dart';
 import '../../../services/library_status_service.dart';
 import '../../../data/database_helper.dart';
+import '../../catalog/catalog_cache_service.dart';
 import '../../shared/drive_image.dart';
 import '../../../services/novel_service.dart';
 import '../../../services/folder_service.dart';
@@ -141,10 +142,15 @@ class CategoryMangaList extends StatelessWidget {
                 .toList();
 
             // Áp dụng search + status filter
+            final normalizedQuery = CatalogCacheService.instance.normalize(
+              searchQuery,
+            );
             final filteredMangas = allMangasInCat.where((m) {
-              final matchesSearch = m.title.toLowerCase().contains(
-                searchQuery.toLowerCase(),
+              final searchText = CatalogCacheService.instance.normalize(
+                '${m.title} ${m.author}',
               );
+              final matchesSearch =
+                  normalizedQuery.isEmpty || searchText.contains(normalizedQuery);
               bool matchesStatus = true;
               if (selectedStatuses.isNotEmpty) {
                 // Map label UI → keyword trong status string từ Drive

@@ -8,6 +8,7 @@ import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/history_service.dart';
 import '../../services/novel_service.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 
 // Trang lịch sử đọc truyện — dùng FutureBuilder thủ công (không dùng StreamBuilder)
@@ -24,11 +25,19 @@ class _HistoryPageState extends State<HistoryPage> {
   List<CloudManga> _mangas = [];
   List<LocalNovel> _localNovels = [];
   bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _initData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   // Load dữ liệu: tải catalog Drive + gộp lịch sử local/cloud
@@ -140,6 +149,96 @@ class _HistoryPageState extends State<HistoryPage> {
     }
   }
 
+  Future<void> _deleteSingleHistory(ReadingHistory item, String mangaTitle) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final mangaId = item.mangaId;
+
+    setState(() {
+      _historyList.removeWhere((h) => h.mangaId == mangaId);
+    });
+
+    try {
+      await DatabaseHelper.instance.deleteHistoryForManga('guest', mangaId);
+      if (userId != null) {
+        await DatabaseHelper.instance.deleteHistoryForManga(userId, mangaId);
+        await HistoryService.instance.deleteHistory(mangaId);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã xóa "$mangaTitle" khỏi lịch sử'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error deleting single history: $e');
+    }
+  }
+
+  CloudManga _resolveManga(ReadingHistory item) {
+    return _mangas.firstWhere(
+      (c) => c.id == item.mangaId,
+      orElse: () {
+        if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
+          final novelPath =
+              item.mangaId.substring('LOCAL_NOVEL|'.length);
+          final localNovel = _localNovels.firstWhere(
+            (n) => n.path == novelPath,
+            orElse: () => LocalNovel(
+              path: novelPath,
+              title: item.chapterTitle ?? 'Truyện không tồn tại',
+              importedAt: DateTime.now(),
+            ),
+          );
+          return CloudManga(
+            id: item.mangaId,
+            title: localNovel.title,
+            author: 'Local',
+            description: '',
+            coverFileId: localNovel.coverPath.isNotEmpty
+                ? localNovel.coverPath
+                : 'local_novel_placeholder',
+            genres: [],
+            status: '',
+            viewCount: 0,
+            likeCount: 0,
+            updatedAt: localNovel.importedAt,
+            contentType: MangaContentType.novel,
+          );
+        }
+        return CloudManga(
+          id: item.mangaId,
+          title: 'Truyện không tồn tại',
+          author: 'Không rõ tác giả',
+          description: '',
+          coverFileId: '',
+          genres: [],
+          status: '',
+          viewCount: 0,
+          likeCount: 0,
+          updatedAt: DateTime.now(),
+        );
+      },
+    );
+  }
+
+  List<ReadingHistory> get _filteredHistoryList {
+    if (_searchQuery.isEmpty) return _historyList;
+    final query = CatalogCacheService.instance.normalize(_searchQuery);
+    return _historyList.where((item) {
+      final manga = _resolveManga(item);
+      final normTitle = CatalogCacheService.instance.normalize(manga.title);
+      final normAuthor = CatalogCacheService.instance.normalize(manga.author);
+      final normChapter =
+          CatalogCacheService.instance.normalize(item.chapterTitle ?? '');
+      return normTitle.contains(query) ||
+          normAuthor.contains(query) ||
+          normChapter.contains(query);
+    }).toList();
+  }
+
   void _showDeleteConfirmDialog() {
     showDialog(
       context: context,
@@ -212,6 +311,8 @@ class _HistoryPageState extends State<HistoryPage> {
       );
     }
 
+    final filtered = _filteredHistoryList;
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -224,61 +325,88 @@ class _HistoryPageState extends State<HistoryPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),
+            tooltip: 'Xóa tất cả lịch sử',
             onPressed: _showDeleteConfirmDialog,
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _initData(forceRefresh: true),
-        child: ListView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          itemCount: _historyList.length,
-          itemBuilder: (context, index) {
-            final item = _historyList[index];
-
-            // Map mangaId → CloudManga. orElse: truyện đã bị xóa khỏi catalog
-            final manga = _mangas.firstWhere(
-              (c) => c.id == item.mangaId,
-              orElse: () {
-                if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
-                  final novelPath = item.mangaId.substring('LOCAL_NOVEL|'.length);
-                  final localNovel = _localNovels.firstWhere(
-                    (n) => n.path == novelPath,
-                    orElse: () => LocalNovel(
-                      path: novelPath,
-                      title: item.chapterTitle ?? 'Truyện không tồn tại',
-                      importedAt: DateTime.now(),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Container(
+              height: 38,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(fontSize: 13, color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Tìm theo tên truyện hoặc tác giả...',
+                  hintStyle: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 13,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 16,
+                    color: Colors.white54,
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.clear,
+                            size: 14,
+                            color: Colors.white54,
+                          ),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                onChanged: (val) =>
+                    setState(() => _searchQuery = val.trim()),
+              ),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _initData(forceRefresh: true),
+              child: filtered.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 120),
+                        Center(
+                          child: Text(
+                            'Không tìm thấy truyện phù hợp',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
                     )
-                  );
-                  return CloudManga(
-                    id: item.mangaId,
-                    title: localNovel.title,
-                    author: 'Local',
-                    description: '',
-                    coverFileId: localNovel.coverPath.isNotEmpty ? localNovel.coverPath : 'local_novel_placeholder',
-                    genres: [],
-                    status: '',
-                    viewCount: 0,
-                    likeCount: 0,
-                    updatedAt: localNovel.importedAt,
-                    contentType: MangaContentType.novel,
-                  );
-                }
-                return CloudManga(
-                  id: item.mangaId,
-                  title: 'Truyện không tồn tại',
-                  author: 'Không rõ tác giả',
-                  description: '',
-                  coverFileId: '',
-                  genres: [],
-                  status: '',
-                  viewCount: 0,
-                  likeCount: 0,
-                  updatedAt: DateTime.now(),
-                );
-              },
-            );
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final item = filtered[index];
+                        final manga = _resolveManga(item);
 
             // Ẩn dòng nếu không tìm thấy ảnh bìa (truyện đã bị xóa), ngoại trừ Local Novel
             if (manga.coverFileId.isEmpty && !item.mangaId.startsWith('LOCAL_NOVEL|')) {
@@ -288,112 +416,159 @@ class _HistoryPageState extends State<HistoryPage> {
             final date =
                 '${item.updatedAt.day}/${item.updatedAt.month} ${item.updatedAt.hour}:${item.updatedAt.minute.toString().padLeft(2, '0')}';
 
-            return Container(
-              height: 120,
-              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () async {
-                  if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
-                    final novelPath = item.mangaId.substring('LOCAL_NOVEL|'.length);
-                    final localNovel = _localNovels.firstWhere(
-                      (n) => n.path == novelPath,
-                      orElse: () => LocalNovel(
-                        path: novelPath,
-                        title: manga.title,
-                        importedAt: DateTime.now(),
-                      ),
-                    );
-                    await context.push('/novel-reader', extra: localNovel);
-                  } else {
-                    await context.push(
-                      '/reader/${item.chapterId}?mangaId=${Uri.encodeComponent(item.mangaId)}',
-                    );
-                  }
-                  _initData();
-                },
-                child: Row(
+            return Dismissible(
+              key: ValueKey(item.mangaId),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                padding: const EdgeInsets.only(right: 20),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                alignment: Alignment.centerRight,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    DriveImage(
-                      fileId: manga.coverFileId,
-                      width: 85,
-                      height: 120,
-                      fit: BoxFit.cover,
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              manga.title,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                const Icon(Icons.menu_book_rounded, size: 14, color: Colors.orangeAccent),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
-                                    style: const TextStyle(
-                                      color: Colors.orangeAccent,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      date,
-                                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                                _ContentTypeBadge(type: manga.contentType),
-                              ],
-                            ),
-                          ],
-                        ),
+                    Text(
+                      'Xóa',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
+                    ),
+                    SizedBox(width: 8),
+                    Icon(Icons.delete_sweep, color: Colors.white, size: 24),
+                  ],
+                ),
+              ),
+              onDismissed: (_) => _deleteSingleHistory(item, manga.title),
+              child: Container(
+                height: 120,
+                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
                     ),
                   ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () async {
+                    if (item.mangaId.startsWith('LOCAL_NOVEL|')) {
+                      final novelPath = item.mangaId.substring('LOCAL_NOVEL|'.length);
+                      final localNovel = _localNovels.firstWhere(
+                        (n) => n.path == novelPath,
+                        orElse: () => LocalNovel(
+                          path: novelPath,
+                          title: manga.title,
+                          importedAt: DateTime.now(),
+                        ),
+                      );
+                      await context.push('/novel-reader', extra: localNovel);
+                    } else {
+                      await context.push(
+                        '/reader/${item.chapterId}?mangaId=${Uri.encodeComponent(item.mangaId)}',
+                      );
+                    }
+                    _initData();
+                  },
+                  child: Row(
+                    children: [
+                      DriveImage(
+                        fileId: manga.coverFileId,
+                        width: 85,
+                        height: 120,
+                        fit: BoxFit.cover,
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      manga.title,
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                    icon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                                    tooltip: 'Xóa khỏi lịch sử',
+                                    onPressed: () => _deleteSingleHistory(item, manga.title),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.menu_book_rounded, size: 14, color: Colors.orangeAccent),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '${item.chapterTitle ?? 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.orangeAccent,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Spacer(),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.access_time_rounded, size: 14, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        date,
+                                        style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                  _ContentTypeBadge(type: manga.contentType),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
           },
         ),
       ),
-    );
+    ),
+  ],
+),
+);
   }
 }
 

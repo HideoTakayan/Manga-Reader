@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../catalog/catalog_cache_service.dart';
 
 // Trang trợ giúp với FAQs, Hướng dẫn, và thông tin Liên hệ.
 // Toàn bộ nội dung được hardcode — không cần API hay database.
@@ -13,7 +14,14 @@ class HelpPage extends StatefulWidget {
 }
 
 class _HelpPageState extends State<HelpPage> {
+  final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   final List<Map<String, String>> _faqs = [
     {
@@ -126,12 +134,24 @@ class _HelpPageState extends State<HelpPage> {
 
   @override
   Widget build(BuildContext context) {
+    final query = CatalogCacheService.instance.normalize(_searchQuery);
+
     final filteredFAQs = _faqs.where((faq) {
-      return faq['question']!.toLowerCase().contains(
-            _searchQuery.toLowerCase(),
-          ) ||
-          faq['answer']!.toLowerCase().contains(_searchQuery.toLowerCase());
+      if (query.isEmpty) return true;
+      final qNorm = CatalogCacheService.instance.normalize(faq['question'] ?? '');
+      final aNorm = CatalogCacheService.instance.normalize(faq['answer'] ?? '');
+      return qNorm.contains(query) || aNorm.contains(query);
     }).toList();
+
+    final filteredGuides = _guides.where((guide) {
+      if (query.isEmpty) return true;
+      final titleNorm = CatalogCacheService.instance.normalize(guide['title'] ?? '');
+      final descNorm = CatalogCacheService.instance.normalize(guide['description'] ?? '');
+      final contentNorm = CatalogCacheService.instance.normalize(guide['content'] ?? '');
+      return titleNorm.contains(query) || descNorm.contains(query) || contentNorm.contains(query);
+    }).toList();
+
+    final hasResults = filteredFAQs.isNotEmpty || filteredGuides.isNotEmpty;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -150,22 +170,47 @@ class _HelpPageState extends State<HelpPage> {
         padding: const EdgeInsets.all(16),
         children: [
           _buildSearchBar(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          _buildSectionHeader('❓ Câu hỏi thường gặp'),
-          const SizedBox(height: 8),
-          ...filteredFAQs.map((faq) => _buildFAQItem(faq)),
+          if (_searchQuery.isNotEmpty && !hasResults)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.search_off_rounded, size: 48, color: Theme.of(context).disabledColor),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Không tìm thấy câu hỏi hoặc hướng dẫn phù hợp',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: Theme.of(context).disabledColor,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
-          const SizedBox(height: 24),
+          if (filteredFAQs.isNotEmpty) ...[
+            _buildSectionHeader('❓ Câu hỏi thường gặp'),
+            const SizedBox(height: 8),
+            ...filteredFAQs.map((faq) => _buildFAQItem(faq)),
+            const SizedBox(height: 24),
+          ],
 
-          _buildSectionHeader('📖 Hướng dẫn sử dụng'),
-          const SizedBox(height: 8),
-          ..._guides.map((guide) => _buildGuideItem(guide)),
+          if (filteredGuides.isNotEmpty) ...[
+            _buildSectionHeader('📖 Hướng dẫn sử dụng'),
+            const SizedBox(height: 8),
+            ...filteredGuides.map((guide) => _buildGuideItem(guide)),
+            const SizedBox(height: 24),
+          ],
 
-          const SizedBox(height: 24),
-          _buildSectionHeader('📧 Liên hệ hỗ trợ'),
-          const SizedBox(height: 8),
-          _buildContactInfo(),
+          if (_searchQuery.isEmpty) ...[
+            _buildSectionHeader('📧 Liên hệ hỗ trợ'),
+            const SizedBox(height: 8),
+            _buildContactInfo(),
+          ],
         ],
       ),
     );
@@ -173,9 +218,10 @@ class _HelpPageState extends State<HelpPage> {
 
   Widget _buildSearchBar() {
     return TextField(
+      controller: _searchController,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
-        hintText: '🔍 Tìm kiếm...',
+        hintText: 'Tìm câu hỏi, hướng dẫn, định dạng...',
         hintStyle: const TextStyle(color: Colors.grey),
         filled: true,
         fillColor: Theme.of(context).cardColor,
@@ -184,8 +230,17 @@ class _HelpPageState extends State<HelpPage> {
           borderSide: BorderSide.none,
         ),
         prefixIcon: const Icon(Icons.search, color: Colors.grey),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear, size: 16, color: Colors.grey),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+              )
+            : null,
       ),
-      onChanged: (value) => setState(() => _searchQuery = value),
+      onChanged: (value) => setState(() => _searchQuery = value.trim()),
     );
   }
 

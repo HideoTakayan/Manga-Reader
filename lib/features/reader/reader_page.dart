@@ -10,10 +10,13 @@ import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/database_helper.dart';
 import '../../data/models_cloud.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../../features/shared/drive_image.dart';
 import '../../services/history_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'novel_reader_widget.dart';
 import 'pdf_reader_view.dart';
 import 'reader_provider.dart';
@@ -50,6 +53,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   Ticker? _autoScrollTicker;
   Duration? _lastAutoScrollTick;
   bool _isAutoScrolling = false;
+  double _autoScrollSpeedMultiplier = 1.0;
   int _autoPageTurnRunId = 0;
   double? _lastVerticalProgressSaveOffset;
   int? _lastVerticalProgressSavePage;
@@ -87,6 +91,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
 
     _scrollController.addListener(_onVerticalScroll);
+
+    WakelockPlus.enable();
 
     // Kích hoạt chế độ toàn màn hình
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -251,7 +257,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       final deltaSeconds =
           (elapsed - lastTick).inMicroseconds / Duration.microsecondsPerSecond;
       final safeDeltaSeconds = deltaSeconds.clamp(0.0, 0.05).toDouble();
-      final deltaPixels = _autoScrollPixelsPerSecond * safeDeltaSeconds;
+      final deltaPixels = _autoScrollPixelsPerSecond * _autoScrollSpeedMultiplier * safeDeltaSeconds;
 
       if (state.isPdf) {
         // PDF cuộn dọc mượt mà từng pixel qua PdfReaderView
@@ -282,7 +288,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _schedulePdfAutoPageTurn(int runId) {
     if (!_isAutoScrolling || runId != _autoPageTurnRunId) return;
-    Future.delayed(_pdfAutoPageTurnInterval, () {
+    final durationMs = (_pdfAutoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier).round();
+    Future.delayed(Duration(milliseconds: durationMs.clamp(500, 10000)), () {
       if (!mounted) return;
       _advancePdfAutoPage(runId);
     });
@@ -297,7 +304,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _scheduleHorizontalAutoPageTurn(int runId) {
-    Future.delayed(_autoPageTurnInterval, () async {
+    final durationMs = (_autoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier).round();
+    Future.delayed(Duration(milliseconds: durationMs.clamp(300, 10000)), () async {
       if (!mounted || !_isAutoScrolling || runId != _autoPageTurnRunId) {
         return;
       }
@@ -586,6 +594,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _scrollController.removeListener(_onVerticalScroll);
     _cancelHoldTimer();
@@ -1369,8 +1378,93 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ),
                     ),
+                  // Thanh tinh chỉnh tốc độ tự cuộn
+                  if (_isAutoScrolling)
+                    Positioned(
+                      bottom: state.showControls ? 120 : 32,
+                      right: 16,
+                      child: _buildAutoScrollControlBar(),
+                    ),
                 ],
               ),
+      ),
+    );
+  }
+
+  void _increaseAutoScrollSpeed() {
+    setState(() {
+      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier + 0.25).clamp(0.5, 4.0);
+    });
+  }
+
+  void _decreaseAutoScrollSpeed() {
+    setState(() {
+      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier - 0.25).clamp(0.5, 4.0);
+    });
+  }
+
+  Widget _buildAutoScrollControlBar() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.78),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Giảm tốc độ',
+                icon: const Icon(Icons.remove, color: Colors.white70, size: 18),
+                onPressed: _decreaseAutoScrollSpeed,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${_autoScrollSpeedMultiplier.toStringAsFixed(2)}x',
+                style: const TextStyle(
+                  color: Colors.amberAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Tăng tốc độ',
+                icon: const Icon(Icons.add, color: Colors.white70, size: 18),
+                onPressed: _increaseAutoScrollSpeed,
+              ),
+              const SizedBox(width: 6),
+              Container(width: 1, height: 16, color: Colors.white24),
+              const SizedBox(width: 6),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Dừng tự cuộn',
+                icon: const Icon(Icons.pause_circle_filled, color: Colors.redAccent, size: 22),
+                onPressed: _stopAutoScroll,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1406,12 +1500,70 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  state.readingMode == ReadingMode.vertical
-                      ? 'Cuộn dọc'
-                      : 'Vuốt ngang',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
+                if (state.readingMode == ReadingMode.horizontal)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      final newDirection =
+                          state.direction == ReaderDirection.rtl
+                              ? ReaderDirection.ltr
+                              : ReaderDirection.rtl;
+                      ref.read(readerProvider.notifier).setDirection(newDirection);
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            newDirection == ReaderDirection.rtl
+                                ? 'Hướng đọc: Phải qua trái (Manga Nhật)'
+                                : 'Hướng đọc: Trái qua phải (Manhwa/Comic)',
+                          ),
+                          duration: const Duration(milliseconds: 1500),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.blueAccent.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            state.direction == ReaderDirection.rtl
+                                ? Icons.arrow_back
+                                : Icons.arrow_forward,
+                            color: Colors.blueAccent,
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            state.direction == ReaderDirection.rtl
+                                ? 'Ngang (RTL)'
+                                : 'Ngang (LTR)',
+                            style: const TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    'Cuộn dọc',
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
               ],
             ),
             SliderTheme(
@@ -2721,9 +2873,39 @@ class _ChapterListModalContent extends StatefulWidget {
 class _ChapterListModalContentState extends State<_ChapterListModalContent> {
   final DraggableScrollableController _controller =
       DraggableScrollableController();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Set<String> _readChapterIds = {};
+  bool _isSortReversed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    if (widget.mangaId != null && widget.mangaId!.isNotEmpty) {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      final readIds = await DatabaseHelper.instance.getReadChapterIds(
+        widget.mangaId!,
+        userId: userId,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final reversed =
+          prefs.getBool('manga_sort_reversed_${widget.mangaId}') ?? false;
+      if (mounted) {
+        setState(() {
+          _readChapterIds = readIds;
+          _isSortReversed = reversed;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -2754,6 +2936,20 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
       expand: false,
       snap: true,
       builder: (context, scrollController) {
+        final seen = <String>{};
+        final normalizedSearch =
+            CatalogCacheService.instance.normalize(_searchQuery);
+        final rawChapters = widget.chapters
+            .where((c) => seen.add(c.id))
+            .where((c) {
+              if (normalizedSearch.isEmpty) return true;
+              final normTitle = CatalogCacheService.instance.normalize(c.title);
+              return normTitle.contains(normalizedSearch);
+            })
+            .toList();
+        final filteredChapters =
+            _isSortReversed ? rawChapters.reversed.toList() : rawChapters;
+
         return Container(
           decoration: const BoxDecoration(
             color: Color(0xFF1C1C1E),
@@ -2793,6 +2989,30 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             ),
                             textAlign: TextAlign.center,
                           ),
+                        ),
+                        // Nút đảo chiều thứ tự chương
+                        IconButton(
+                          icon: Icon(
+                            Icons.swap_vert_rounded,
+                            color: _isSortReversed
+                                ? Colors.orangeAccent
+                                : Colors.white,
+                          ),
+                          tooltip: _isSortReversed
+                              ? 'Đang xếp: Mới nhất trước'
+                              : 'Đang xếp: Cũ nhất trước',
+                          onPressed: () async {
+                            setState(() => _isSortReversed = !_isSortReversed);
+                            if (widget.mangaId != null &&
+                                widget.mangaId!.isNotEmpty) {
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              await prefs.setBool(
+                                'manga_sort_reversed_${widget.mangaId}',
+                                _isSortReversed,
+                              );
+                            }
+                          },
                         ),
                         // Biểu tượng theo dõi (Trái tim)
                         IconButton(
@@ -2839,9 +3059,10 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                         // Biểu tượng đổi kích thước
                         IconButton(
                           icon: const Icon(
-                            Icons.swap_vert,
+                            Icons.unfold_more_rounded,
                             color: Colors.white,
                           ),
+                          tooltip: 'Phóng to/Thu nhỏ',
                           onPressed: _toggleSize,
                         ),
                       ],
@@ -2850,83 +3071,125 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                 ),
               ),
 
+              // Thanh tìm kiếm nhanh chương
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Tìm nhanh số chương (vd: 12, Chapter 50)...',
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 18),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.08),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (val) =>
+                      setState(() => _searchQuery = val.trim()),
+                ),
+              ),
+
               // Danh sách
               Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  // Dedup bằng Set.add() — trả về false nếu id đã tồn tại
-                  // Đây là biện pháp phòng ngừa nếu server trả về chapter trùng id
-                  itemCount: () {
-                    final seen = <String>{};
-                    return widget.chapters.where((c) => seen.add(c.id)).length;
-                  }(),
-                  itemBuilder: (context, index) {
-                    // Recompute uniqueChapters mỗi lần — kém hiệu quả nhưng đảm bảo đúng 100%
-                    // Tối ưu hơn: tính 1 lần ở initState/build, truyền vào widget
-                    final seen = <String>{};
-                    final uniqueChapters = widget.chapters
-                        .where((c) => seen.add(c.id))
-                        .toList();
+                child: filteredChapters.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Không tìm thấy chương phù hợp',
+                          style: TextStyle(color: Colors.white38),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: filteredChapters.length,
+                        itemBuilder: (context, index) {
+                          final chapter = filteredChapters[index];
+                          final isSelected =
+                              chapter.id == widget.currentChapter?.id;
+                          final isRead = _readChapterIds.contains(chapter.id);
 
-                    if (index >= uniqueChapters.length) return const SizedBox();
+                          final date =
+                              "${chapter.uploadedAt.day}/${chapter.uploadedAt.month}/${chapter.uploadedAt.year}";
 
-                    final chapter = uniqueChapters[index];
-                    final isSelected = chapter.id == widget.currentChapter?.id;
-
-                    // Định dạng ngày: dd/MM/yyyy
-                    final date =
-                        "${chapter.uploadedAt.day}/${chapter.uploadedAt.month}/${chapter.uploadedAt.year}";
-
-                    return InkWell(
-                      onTap: () {
-                        Navigator.pop(context); // Đóng cửa sổ
-                        if (!isSelected) {
-                          // Điều hướng đến chương đã chọn
-                          final mangaQuery =
-                              widget.mangaId == null || widget.mangaId!.isEmpty
-                              ? ''
-                              : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
-                          context.pushReplacement(
-                            '/reader/${chapter.id}$mangaQuery',
+                          return InkWell(
+                            onTap: () {
+                              Navigator.pop(context); // Đóng cửa sổ
+                              if (!isSelected) {
+                                final mangaQuery =
+                                    widget.mangaId == null ||
+                                            widget.mangaId!.isEmpty
+                                        ? ''
+                                        : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
+                                context.pushReplacement(
+                                  '/reader/${chapter.id}$mangaQuery',
+                                );
+                              }
+                            },
+                            child: Container(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : null,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  if (!isRead && !isSelected) ...[
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      margin: const EdgeInsets.only(right: 8),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).primaryColor,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      chapter.title,
+                                      style: TextStyle(
+                                        color: isSelected
+                                            ? Colors.blueAccent
+                                            : isRead
+                                                ? Colors.white38
+                                                : Colors.white,
+                                        fontWeight: isSelected || !isRead
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    date,
+                                    style: TextStyle(
+                                      color: isRead
+                                          ? Colors.white24
+                                          : Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           );
-                        }
-                      },
-                      child: Container(
-                        color: isSelected
-                            ? Colors.white.withValues(alpha: 0.05)
-                            : null,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                chapter.title,
-                                style: TextStyle(
-                                  color: isSelected
-                                      ? Colors.blueAccent
-                                      : Colors.white70,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              date,
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),

@@ -9,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 import 'edit_manga_dialog.dart';
 import 'add_manga_dialog.dart';
@@ -62,14 +63,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     setState(() {}); // Update the clear icon immediately
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      final query = _searchController.text.trim().toLowerCase();
+      final query = CatalogCacheService.instance.normalize(_searchController.text.trim());
       setState(() {
         if (query.isEmpty) {
           _filteredMangas = _allMangas;
         } else {
           _filteredMangas = _allMangas.where((m) {
-            return m.title.toLowerCase().contains(query) ||
-                m.author.toLowerCase().contains(query);
+            final normTitle = CatalogCacheService.instance.normalize(m.title);
+            final normAuthor = CatalogCacheService.instance.normalize(m.author);
+            return normTitle.contains(query) || normAuthor.contains(query);
           }).toList();
         }
       });
@@ -129,14 +131,16 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     }
 
     if (mounted) {
-      final query = _searchController.text.trim().toLowerCase();
+      final query = CatalogCacheService.instance.normalize(_searchController.text.trim());
       setState(() {
         _allMangas = List.from(mangas);
         _filteredMangas = query.isEmpty
             ? List.from(mangas)
-            : mangas.where((m) =>
-                m.title.toLowerCase().contains(query) ||
-                m.author.toLowerCase().contains(query)).toList();
+            : mangas.where((m) {
+                final normTitle = CatalogCacheService.instance.normalize(m.title);
+                final normAuthor = CatalogCacheService.instance.normalize(m.author);
+                return normTitle.contains(query) || normAuthor.contains(query);
+              }).toList();
         _isLoadingMangas = false;
         _stats = {'mangas': mangaCount, 'users': userCount, 'chapters': 0};
       });

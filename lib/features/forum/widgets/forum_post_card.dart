@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:go_router/go_router.dart';
@@ -331,6 +332,20 @@ class _ForumPostCardState extends State<ForumPostCard> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(Icons.copy_rounded),
+                title: const Text('Sao chép nội dung'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Clipboard.setData(ClipboardData(text: post.body));
+                  ScaffoldMessenger.of(pageContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Đã sao chép nội dung bài viết'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.flag_outlined),
                 title: const Text('Báo cáo bài viết'),

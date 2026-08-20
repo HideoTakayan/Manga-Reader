@@ -12,6 +12,7 @@ class ChapterListSliver extends StatelessWidget {
   final Map<String, int> chapterViews;
   final ThemeData theme;
   final VoidCallback onChapterRead;
+  final Set<String> readChapterIds;
 
   const ChapterListSliver({
     super.key,
@@ -22,6 +23,7 @@ class ChapterListSliver extends StatelessWidget {
     required this.chapterViews,
     required this.theme,
     required this.onChapterRead,
+    this.readChapterIds = const {},
   });
 
   String _formatDate(DateTime dt) {
@@ -37,6 +39,8 @@ class ChapterListSliver extends StatelessWidget {
     return SliverList(
       delegate: SliverChildBuilderDelegate((context, index) {
         final ch = displayChapters[index];
+        final isRead = readChapterIds.contains(ch.id);
+
         return InkWell(
           onTap: () async {
             await context.push(
@@ -58,39 +62,71 @@ class ChapterListSliver extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text(
-                    ch.title,
-                    style: theme.textTheme.bodyLarge,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _formatDate(ch.uploadedAt),
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 2),
-                    // chapterViews is streamed once by the parent to avoid one Firestore listener per row.
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.remove_red_eye,
-                          size: 10,
-                          color: theme.textTheme.bodySmall?.color,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${chapterViews[ch.id] ?? ch.viewCount}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 10,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          if (!isRead) ...[
+                            Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).primaryColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                          Expanded(
+                            child: Text(
+                              ch.title,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: isRead ? Colors.white38 : Colors.white,
+                                fontWeight: isRead ? FontWeight.normal : FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Text(
+                            _formatDate(ch.uploadedAt),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: isRead ? Colors.white24 : Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '•',
+                            style: TextStyle(
+                              color: isRead ? Colors.white24 : Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.remove_red_eye_outlined,
+                            size: 11,
+                            color: isRead ? Colors.white24 : Colors.white54,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${chapterViews[ch.id] ?? ch.viewCount}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: isRead ? Colors.white24 : Colors.white54,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 12),
                 // Download Icon với 3 trạng thái

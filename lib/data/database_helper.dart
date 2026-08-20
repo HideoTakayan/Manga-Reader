@@ -25,7 +25,7 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     return await openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -107,6 +107,18 @@ class DatabaseHelper {
         );
       }
     }
+    if (oldVersion < 16) {
+      try {
+        await db.execute('''
+          CREATE INDEX IF NOT EXISTS idx_history_user_updated
+          ON history (userId, updatedAt DESC)
+        ''');
+        await db.execute('''
+          CREATE INDEX IF NOT EXISTS idx_downloads_manga
+          ON downloaded_chapters (mangaId)
+        ''');
+      } catch (_) {}
+    }
   }
 
   // Tạo 2 bảng thư viện cá nhân:
@@ -142,6 +154,11 @@ class DatabaseHelper {
         isSynced INTEGER DEFAULT 0,
         PRIMARY KEY (userId, comicId)
       )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_history_user_updated
+      ON history (userId, updatedAt DESC)
     ''');
   }
 
@@ -228,6 +245,11 @@ class DatabaseHelper {
         fileSize INTEGER DEFAULT 0,
         downloadDate INTEGER NOT NULL
       )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_downloads_manga
+      ON downloaded_chapters (mangaId)
     ''');
   }
 
@@ -573,6 +595,45 @@ class DatabaseHelper {
       if (result.isNotEmpty) return ReadingHistory.fromMap(result.first);
     } catch (_) {}
     return null;
+  }
+
+  // Lấy danh sách ID các chương đã đọc của một bộ truyện
+  Future<Set<String>> getReadChapterIds(String mangaId, {String? userId}) async {
+    final db = await instance.database;
+    final readIds = <String>{};
+    final uId = userId ?? 'guest';
+
+    // 1. Từ bảng reading_activity
+    try {
+      final actRows = await db.query(
+        'reading_activity',
+        columns: ['chapterId'],
+        where: 'mangaId = ?',
+        whereArgs: [mangaId],
+      );
+      for (final r in actRows) {
+        final cid = r['chapterId']?.toString();
+        if (cid != null && cid.isNotEmpty) readIds.add(cid);
+      }
+    } catch (_) {}
+
+    // 2. Từ bảng reader_progress
+    try {
+      final prog = await getReaderProgress(mangaId);
+      if (prog != null && prog.chapterId.isNotEmpty) {
+        readIds.add(prog.chapterId);
+      }
+    } catch (_) {}
+
+    // 3. Từ bảng history
+    try {
+      final hist = await getHistoryForManga(uId, mangaId);
+      if (hist != null && hist.chapterId.isNotEmpty) {
+        readIds.add(hist.chapterId);
+      }
+    } catch (_) {}
+
+    return readIds;
   }
 
   // Xóa toàn bộ cache (pages → chapters → comics theo thứ tự để không vi phạm FOREIGN KEY).

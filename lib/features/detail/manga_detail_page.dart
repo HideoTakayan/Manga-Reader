@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/follow_service.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
@@ -25,6 +26,8 @@ import '../catalog/catalog_cache_service.dart';
 import 'widgets/chapter_list_sliver.dart';
 import 'widgets/manga_header_section.dart';
 import 'widgets/manga_description_section.dart';
+import 'widgets/bulk_download_sheet.dart';
+import '../forum/widgets/quick_share_sheet.dart';
 
 class MangaDetailPage extends StatefulWidget {
   final String mangaId;
@@ -43,6 +46,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   Future<List<CloudManga>>? _recommendationsFuture;
   List<CloudChapter> _chapters = [];
   bool _isLoading = true;
+  bool _isSearchingChapters = false;
+  String _chapterSearchQuery = '';
+  bool _isSortReversed = false;
+  Set<String> _readChapterIds = {};
 
   // Helper chuyển đổi CloudManga -> Local Manga
   Manga _cloudToLocal(CloudManga cm) {
@@ -60,7 +67,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   @override
   void initState() {
     super.initState();
+    _loadSortPref();
     _fetchData();
+  }
+
+  Future<void> _loadSortPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    final reversed =
+        prefs.getBool('manga_sort_reversed_${widget.mangaId}') ?? false;
+    if (mounted) {
+      setState(() => _isSortReversed = reversed);
+    }
   }
 
   @override
@@ -351,12 +368,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     final libraryStatus = await LibraryStatusService.instance.getEntry(
       widget.mangaId,
     );
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    final readChapterIds = await DatabaseHelper.instance.getReadChapterIds(
+      widget.mangaId,
+      userId: userId,
+    );
     if (!mounted) return;
 
     setState(() {
       _readerProgress = progress;
       _bookmarks = bookmarks;
       _libraryStatus = libraryStatus;
+      _readChapterIds = readChapterIds;
     });
     await _fetchHistory();
   }
@@ -383,7 +406,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     }
 
     final chapters = _chapters;
-    final displayChapters = chapters; // Hiện tất cả các chương
+    final rawDisplay = _chapterSearchQuery.isEmpty
+        ? chapters
+        : chapters
+            .where((c) => c.title.toLowerCase().contains(_chapterSearchQuery))
+            .toList();
+    final displayChapters =
+        _isSortReversed ? rawDisplay.reversed.toList() : rawDisplay;
     final followService = FollowService();
     final theme = Theme.of(context);
 
@@ -464,69 +493,193 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Danh sách ${manga.contentType.unitLabel.toLowerCase()} (${chapters.length})',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        // Menu Hành động
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) async {
-                            if (value == 'download_all') {
-                              _downloadManyChapters(chapters);
-                            } else if (value == 'download_latest_10') {
-                              _downloadManyChapters(_latestChapters(chapters));
-                            } else if (value == 'delete_all') {
-                              _deleteAllDownloads(chapters);
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'download_all',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.download_rounded,
-                                    color: Colors.blue,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text('Tải tất cả'),
-                                ],
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Danh sách ${manga.contentType.unitLabel.toLowerCase()} (${chapters.length})',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
                               ),
                             ),
-                            PopupMenuItem(
-                              value: 'download_latest_10',
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.download_for_offline_outlined,
-                                    color: Colors.orange,
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.swap_vert_rounded,
+                                    color: _isSortReversed
+                                        ? Colors.orangeAccent
+                                        : Colors.white70,
+                                    size: 22,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Tải 10 ${manga.contentType.unitLabel.toLowerCase()} mới nhất',
+                                  tooltip: _isSortReversed
+                                      ? 'Đang xếp: Mới nhất trước (Bấm để đảo chiều)'
+                                      : 'Đang xếp: Cũ nhất trước (Bấm để đảo chiều)',
+                                  onPressed: () async {
+                                    setState(() {
+                                      _isSortReversed = !_isSortReversed;
+                                    });
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.setBool(
+                                      'manga_sort_reversed_${widget.mangaId}',
+                                      _isSortReversed,
+                                    );
+                                  },
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    _isSearchingChapters
+                                        ? Icons.search_off
+                                        : Icons.search,
+                                    color: _isSearchingChapters
+                                        ? Colors.orangeAccent
+                                        : Colors.white70,
+                                    size: 20,
                                   ),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'delete_all',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline, color: Colors.red),
-                                  SizedBox(width: 12),
-                                  Text('Xóa tất cả tải xuống'),
-                                ],
-                              ),
+                                  tooltip: 'Tìm số chương',
+                                  onPressed: () {
+                                    setState(() {
+                                      _isSearchingChapters =
+                                          !_isSearchingChapters;
+                                      if (!_isSearchingChapters) {
+                                        _chapterSearchQuery = '';
+                                      }
+                                    });
+                                  },
+                                ),
+                                // Menu Hành động
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (value) async {
+                                    if (value == 'share_to_forum') {
+                                      QuickShareToForumSheet.show(context, manga);
+                                    } else if (value == 'download_all') {
+                                      _downloadManyChapters(chapters);
+                                    } else if (value == 'download_latest_10') {
+                                      _downloadManyChapters(
+                                        _latestChapters(chapters),
+                                      );
+                                    } else if (value == 'delete_all') {
+                                      _deleteAllDownloads(chapters);
+                                    }
+                                  },
+                                  itemBuilder: (context) => [
+                                    const PopupMenuItem(
+                                      value: 'share_to_forum',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.forum_outlined,
+                                            color: Colors.purpleAccent,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text('Chia sẻ lên Diễn đàn'),
+                                        ],
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'download_all',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.download_rounded,
+                                            color: Colors.blue,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text('Tải tất cả'),
+                                        ],
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'download_latest_10',
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.download_for_offline_outlined,
+                                            color: Colors.orange,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text(
+                                            'Tải 10 ${manga.contentType.unitLabel.toLowerCase()} mới nhất',
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'delete_all',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.red,
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text('Xóa tất cả tải xuống'),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ],
                         ),
+                        if (_isSearchingChapters)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: TextField(
+                              autofocus: true,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Tìm nhanh số chương (ví dụ: 12, Chapter 50)...',
+                                hintStyle: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 12,
+                                ),
+                                prefixIcon: const Icon(
+                                  Icons.search,
+                                  color: Colors.orangeAccent,
+                                  size: 18,
+                                ),
+                                suffixIcon: _chapterSearchQuery.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(
+                                          Icons.clear,
+                                          color: Colors.white54,
+                                          size: 16,
+                                        ),
+                                        onPressed: () => setState(
+                                          () => _chapterSearchQuery = '',
+                                        ),
+                                      )
+                                    : null,
+                                filled: true,
+                                fillColor: Colors.white.withValues(alpha: 0.08),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              onChanged: (val) => setState(
+                                () => _chapterSearchQuery =
+                                    val.trim().toLowerCase(),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -557,6 +710,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       chapterViews: snapshot.data ?? const {},
                       theme: theme,
                       onChapterRead: _fetchData,
+                      readChapterIds: _readChapterIds,
                     );
                   },
                 ),
@@ -582,102 +736,23 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               right: 10,
               child: Row(
                 children: [
-                  // Nút Tải tất cả các Chương
+                  // Nút Chia Sẻ Lên Diễn Đàn
+                  IconButton(
+                    icon: const Icon(Icons.share_rounded, color: Colors.white),
+                    tooltip: 'Chia sẻ lên Diễn đàn',
+                    onPressed: () => QuickShareToForumSheet.show(context, manga),
+                  ),
+                  // Nút Tải Chương Hàng Loạt (Bulk Download)
                   IconButton(
                     icon: const Icon(Icons.download, color: Colors.white),
-                    onPressed: () async {
-                      // Bước 1: Xác nhận có tải không
-                      final confirmDownload = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          backgroundColor: theme.cardColor,
-                          title: Text(
-                            'Tải tất cả chương?',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          content: Text(
-                            'Tải ${chapters.length} chương của "${manga.title}" về máy?\n\n'
-                            'Lưu ý: Quá trình này có thể tốn khoảng ${(chapters.length * 5)} MB dung lượng trống.',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Hủy'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text(
-                                'Tải xuống',
-                                style: TextStyle(color: Colors.orange),
-                              ),
-                            ),
-                          ],
-                        ),
+                    tooltip: 'Tải chương hàng loạt',
+                    onPressed: () {
+                      BulkDownloadSheet.show(
+                        context,
+                        chapters: chapters,
+                        manga: manga,
+                        currentChapterId: _history?.chapterId ?? _readerProgress?.chapterId,
                       );
-
-                      if (confirmDownload != true) return;
-
-                      if (context.mounted) {
-                        final addToLibrary = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            backgroundColor: theme.cardColor,
-                            title: Text(
-                              'Thêm vào Thư viện?',
-                              style: theme.textTheme.titleLarge,
-                            ),
-                            content: Text(
-                              'Bạn có muốn thêm truyện vào thư viện để dễ quản lý không?',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Không'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Có'),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (addToLibrary == true && context.mounted) {
-                          final selectedCats = await LibraryService.instance
-                              .streamMangaCategories(widget.mangaId)
-                              .first;
-                          if (context.mounted) {
-                            _showSetCategoryDialog(context, selectedCats);
-                          }
-                        }
-                      }
-
-                      // Bắt đầu tải tất cả các chương
-                      for (final chapter in chapters) {
-                        await DownloadService.instance.addToQueue(
-                          chapterId: chapter.id,
-                          mangaId: widget.mangaId,
-                          mangaTitle: manga.title,
-                          chapterTitle: chapter.title,
-                          fileType: chapter.fileType,
-                          mangaInfo: _manga != null
-                              ? _cloudToLocal(_manga!)
-                              : null,
-                        );
-                      }
-
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Đã thêm ${chapters.length} chương vào hàng đợi tải',
-                            ),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
                     },
                   ),
                   // Nút Đặt vào Thư viện (Folder)
@@ -840,6 +915,29 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           ],
                         ),
                       ),
+                      if ((_readerProgress != null || _history != null) && chapters.isNotEmpty) ...[
+                        OutlinedButton(
+                          onPressed: () async {
+                            await context.push(
+                              '/reader/${chapters.first.id}?mangaId=${Uri.encodeComponent(widget.mangaId)}',
+                            );
+                            await _fetchLocalReaderData();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          ),
+                          child: const Text('Đọc từ đầu', style: TextStyle(fontSize: 12)),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       ElevatedButton(
                         onPressed: () async {
                           String? chapterIdToOpen;
@@ -867,7 +965,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
+                            horizontal: 20,
                             vertical: 10,
                           ),
                         ),

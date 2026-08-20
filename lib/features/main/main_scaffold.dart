@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/ui_service.dart';
 import '../../config/admin_config.dart';
+import '../reader/widgets/mini_tts_player.dart';
 
 // ── Branch indices trong GoRouter StatefulNavigationShell ──────────────────
 // Thứ tự này phải khớp với thứ tự khai báo branches trong app_router.dart.
@@ -92,7 +93,17 @@ class MainScaffold extends StatelessWidget {
         final navIndex = _branchToTab(navigationShell.currentIndex, isAdmin, hasGroup);
 
     return Scaffold(
-      body: navigationShell,
+      body: Stack(
+        children: [
+          navigationShell,
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: MiniTtsPlayer(),
+          ),
+        ],
+      ),
       bottomNavigationBar: ValueListenableBuilder<bool>(
         valueListenable: UiService.instance.isMainBottomBarVisible,
         builder: (context, isVisible, child) {

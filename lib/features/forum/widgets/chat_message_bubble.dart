@@ -12,6 +12,7 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback? onUnmute;
   final VoidCallback? onReport;
   final VoidCallback? onReply;
+  final VoidCallback? onMention;
   final bool isFirstInSequence;
   final bool isLastInSequence;
 
@@ -23,6 +24,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onUnmute,
     this.onReport,
     this.onReply,
+    this.onMention,
     this.isFirstInSequence = true,
     this.isLastInSequence = true,
   });
@@ -235,19 +237,7 @@ class ChatMessageBubble extends StatelessWidget {
                           ),
                         ),
                       if (message.body.isNotEmpty || message.isDeleted)
-                        Text(
-                          message.isDeleted
-                              ? 'Tin nhắn đã bị xóa'
-                              : message.body,
-                          style: TextStyle(
-                            color: isMe
-                                ? Colors.white
-                                : Theme.of(context).textTheme.bodyMedium?.color,
-                            fontStyle: message.isDeleted
-                                ? FontStyle.italic
-                                : null,
-                          ),
-                        ),
+                        _buildMessageText(context, isMe),
                     ],
                   ),
                 ),
@@ -272,6 +262,74 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
+  Widget _buildMessageText(BuildContext context, bool isMe) {
+    if (message.isDeleted) {
+      return Text(
+        'Tin nhắn đã bị xóa',
+        style: TextStyle(
+          color: isMe
+              ? Colors.white.withValues(alpha: 0.7)
+              : Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+          fontStyle: FontStyle.italic,
+        ),
+      );
+    }
+
+    final defaultStyle = TextStyle(
+      color: isMe
+          ? Colors.white
+          : Theme.of(context).textTheme.bodyMedium?.color,
+      fontSize: 14,
+      height: 1.3,
+    );
+
+    final mentionStyle = TextStyle(
+      color: isMe ? const Color(0xFFFFE082) : const Color(0xFF00B0FF),
+      fontWeight: FontWeight.bold,
+      fontSize: 14,
+      height: 1.3,
+    );
+
+    final text = message.body;
+    final regex = RegExp(r'(@[^\s@]+)');
+    final matches = regex.allMatches(text);
+
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: defaultStyle,
+      );
+    }
+
+    final spans = <TextSpan>[];
+    int lastIndex = 0;
+
+    for (final match in matches) {
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: text.substring(lastIndex, match.start),
+          style: defaultStyle,
+        ));
+      }
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: mentionStyle,
+      ));
+      lastIndex = match.end;
+    }
+
+    if (lastIndex < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastIndex),
+        style: defaultStyle,
+      ));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+    );
+  }
+
   void _showOptionsMenu(BuildContext context, bool isAdmin, bool isMe) {
     showModalBottomSheet(
       context: context,
@@ -288,6 +346,15 @@ class ChatMessageBubble extends StatelessWidget {
                   onReply?.call();
                 },
               ),
+              if (!isMe)
+                ListTile(
+                  leading: const Icon(Icons.alternate_email, color: Colors.blueAccent),
+                  title: Text('Nhắc tên @${message.authorName}'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onMention?.call();
+                  },
+                ),
               if (!isMe)
                 ListTile(
                   leading: const Icon(Icons.report, color: Colors.orange),

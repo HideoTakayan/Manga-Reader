@@ -99,6 +99,7 @@ Future<void> main() async {
 
   Future.microtask(() async {
     try {
+      await DriveService.instance.preheatCdn();
       await DriveService.instance.getMangas();
       debugPrint('✅ Mangas preloaded in background');
     } catch (e) {

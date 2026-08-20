@@ -545,6 +545,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       // --- Trường hợp PDF ---
       if (fileType == 'pdf') {
+        int restoredPage = _restorePageIndex(savedProgress, null);
+        if (restoredPage == 0) {
+          final prefs = await SharedPreferences.getInstance();
+          restoredPage = prefs.getInt('pdf_page_$chapterId') ?? 0;
+        }
         state = baseOfflineState.copyWith(
           pages: const [],
           localFilePath: localPath,
@@ -552,7 +557,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           isNovel: false,
           isPdf: true,
           pdfPageCount: 0,
-          currentPageIndex: _restorePageIndex(savedProgress, null),
+          currentPageIndex: restoredPage,
           currentBlockIndex: _restoreBlockIndex(savedProgress),
           scrollOffset: savedProgress?.scrollOffset ?? 0,
         );
@@ -747,6 +752,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
     // --- Trường hợp Manga (Truyện tranh: PDF / ZIP / CBZ) ---
     else if (fileType == 'pdf') {
+      int restoredPage = _restorePageIndex(savedProgress, null);
+      if (restoredPage == 0) {
+        final prefs = await SharedPreferences.getInstance();
+        restoredPage = prefs.getInt('pdf_page_$chapterId') ?? 0;
+      }
       state = baseState.copyWith(
         pages: const [],
         isNovel: false,
@@ -754,7 +764,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         clearLocalFilePath: false,
         localFilePath: localPath,
         pdfPageCount: 0,
-        currentPageIndex: _restorePageIndex(savedProgress, null),
+        currentPageIndex: restoredPage,
         currentBlockIndex: _restoreBlockIndex(savedProgress),
       );
     } else {
@@ -922,6 +932,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
   void setPdfPageCount(int count) {
     if (state.isPdf) {
       state = state.copyWith(pdfPageCount: count);
+      unawaited(_saveProgress());
     }
   }
 
@@ -977,6 +988,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     state = state.copyWith(currentPageIndex: index);
     unawaited(_saveProgress());
     _refreshBookmarkState();
+    if (state.isPdf && state.currentChapter != null) {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setInt('pdf_page_${state.currentChapter!.id}', index);
+      });
+    }
   }
 
   void updateScrollPosition(double offset, int pageIndex, {int blockIndex = 0}) {

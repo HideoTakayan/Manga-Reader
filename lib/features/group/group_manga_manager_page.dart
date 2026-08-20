@@ -11,6 +11,7 @@ import '../admin/add_manga_dialog.dart';
 import '../admin/chapter_manager_page.dart';
 import '../../data/models_group.dart';
 import '../../data/content_type.dart';
+import '../catalog/catalog_cache_service.dart';
 
 class GroupMangaManagerPage extends StatefulWidget {
   final ScanlationGroup group;
@@ -60,13 +61,20 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
   }
 
   void _applyFilters() {
-    final query = _searchController.text.trim().toLowerCase();
+    final query =
+        CatalogCacheService.instance.normalize(_searchController.text);
     _filteredMangas = _allGroupMangas.where((m) {
-      final matchesSearch = query.isEmpty ||
-          m.title.toLowerCase().contains(query) ||
-          m.author.toLowerCase().contains(query);
-      final matchesType = _selectedTypeFilter == null || m.contentType == _selectedTypeFilter;
-      return matchesSearch && matchesType;
+      final matchesType =
+          _selectedTypeFilter == null || m.contentType == _selectedTypeFilter;
+      if (!matchesType) return false;
+      if (query.isEmpty) return true;
+      final normTitle = CatalogCacheService.instance.normalize(m.title);
+      final normAuthor = CatalogCacheService.instance.normalize(m.author);
+      final normGenres =
+          CatalogCacheService.instance.normalize(m.genres.join(' '));
+      return normTitle.contains(query) ||
+          normAuthor.contains(query) ||
+          normGenres.contains(query);
     }).toList();
   }
 
@@ -183,26 +191,39 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                 ? const Center(
                     child: CircularProgressIndicator(color: Colors.blueAccent),
                   )
-                : _filteredMangas.isEmpty
-                    ? _buildEmptyState(isConnected)
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        physics: const BouncingScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 0.68,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                        ),
-                        itemCount: _filteredMangas.length,
-                        itemBuilder: (context, index) {
-                          final manga = _filteredMangas[index];
-                          return _GroupMangaCard(
-                            manga: manga,
-                            onRefresh: _loadMangas,
-                          );
-                        },
-                      ),
+                : RefreshIndicator(
+                    onRefresh: _loadMangas,
+                    color: Colors.blueAccent,
+                    child: _filteredMangas.isEmpty
+                        ? SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: SizedBox(
+                              height: MediaQuery.of(context).size.height * 0.6,
+                              child: _buildEmptyState(isConnected),
+                            ),
+                          )
+                        : GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.68,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                            ),
+                            itemCount: _filteredMangas.length,
+                            itemBuilder: (context, index) {
+                              final manga = _filteredMangas[index];
+                              return _GroupMangaCard(
+                                manga: manga,
+                                onRefresh: _loadMangas,
+                              );
+                            },
+                          ),
+                  ),
           ),
         ],
       ),

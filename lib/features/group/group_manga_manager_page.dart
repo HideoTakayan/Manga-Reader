@@ -30,6 +30,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
 
   final TextEditingController _searchController = TextEditingController();
   MangaContentType? _selectedTypeFilter;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -43,6 +44,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _authSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -146,7 +148,13 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                   child: TextField(
                     controller: _searchController,
                     style: const TextStyle(color: Colors.white),
-                    onChanged: (_) => setState(_applyFilters),
+                    textInputAction: TextInputAction.search,
+                    onChanged: (_) {
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      _debounce = Timer(const Duration(milliseconds: 150), () {
+                        if (mounted) setState(_applyFilters);
+                      });
+                    },
                     decoration: InputDecoration(
                       hintText: 'Tìm kiếm truyện theo tên, tác giả...',
                       hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
@@ -300,14 +308,20 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
             final confirm = await showDialog<bool>(
               context: context,
               builder: (ctx) => AlertDialog(
-                backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
-                title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white)),
+                backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 content: Text('Bạn đang kết nối với email: ${_driveAccount!.email}', style: const TextStyle(color: Colors.white70)),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-                  TextButton(
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Ngắt kết nối', style: TextStyle(color: Colors.redAccent)),
+                    child: const Text('Ngắt kết nối', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -327,39 +341,46 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Tài khoản Google của bạn chưa được Admin cấp quyền truy cập Google Drive.\n\nNhập email Google bên dưới, Admin sẽ thêm bạn vào danh sách cho phép:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Email Google',
-                labelStyle: const TextStyle(color: Color(0xFFFFB74D)),
-                hintText: 'example@gmail.com',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFFB74D)),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Tài khoản Google của bạn chưa được Admin cấp quyền truy cập Google Drive.\n\nNhập email Google bên dưới, Admin sẽ thêm bạn vào danh sách cho phép:',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
-            ),
-          ],
+              const SizedBox(height: 14),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Email Google',
+                  labelStyle: const TextStyle(color: Color(0xFFFFB74D)),
+                  hintText: 'example@gmail.com',
+                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                  prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFFB74D)),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               final email = emailController.text.trim();
               if (email.isEmpty) return;
@@ -388,11 +409,11 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                 }
               }
             },
-            child: const Text('Gửi yêu cầu', style: TextStyle(color: Colors.white)),
+            child: const Text('Gửi yêu cầu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
-    );
+    ).whenComplete(emailController.dispose);
   }
 
   Widget _buildEmptyState(bool isConnected) {
@@ -619,8 +640,10 @@ class _GroupMangaCard extends StatelessWidget {
                   Navigator.pop(ctx);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ChapterManagerPage(manga: manga)),
-                  );
+                    MaterialPageRoute(
+                      builder: (_) => ChapterManagerPage(manga: manga),
+                    ),
+                  ).then((_) => onRefresh());
                 },
               ),
               ListTile(
@@ -672,8 +695,8 @@ class _GroupMangaCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Xác nhận xóa truyện?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
           'Bạn có chắc chắn muốn xóa bộ truyện "${manga.title}"?\n\nToàn bộ chương và dữ liệu trên Google Drive sẽ bị xóa vĩnh viễn.',
@@ -682,10 +705,14 @@ class _GroupMangaCard extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               Navigator.pop(dialogContext);
               showDialog(
@@ -714,7 +741,7 @@ class _GroupMangaCard extends StatelessWidget {
                 }
               }
             },
-            child: const Text('Xóa vĩnh viễn', style: TextStyle(color: Colors.white)),
+            child: const Text('Xóa vĩnh viễn', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

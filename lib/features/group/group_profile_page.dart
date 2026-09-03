@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/models_cloud.dart';
 import '../../data/models_group.dart';
@@ -30,6 +32,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
   MangaContentType? _selectedTypeFilter;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -40,6 +43,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -50,7 +54,16 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
     try {
       _group ??= await GroupService.instance.getGroupById(widget.groupId);
 
-      final allMangas = await DriveService.instance.getMangas(forceRefresh: true);
+      List<CloudManga> allMangas;
+      try {
+        allMangas = await DriveService.instance.getMangas(forceRefresh: true);
+      } catch (_) {
+        try {
+          allMangas = await CatalogCacheService.instance.getCachedCatalog();
+        } catch (_) {
+          allMangas = [];
+        }
+      }
       _allMangas = allMangas.where((m) => m.uploaderGroupId == widget.groupId).toList();
       _applyFilter();
     } catch (e) {
@@ -63,7 +76,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
   }
 
   void _applyFilter() {
-    final query = CatalogCacheService.instance.normalize(_searchQuery);
+    final query = CatalogCacheService.instance.normalize(_searchQuery.trim());
     _filteredMangas = _allMangas.where((m) {
       final matchesType =
           _selectedTypeFilter == null || m.contentType == _selectedTypeFilter;
@@ -117,8 +130,64 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
             onPressed: () => context.pop(),
           ),
         ),
-        body: const Center(
-          child: Text('Không tìm thấy thông tin nhóm dịch', style: TextStyle(color: Colors.white70)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.group_off_rounded,
+                    size: 52,
+                    color: Colors.blueAccent,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Không tìm thấy thông tin nhóm dịch',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.',
+                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _loadGroupData,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Thử lại'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -191,23 +260,108 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    const Icon(Icons.people_outline, size: 14, color: Colors.white60),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${_group!.members.length} thành viên',
-                                      style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.people_outline, size: 14, color: Colors.white60),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${_group!.members.length} thành viên',
+                                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 12),
-                                    const Icon(Icons.calendar_today_outlined, size: 14, color: Colors.white60),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${_group!.createdAt.day}/${_group!.createdAt.month}/${_group!.createdAt.year}',
-                                      style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                    StreamBuilder<int>(
+                                      stream: GroupService.instance.streamFollowerCount(_group!.id),
+                                      builder: (context, snap) {
+                                        final count = snap.data ?? 0;
+                                        return Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(Icons.favorite_outline, size: 14, color: Colors.pinkAccent),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '$count theo dõi',
+                                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 8),
+                                StreamBuilder<bool>(
+                                  stream: GroupService.instance.isFollowingGroup(_group!.id),
+                                  builder: (context, snap) {
+                                    final isFollowing = snap.data ?? false;
+                                    return SizedBox(
+                                      height: 32,
+                                      child: isFollowing
+                                          ? OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: Colors.blueAccent,
+                                                side: const BorderSide(color: Colors.blueAccent),
+                                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                              ),
+                                              icon: const Icon(Icons.check_rounded, size: 16),
+                                              label: const Text(
+                                                'Đang theo dõi',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              ),
+                                              onPressed: () async {
+                                                HapticFeedback.lightImpact();
+                                                try {
+                                                  await GroupService.instance.unfollowGroup(_group!.id);
+                                                } catch (e) {
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(content: Text('Lỗi: $e')),
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                            )
+                                          : ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.blueAccent,
+                                                foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(20),
+                                                ),
+                                              ),
+                                              icon: const Icon(Icons.favorite_rounded, size: 16),
+                                              label: const Text(
+                                                'Theo dõi nhóm',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              ),
+                                              onPressed: () async {
+                                                HapticFeedback.mediumImpact();
+                                                try {
+                                                  await GroupService.instance.followGroup(
+                                                    _group!.id,
+                                                    _group!.name,
+                                                  );
+                                                } catch (e) {
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(content: Text('Lỗi: $e')),
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                            ),
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -295,6 +449,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                         controller: _searchController,
                         style:
                             const TextStyle(fontSize: 13, color: Colors.white),
+                        textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
                           hintText: 'Tìm truyện của nhóm...',
                           hintStyle: const TextStyle(
@@ -327,9 +482,14 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                               const EdgeInsets.symmetric(vertical: 8),
                         ),
                         onChanged: (val) {
-                          setState(() {
-                            _searchQuery = val.trim();
-                            _applyFilter();
+                          if (_debounce?.isActive ?? false) _debounce!.cancel();
+                          _debounce = Timer(const Duration(milliseconds: 150), () {
+                            if (mounted) {
+                              setState(() {
+                                _searchQuery = val;
+                                _applyFilter();
+                              });
+                            }
                           });
                         },
                       ),
@@ -370,13 +530,47 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                 hasScrollBody: false,
                 child: Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      _searchQuery.isNotEmpty
-                          ? 'Không tìm thấy bộ truyện nào phù hợp.'
-                          : 'Nhóm chưa đăng tải bộ truyện nào trong mục này.',
-                      style: const TextStyle(color: Colors.white54, fontSize: 14),
-                      textAlign: TextAlign.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.blueAccent.withValues(alpha: 0.2),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.auto_stories_outlined,
+                            size: 42,
+                            color: Colors.blueAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          _searchQuery.isNotEmpty
+                              ? 'Không tìm thấy bộ truyện phù hợp'
+                              : 'Chưa có truyện nào trong mục này',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _searchQuery.isNotEmpty
+                              ? 'Hãy thử tìm kiếm với từ khóa khác.'
+                              : 'Nhóm dịch chưa đăng tải bộ truyện nào theo danh mục đã chọn.',
+                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -13,6 +13,8 @@ import 'services/folder_service.dart';
 import 'services/notification_service.dart';
 import 'services/background_service.dart';
 import 'services/sync_service.dart';
+import 'services/level_service.dart';
+import 'features/forum/services/leaderboard_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
 import 'core/utils/archive_image_extractor.dart';
@@ -64,6 +66,12 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('⚠️ AuthService.init error: $e');
   }
+
+  // Khởi tạo hệ thống cấp độ & cache bảng xếp hạng
+  try {
+    await LevelService.instance.init();
+    LeaderboardService.instance.initWarmup();
+  } catch (_) {}
 
   // Tự động sync lịch sử đọc khi user đăng nhập (hoặc kết nối mạng trở lại).
   try {

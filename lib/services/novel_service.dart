@@ -175,10 +175,10 @@ class NovelService {
     InputFileStream? inputStream;
     try {
       inputStream = InputFileStream(epubPath);
-      final archive = ZipDecoder().decodeBuffer(inputStream);
+      final archive = ZipDecoder().decodeBuffer(inputStream, verify: false);
       Uint8List? coverBytes;
 
-      // Tìm file ảnh chứa từ 'cover' hoặc 'bìa'
+      // 1. Tìm file ảnh có tên chứa 'cover' hoặc 'bìa'
       for (final file in archive) {
         if (file.isFile) {
           final lowerName = file.name.toLowerCase();
@@ -194,7 +194,7 @@ class NovelService {
         }
       }
 
-      // Nếu không tìm thấy bằng tên, lấy file ảnh bất kỳ đầu tiên (thường là bìa)
+      // 2. Nếu không tìm thấy, lấy file ảnh bất kỳ đầu tiên
       if (coverBytes == null) {
         for (final file in archive) {
           if (file.isFile) {
@@ -218,7 +218,7 @@ class NovelService {
               : await _resolveManagedCoverPath(title, sourcePath),
         );
         await coverFile.parent.create(recursive: true);
-        await coverFile.writeAsBytes(coverBytes);
+        await coverFile.writeAsBytes(coverBytes, flush: true);
         return coverFile.path;
       }
     } catch (e) {

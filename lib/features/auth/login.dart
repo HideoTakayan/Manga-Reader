@@ -25,6 +25,15 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscure = true; // Ẩn/hiện mật khẩu
   bool _obscureConfirm = true; // Ẩn/hiện ô xác nhận mật khẩu
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
   // Xử lý submit cho cả 2 luồng (đăng nhập + đăng ký) trong cùng 1 hàm.
   Future<void> _submit() async {
     final name = _nameCtrl.text.trim();
@@ -135,84 +144,96 @@ class _LoginPageState extends State<LoginPage> {
 
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Quên mật khẩu?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.',
-              style: TextStyle(color: Colors.white70),
+      builder: (ctx) {
+        Future<void> submitReset() async {
+          final email = resetEmailCtrl.text.trim();
+          if (email.isEmpty) {
+            EasyLoading.showError('Vui lòng nhập email');
+            return;
+          }
+          Navigator.pop(ctx);
+          EasyLoading.show(status: 'Đang gửi...');
+          try {
+            await _auth.sendPasswordResetEmail(email);
+            EasyLoading.showSuccess('Đã gửi email khôi phục!');
+          } catch (e) {
+            EasyLoading.showError(
+              e.toString().replaceAll('Exception: ', ''),
+            );
+          }
+        }
+
+        return AlertDialog(
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Quên mật khẩu?',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: resetEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => submitReset(),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: _inputDecoration('Email', Icons.email_outlined),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: resetEmailCtrl,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration('Email', Icons.email_outlined),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: submitReset,
+              child: const Text('Gửi liên kết', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final email = resetEmailCtrl.text.trim();
-              if (email.isEmpty) {
-                EasyLoading.showError('Vui lòng nhập email');
-                return;
-              }
-              Navigator.pop(ctx);
-              EasyLoading.show(status: 'Đang gửi...');
-              try {
-                await _auth.sendPasswordResetEmail(email);
-                EasyLoading.showSuccess('Đã gửi email khôi phục!');
-              } catch (e) {
-                EasyLoading.showError(
-                  e.toString().replaceAll('Exception: ', ''),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.shade400,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Gửi'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Gradient Mesh
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1E0B2D), // Deep Purple
-                  Color(0xFF0E0E10), // Black
-                  Color(0xFF3B1010), // Dark Red
-                ],
-                stops: [0.0, 0.5, 1.0],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Background Gradient Mesh
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF1E0B2D), // Deep Purple
+                    Color(0xFF0E0E10), // Black
+                    Color(0xFF3B1010), // Dark Red
+                  ],
+                  stops: [0.0, 0.5, 1.0],
+                ),
               ),
             ),
-          ),
-          
-          Center(
+            Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: ClipRRect(
@@ -273,6 +294,8 @@ class _LoginPageState extends State<LoginPage> {
                         if (!isLogin) ...[
                           TextField(
                             controller: _nameCtrl,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
                             style: const TextStyle(color: Colors.white),
                             decoration: _inputDecoration(
                               'Tên hiển thị',
@@ -284,6 +307,7 @@ class _LoginPageState extends State<LoginPage> {
                         TextField(
                           controller: _emailCtrl,
                           keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
                           style: const TextStyle(color: Colors.white),
                           decoration: _inputDecoration('Email', Icons.email_outlined),
                         ),
@@ -291,6 +315,8 @@ class _LoginPageState extends State<LoginPage> {
                         TextField(
                           controller: _passCtrl,
                           obscureText: _obscure,
+                          textInputAction: isLogin ? TextInputAction.done : TextInputAction.next,
+                          onSubmitted: isLogin ? (_) => _submit() : null,
                           style: const TextStyle(color: Colors.white),
                           decoration: _inputDecoration(
                             'Mật khẩu',
@@ -331,6 +357,8 @@ class _LoginPageState extends State<LoginPage> {
                           TextField(
                             controller: _confirmCtrl,
                             obscureText: _obscureConfirm,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _submit(),
                             style: const TextStyle(color: Colors.white),
                             decoration: _inputDecoration(
                               'Xác nhận mật khẩu',
@@ -356,7 +384,7 @@ class _LoginPageState extends State<LoginPage> {
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.orange.shade400,
-                              foregroundColor: Colors.black,
+                              foregroundColor: Colors.white,
                               elevation: 4,
                               shadowColor: Colors.orange.withValues(alpha: 0.4),
                               shape: RoundedRectangleBorder(
@@ -416,7 +444,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
                         TextButton(
                           onPressed: () => setState(() => isLogin = !isLogin),
                           child: Text(
@@ -430,6 +458,16 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
+                        TextButton(
+                          onPressed: () => context.go('/'),
+                          child: Text(
+                            'Tiếp tục với tư cách Khách',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -437,8 +475,26 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
           ),
+          // Nút quay lại góc trên
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 20),
+                tooltip: 'Quay lại',
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/');
+                  }
+                },
+              ),
+            ),
+          ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

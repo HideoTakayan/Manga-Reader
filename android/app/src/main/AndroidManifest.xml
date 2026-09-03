@@ -23,8 +23,7 @@
         android:label="MangaReader"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true"
-        android:usesCleartextTraffic="true">
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -45,6 +44,42 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Intent Filter: Mở trực tiếp file truyện ngoại vi (File Manager, Download, v.v.) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.cbz" />
+                <data android:pathPattern=".*\\.cbr" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.epub" />
+                <data android:pathPattern=".*\\.pdf" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/x-cbr" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <!-- Intent Filter: Nhận file chia sẻ từ Zalo, Telegram, Drive -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 

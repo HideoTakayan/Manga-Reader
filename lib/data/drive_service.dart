@@ -301,6 +301,22 @@ class DriveService {
     } catch (e) {
       debugPrint('⚠️ Direct catalog download by ID failed: $e');
     }
+
+    // Fallback: Tải qua CDN Proxy nếu có cấu hình
+    if (DriveConfig.cdnProxyUrl.trim().isNotEmpty) {
+      try {
+        final cdnUrl = Uri.parse(DriveConfig.getDownloadUrl(fileId));
+        final cdnRes = await _httpClient.get(cdnUrl).timeout(const Duration(seconds: 4));
+        if (cdnRes.statusCode == 200 && !(cdnRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+          final content = utf8.decode(cdnRes.bodyBytes);
+          final List<dynamic> jsonList = jsonDecode(content);
+          return jsonList.map((e) => CloudManga.fromMap(e)).toList();
+        }
+      } catch (e) {
+        debugPrint('⚠️ CDN catalog download fallback failed: $e');
+      }
+    }
+
     return null;
   }
 
@@ -944,29 +960,41 @@ class DriveService {
     try {
       final q =
           "'$mangaId' in parents and trashed = false and name != 'info.json' and not name contains 'cover.'";
-      final listUrl = Uri.parse(
-        'https://www.googleapis.com/drive/v3/files'
-        '?q=${Uri.encodeComponent(q)}'
-        '&fields=files(id,name,mimeType,size,createdTime)'
-        '&pageSize=1000&key=${DriveConfig.apiKey}',
-      );
-      // Chạy song song: Tải danh sách file từ Google Drive và Lượt xem từ Firestore
-      final driveFuture = _httpClient.get(listUrl).timeout(const Duration(seconds: 5));
+
+      final rawFiles = <dynamic>[];
+      String? pageToken;
+      int pageCount = 0;
+
+      // Chạy song song: Tải lượt xem từ Firestore
       final statsFuture = InteractionService.instance
           .getChapterViews(mangaId)
           .timeout(const Duration(seconds: 3))
           .catchError((_) => <String, int>{});
 
-      final results = await Future.wait([driveFuture, statsFuture]);
-      final listRes = results[0] as http.Response;
-      final statsMap = results[1] as Map<String, int>;
+      do {
+        final tokenParam = (pageToken != null && pageToken.isNotEmpty)
+            ? '&pageToken=${Uri.encodeComponent(pageToken)}'
+            : '';
+        final listUrl = Uri.parse(
+          'https://www.googleapis.com/drive/v3/files'
+          '?q=${Uri.encodeComponent(q)}'
+          '&fields=files(id,name,mimeType,size,createdTime),nextPageToken'
+          '&pageSize=1000$tokenParam&key=${DriveConfig.apiKey}',
+        );
+        final listRes = await _httpClient.get(listUrl).timeout(const Duration(seconds: 5));
+        if (listRes.statusCode != 200) {
+          if (rawFiles.isNotEmpty) break; // Đã có dữ liệu từ các trang trước
+          throw Exception('HTTP ${listRes.statusCode} khi lấy chapters');
+        }
 
-      if (listRes.statusCode != 200) {
-        throw Exception('HTTP ${listRes.statusCode} khi lấy chapters');
-      }
+        final listData = jsonDecode(listRes.body) as Map<String, dynamic>;
+        final pageFiles = listData['files'] as List<dynamic>? ?? [];
+        rawFiles.addAll(pageFiles);
+        pageToken = listData['nextPageToken'] as String?;
+        pageCount++;
+      } while (pageToken != null && pageToken.isNotEmpty && pageCount < 10);
 
-      final listData = jsonDecode(listRes.body) as Map<String, dynamic>;
-      final rawFiles = listData['files'] as List<dynamic>? ?? [];
+      final statsMap = await statsFuture;
 
       final files = rawFiles.map((f) {
         final name = f['name'] as String? ?? '';

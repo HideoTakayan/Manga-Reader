@@ -19,6 +19,10 @@ class AuthService {
   static Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Migration from older releases which stored a plaintext email/password
+      // pair in app preferences for manual session restoration.
+      await prefs.remove('auth_email');
+      await prefs.remove('auth_password');
       final hasPersisted = prefs.getBool('is_logged_in') ?? false;
       final currentFirebaseUser = FirebaseAuth.instance.currentUser;
       if (currentFirebaseUser != null) {
@@ -29,7 +33,10 @@ class AuthService {
         await prefs.setBool('is_logged_in', true);
         await prefs.setString('user_uid', currentFirebaseUser.uid);
         await prefs.setString('user_email', currentFirebaseUser.email ?? '');
-        await prefs.setString('user_name', currentFirebaseUser.displayName ?? '');
+        await prefs.setString(
+          'user_name',
+          currentFirebaseUser.displayName ?? '',
+        );
       } else if (hasPersisted) {
         isPersistedLoggedIn = true;
         persistedUid = prefs.getString('user_uid') ?? '';
@@ -46,15 +53,19 @@ class AuthService {
   /// Đăng ký tài khoản email/password + tạo Firestore profile + gửi email xác thực
   Future<void> register(String email, String password, String name) async {
     final normalizedEmail = email.trim().toLowerCase();
+    final trimmedName = name.trim();
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
         email: normalizedEmail,
         password: password,
       );
+      if (cred.user != null && trimmedName.isNotEmpty) {
+        await cred.user!.updateDisplayName(trimmedName);
+      }
       // Tạo document users/{uid} ngay sau khi tạo account
       await _db.collection('users').doc(cred.user!.uid).set({
         'uid': cred.user!.uid,
-        'name': name,
+        'name': trimmedName.isNotEmpty ? trimmedName : 'User',
         'email': normalizedEmail,
         'avatar': '',
         'bio': '',
@@ -65,6 +76,11 @@ class AuthService {
         'lastSeen': null,
         'authProvider': 'email',
         'hasPassword': true,
+        // Leaderboard fields — phải có giá trị 0 để Firestore orderBy('exp') không bỏ qua doc
+        'exp': 0,
+        'level': 1,
+        'title': 'Tân Thủ Độc Giả',
+        'claimedChaptersCount': 0,
       });
       // Gửi email xác thực — user phải click link trước khi đăng nhập được
       await cred.user!.sendEmailVerification();
@@ -84,30 +100,44 @@ class AuthService {
       if (user != null) {
         // Phục hồi profile nếu bị lỗi mạng lúc đăng ký
         final doc = await _db.collection('users').doc(user.uid).get();
-        if (!doc.exists) {
+        String resolvedName = (user.displayName ?? '').trim();
+        if (doc.exists) {
+          final data = doc.data() ?? {};
+          final dbName = (data['displayName'] ?? data['name'] ?? '').toString().trim();
+          if (dbName.isNotEmpty) {
+            resolvedName = dbName;
+          }
+        } else {
           await _createUserProfile(
             uid: user.uid,
             email: user.email!,
-            name: user.displayName ?? 'User',
+            name: resolvedName.isNotEmpty ? resolvedName : 'User',
           );
+        }
+
+        if (resolvedName.isNotEmpty && (user.displayName == null || user.displayName!.trim().isEmpty)) {
+          await user.updateDisplayName(resolvedName);
         }
 
         if (!user.emailVerified) {
           await _auth.signOut();
           throw Exception('Vui lòng xác minh email trước khi đăng nhập.');
         } else {
+          final displayName = resolvedName.isNotEmpty ? resolvedName : 'User';
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_provider', 'email');
-          await prefs.setString('auth_email', email.trim().toLowerCase());
-          await prefs.setString('auth_password', password.trim());
+          // Firebase Auth persists its session independently. Keeping a
+          // password in SharedPreferences is unsafe and unnecessary.
+          await prefs.remove('auth_email');
+          await prefs.remove('auth_password');
           await prefs.setBool('is_logged_in', true);
           await prefs.setString('user_uid', user.uid);
           await prefs.setString('user_email', user.email ?? '');
-          await prefs.setString('user_name', user.displayName ?? 'User');
+          await prefs.setString('user_name', displayName);
           isPersistedLoggedIn = true;
           persistedUid = user.uid;
           persistedEmail = user.email ?? '';
-          persistedName = user.displayName ?? 'User';
+          persistedName = displayName;
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -174,7 +204,10 @@ class AuthService {
       await prefs.setBool('is_logged_in', true);
       await prefs.setString('user_uid', userCredential.user!.uid);
       await prefs.setString('user_email', userCredential.user!.email ?? '');
-      await prefs.setString('user_name', userCredential.user!.displayName ?? 'User');
+      await prefs.setString(
+        'user_name',
+        userCredential.user!.displayName ?? 'User',
+      );
       isPersistedLoggedIn = true;
       persistedUid = userCredential.user!.uid;
       persistedEmail = userCredential.user!.email ?? '';
@@ -191,6 +224,7 @@ class AuthService {
           email: userCredential.user!.email!,
           name: userCredential.user!.displayName ?? 'User',
           photoUrl: userCredential.user!.photoURL,
+          authProvider: 'google',
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -206,6 +240,7 @@ class AuthService {
     required String email,
     required String name,
     String? photoUrl,
+    String authProvider = 'email',
   }) async {
     await _db.collection('users').doc(uid).set({
       'uid': uid,
@@ -218,7 +253,14 @@ class AuthService {
       'followers': [],
       'isOnline': false,
       'lastSeen': null,
-      'authProvider': photoUrl != null ? 'google' : 'email',
+      // A Google account may legitimately have no profile photo. Provider
+      // identity must come from the authentication flow, not from photoUrl.
+      'authProvider': authProvider,
+      // Leaderboard fields — phải có giá trị 0 để Firestore orderBy('exp') không bỏ qua doc
+      'exp': 0,
+      'level': 1,
+      'title': 'Tân Thủ Độc Giả',
+      'claimedChaptersCount': 0,
     });
   }
 
@@ -284,16 +326,6 @@ class AuthService {
         }
       } catch (e) {
         // ignore
-      }
-    } else if (provider == 'email') {
-      final e = prefs.getString('auth_email');
-      final p = prefs.getString('auth_password');
-      if (e != null && p != null) {
-        try {
-          await login(e, p);
-        } catch (e) {
-          // ignore
-        }
       }
     }
   }

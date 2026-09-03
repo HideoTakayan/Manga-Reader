@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:go_router/go_router.dart';
+import 'edit_categories_page.dart';
 import 'following_page.dart';
 import 'history_page.dart';
 
@@ -15,7 +17,7 @@ class LibraryPage extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: const Text('Theo dõi', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('Thư viện', style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
           flexibleSpace: ClipRect(
             child: BackdropFilter(
@@ -23,6 +25,23 @@ class LibraryPage extends StatelessWidget {
               child: Container(color: Colors.transparent),
             ),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Quản lý danh mục',
+              icon: const Icon(Icons.category_outlined, color: Colors.white70),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const EditCategoriesPage()),
+                );
+              },
+            ),
+            IconButton(
+              tooltip: 'Thống kê đọc',
+              icon: const Icon(Icons.bar_chart_rounded, color: Colors.white70),
+              onPressed: () => context.push('/analytics'),
+            ),
+          ],
           bottom: const TabBar(
             indicatorColor: Colors.redAccent,
             indicatorWeight: 3,

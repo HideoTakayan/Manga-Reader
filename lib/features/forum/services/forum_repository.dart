@@ -5,13 +5,20 @@ import 'package:manga_reader/features/forum/models/forum_comment.dart';
 import '../models/forum_message.dart';
 import '../models/forum_report.dart';
 
+import '../models/forum_poll.dart';
+
 abstract class ForumRepository {
   Future<(List<ForumPost>, DocumentSnapshot?)> fetchDiscussionPosts({
     DocumentSnapshot? startAfter,
+    String? tag,
+    String sortBy = 'latest',
   });
   Future<(List<ForumPost>, DocumentSnapshot?)> fetchSharePosts({
     DocumentSnapshot? startAfter,
+    String? tag,
+    String sortBy = 'latest',
   });
+  Future<List<String>> fetchExistingTags({required String type});
 
   Future<void> createDiscussionPost({
     required String uid,
@@ -20,6 +27,14 @@ abstract class ForumRepository {
     required String body,
     String? gifUrl,
     File? imageFile,
+    ForumPoll? poll,
+    List<String>? tags,
+  });
+
+  Future<void> votePoll({
+    required String postId,
+    required int optionIndex,
+    required String uid,
   });
 
   Future<void> createSharePost({
@@ -32,6 +47,7 @@ abstract class ForumRepository {
     required String sharedMangaCoverUrl,
     String? sharedMangaAuthor,
     String? gifUrl,
+    List<String>? tags,
   });
 
   Future<ForumPost?> fetchPost(String postId);
@@ -93,8 +109,14 @@ abstract class ForumRepository {
     String? gifUrl,
     File? imageFile,
     String? replyToMessageId,
+    String? replyToUserId,
     String? replyToAuthorName,
     String? replyToBody,
+  });
+  Future<void> toggleMessageReaction({
+    required String messageId,
+    required String uid,
+    required String emoji,
   });
 
   // Moderation

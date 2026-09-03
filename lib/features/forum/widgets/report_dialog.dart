@@ -73,12 +73,17 @@ class _ReportDialogState extends State<ReportDialog> {
 
       if (mounted) {
         Navigator.of(context).pop(true);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Báo cáo đã được gửi. Cảm ơn bạn!')),
+          const SnackBar(
+            content: Text('Báo cáo đã được gửi. Cảm ơn bạn!'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi gửi báo cáo: $e')));
@@ -98,70 +103,124 @@ class _ReportDialogState extends State<ReportDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        'Báo cáo ${_getTypeName()}',
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Vui lòng chọn lý do báo cáo:'),
-            const SizedBox(height: 8),
-            ..._reasons.map((reason) {
-              return ListTile(
-                title: Text(reason),
-                leading: Radio<String>(
-                  value: reason,
-                  // ignore: deprecated_member_use
-                  groupValue: _selectedReason,
-                  // ignore: deprecated_member_use
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedReason = value;
-                    });
-                  },
-                ),
-                contentPadding: EdgeInsets.zero,
-                onTap: () {
-                  setState(() {
-                    _selectedReason = reason;
-                  });
-                },
-              );
-            }),
-            if (_selectedReason == 'Lý do khác')
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: TextField(
-                  controller: _otherReasonController,
-                  decoration: const InputDecoration(
-                    hintText: 'Nhập lý do cụ thể...',
-                    border: OutlineInputBorder(),
-                  ),
-                  maxLines: 3,
-                ),
+    final theme = Theme.of(context);
+
+    return PopScope(
+      canPop: !_isSubmitting,
+      child: AlertDialog(
+        backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Báo cáo ${_getTypeName()}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Vui lòng chọn lý do báo cáo:',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
               ),
-          ],
+              const SizedBox(height: 12),
+              ..._reasons.map((reason) {
+                final isSelected = _selectedReason == reason;
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.orange.withValues(alpha: 0.12)
+                        : Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected ? Colors.orange : Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    title: Text(
+                      reason,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? Colors.orangeAccent : Colors.white,
+                      ),
+                    ),
+                    leading: Radio<String>(
+                      value: reason,
+                      // ignore: deprecated_member_use
+                      groupValue: _selectedReason,
+                      activeColor: Colors.orange,
+                      // ignore: deprecated_member_use
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedReason = value;
+                        });
+                      },
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    onTap: () {
+                      setState(() {
+                        _selectedReason = reason;
+                      });
+                    },
+                  ),
+                );
+              }),
+              if (_selectedReason == 'Lý do khác')
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: TextField(
+                    controller: _otherReasonController,
+                    style: const TextStyle(fontSize: 13, color: Colors.white),
+                    textInputAction: TextInputAction.done,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      hintText: 'Nhập lý do cụ thể...',
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.06),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                    maxLines: 3,
+                  ),
+                ),
+            ],
+          ),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: _isSubmitting ? null : _submitReport,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('Gửi báo cáo', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('Hủy'),
-        ),
-        ElevatedButton(
-          onPressed: _isSubmitting ? null : _submitReport,
-          child: _isSubmitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Gửi'),
-        ),
-      ],
     );
   }
 }

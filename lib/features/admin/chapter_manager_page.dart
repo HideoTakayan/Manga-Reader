@@ -5,6 +5,7 @@ import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/notification_service.dart';
+import '../../core/utils/chapter_sort_helper.dart';
 import 'metadata_validator.dart';
 import 'package:path/path.dart' as path;
 
@@ -56,36 +57,11 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     _loadChapters();
   }
 
-  // Natural Sort: trích số đầu tiên từ tên chapter bằng RegEx rồi so sánh số.
-  // Tránh lỗi sort chuỗi kiểu "Chap 10" < "Chap 9" vì '1' < '9' theo ASCII.
+  // Natural Sort: dùng ChapterSortHelper đã được chuẩn hóa để xử lý Volume, Extra, Alpha.
   void _sortChapters() {
     setState(() {
-      _chapters.sort((a, b) {
-        // Trích số đầu tiên, hỗ trợ số thập phân: "Chap 9.5" → 9.5
-        double? getNumber(String s) {
-          final match = RegExp(r'(\d+(\.\d+)?)').firstMatch(s);
-          return match != null ? double.parse(match.group(1)!) : null;
-        }
-
-        final numA = getNumber(a.title);
-        final numB = getNumber(b.title);
-
-        if (numA != null && numB != null) {
-          if (numA == numB) {
-            // Số bằng nhau → fallback so sánh chuỗi để sort ổn định
-            return _isAscending
-                ? a.title.compareTo(b.title)
-                : b.title.compareTo(a.title);
-          }
-          return _isAscending ? numA.compareTo(numB) : numB.compareTo(numA);
-        }
-
-        // Không tìm thấy số → so sánh chuỗi thông thường
-        return _isAscending
-            ? a.title.compareTo(b.title)
-            : b.title.compareTo(a.title);
-      });
-
+      final sorted = ChapterSortHelper.sort(_chapters);
+      _chapters = _isAscending ? sorted : sorted.reversed.toList();
       _isAscending = !_isAscending; // Đảo chiều cho lần bấm tiếp theo
       _hasChanges = true;
     });
@@ -93,9 +69,9 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _isAscending
-              ? 'Đã sắp xếp giảm dần (Cao -> Thấp)'
-              : 'Đã sắp xếp tăng dần (Thấp -> Cao)',
+          !_isAscending
+              ? 'Đã sắp xếp tăng dần (Thấp -> Cao)'
+              : 'Đã sắp xếp giảm dần (Cao -> Thấp)',
         ),
         duration: const Duration(seconds: 1),
       ),
@@ -108,6 +84,10 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
     try {
       final newOrder = _chapters.map((c) => c.id).toList();
       await DriveService.instance.saveChapterOrder(widget.manga.id, newOrder);
+      try {
+        await DriveService.instance.getChapters(widget.manga.id, forceRefresh: true);
+        await DriveService.instance.getMangas(forceRefresh: true);
+      } catch (_) {}
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã lưu thứ tự chương mới!')),
@@ -127,7 +107,51 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_hasChanges,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final nav = Navigator.of(context);
+        final shouldLeave = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Thay đổi chưa lưu',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: const Text(
+              'Bạn đã thay đổi thứ tự chương nhưng chưa bấm "Lưu Thứ Tự". Bạn có chắc muốn rời đi không?',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Ở lại', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Rời đi', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        if (shouldLeave == true) {
+          nav.pop();
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(
           widget.manga.title,
@@ -182,12 +206,44 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
           ? const Center(child: CircularProgressIndicator())
           : _chapters.isEmpty
           ? Center(
-              child: Text(
-                'Chưa có ${_unitLabel.toLowerCase()} nào.\nBấm nút bên dưới để thêm!',
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.library_books_rounded,
+                        size: 54,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Chưa có ${_unitLabel.toLowerCase()} nào',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Bấm nút "Thêm $_unitLabel" bên dưới để tải lên các file chương cho bộ truyện này.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             )
           : Column(
@@ -217,7 +273,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                         key: ValueKey(chapter.id),
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2C2C2E),
+                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
@@ -258,62 +314,35 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                               final messenger = ScaffoldMessenger.of(context);
                               final confirm = await showDialog<bool>(
                                 context: context,
-                                builder: (context) => AlertDialog(
-                                  backgroundColor: Theme.of(context).cardColor,
-                                  title: Text(
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  title: const Text(
                                     'Xác nhận xóa',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleLarge,
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                                   content: Text(
                                     'Bạn có chắc muốn xóa "${chapter.title}"?',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
+                                    style: const TextStyle(color: Colors.white70),
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () =>
-                                          Navigator.pop(context, false),
-                                      child: Text(
+                                          Navigator.pop(ctx, false),
+                                      child: const Text(
                                         'Hủy',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
+                                        style: TextStyle(color: Colors.grey),
                                       ),
                                     ),
-                                    TextButton(
+                                    ElevatedButton(
                                       onPressed: () =>
-                                          Navigator.pop(context, true),
-                                      style: TextButton.styleFrom(
+                                          Navigator.pop(ctx, true),
+                                      style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.redAccent,
                                         foregroundColor: Colors.white,
-                                        minimumSize: const Size(128, 48),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 18,
-                                          vertical: 12,
-                                        ),
-                                        shape: const StadiumBorder(),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                       ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.check,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                          SizedBox(width: 8),
-                                          Text(
-                                            'Xóa',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                      child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                                     ),
                                   ],
                                 ),
@@ -325,11 +354,13 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                     chapter.id,
                                   );
                                   if (mounted) {
+                                    messenger.hideCurrentSnackBar();
                                     messenger.showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'Đã xóa chapter thành công',
+                                          'Đã xóa "${chapter.title}" thành công',
                                         ),
+                                        backgroundColor: Colors.green,
                                       ),
                                     );
                                     _refresh();
@@ -390,23 +421,61 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         },
         label: Text(
           widget.manga.contentType.isNovel ? 'Thêm EPUB' : 'Thêm Chapter',
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         icon: const Icon(Icons.upload_file),
         backgroundColor: Colors.orange,
-        foregroundColor: Colors.black,
+        foregroundColor: Colors.white,
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showValidationResult(List<MetadataValidationIssue> issues) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Theme.of(context).cardColor,
       showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         if (issues.isEmpty) {
-          return const SizedBox(
-            height: 160,
-            child: Center(child: Text('Danh sách chapter hợp lệ')),
+          return SizedBox(
+            height: 180,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.green.withValues(alpha: 0.12),
+                    ),
+                    child: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 44,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Tất cả chapter đều hợp lệ',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Không phát hiện lỗi cấu trúc hay thiếu trang',
+                    style: TextStyle(fontSize: 13, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ),
           );
         }
 
@@ -461,6 +530,12 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   final _titleController = TextEditingController();
   final List<File> _files = [];
   bool _isUploading = false;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
 
   // Mở file picker giới hạn chỉ file zip/cbz/epub — đây là các định dạng reader hỗ trợ.
   Future<void> _pickFile() async {
@@ -572,15 +647,17 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      title: Text(
-        widget.contentType.isNovel
-            ? 'Thêm EPUB Mới (Drive)'
-            : 'Thêm Chapter Mới (Drive)',
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-      ),
+    return PopScope(
+      canPop: !_isUploading,
+      child: AlertDialog(
+        backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          widget.contentType.isNovel
+              ? 'Thêm EPUB Mới (Drive)'
+              : 'Thêm Chapter Mới (Drive)',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -588,6 +665,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
             TextField(
               controller: _titleController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.sentences,
+              onSubmitted: (_) => _isUploading ? null : _submit(),
               decoration: _inputDeco(
                 widget.contentType.isNovel
                     ? 'Tên tập (VD: Tập 1)'
@@ -660,7 +740,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isUploading ? null : () => Navigator.pop(context),
           child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
@@ -674,8 +754,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           child: const Text('Thêm', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 }
 
 class _ContentTypeMismatchBanner extends StatelessWidget {

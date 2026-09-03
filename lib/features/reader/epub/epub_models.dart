@@ -65,6 +65,17 @@ class EpubBlock {
       spans: [EpubSpan(text: text)],
     );
   }
+
+  EpubBlock applyReplacements(String Function(String) transform) {
+    if (spans == null) return this;
+    final newSpans = spans!.map((s) => EpubSpan(
+      text: transform(s.text),
+      bold: s.bold,
+      italic: s.italic,
+      underline: s.underline,
+    )).toList();
+    return EpubBlock(type: type, spans: newSpans, image: image);
+  }
 }
 
 class EpubChapter {
@@ -83,6 +94,12 @@ class EpubChapter {
       .where((b) => b.type == EpubBlockType.image && b.image != null)
       .map((b) => b.image!)
       .toList();
+
+  EpubChapter applyReplacements(String Function(String) transform) {
+    final newTitle = transform(title);
+    final newBlocks = blocks.map((b) => b.applyReplacements(transform)).toList();
+    return EpubChapter(title: newTitle, blocks: newBlocks);
+  }
 }
 
 class EpubPage {

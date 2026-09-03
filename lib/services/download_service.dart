@@ -38,6 +38,7 @@ class DownloadTask {
   int? totalBytes;
   int? downloadedBytes;
   final bool isSilent;
+  int retryCount; // Số lần đã thử lại
 
   DownloadTask({
     required this.chapterId,
@@ -51,6 +52,7 @@ class DownloadTask {
     this.totalBytes,
     this.downloadedBytes,
     this.isSilent = false,
+    this.retryCount = 0,
   });
 
   DownloadTask copyWith({
@@ -59,6 +61,7 @@ class DownloadTask {
     String? errorMessage,
     int? totalBytes,
     int? downloadedBytes,
+    int? retryCount,
   }) {
     return DownloadTask(
       chapterId: chapterId,
@@ -72,6 +75,7 @@ class DownloadTask {
       totalBytes: totalBytes ?? this.totalBytes,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       isSilent: isSilent,
+      retryCount: retryCount ?? this.retryCount,
     );
   }
 
@@ -88,6 +92,7 @@ class DownloadTask {
       'totalBytes': totalBytes,
       'downloadedBytes': downloadedBytes,
       'isSilent': isSilent,
+      'retryCount': retryCount,
     };
   }
 
@@ -108,6 +113,7 @@ class DownloadTask {
       totalBytes: _readNullableInt(map['totalBytes']),
       downloadedBytes: _readNullableInt(map['downloadedBytes']),
       isSilent: map['isSilent'] == true,
+      retryCount: (map['retryCount'] as int?) ?? 0,
     );
   }
 
@@ -133,6 +139,10 @@ class DownloadService {
   // Hàng đợi tải xuống
   final Map<String, DownloadTask> _downloadQueue = {};
 
+  Map<String, DownloadTask> get currentQueue =>
+      Map.unmodifiable(_downloadQueue);
+  bool get isQueueEmpty => _downloadQueue.isEmpty;
+
   // Bộ điều khiển luồng để giao diện người dùng (UI) lắng nghe
   final _downloadController =
       StreamController<Map<String, DownloadTask>>.broadcast();
@@ -146,6 +156,11 @@ class DownloadService {
   int _maxConcurrentDownloads = _defaultConcurrentDownloads;
   int _activeDownloads = 0;
   final Map<String, Future<void>> _activeTaskFutures = {};
+  SharedPreferences? _cachedPrefs;
+
+  Future<SharedPreferences> _getPrefs() async {
+    return _cachedPrefs ??= await SharedPreferences.getInstance();
+  }
 
   int get maxConcurrentDownloads => _maxConcurrentDownloads;
   int get activeDownloads => _activeDownloads;
@@ -156,7 +171,7 @@ class DownloadService {
     if (_maxConcurrentDownloads == clamped) return;
     _maxConcurrentDownloads = clamped;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       await prefs.setInt(_concurrencyPrefsKey, clamped);
     } catch (_) {}
     debugPrint('⚡ Số luồng tải đồng thời cập nhật: $_maxConcurrentDownloads luồng');
@@ -379,6 +394,9 @@ class DownloadService {
         }
       } else {
         if (await partFile.exists()) {
+          if (await file.exists()) {
+            await file.delete();
+          }
           await partFile.rename(filePath);
         }
       }
@@ -438,16 +456,33 @@ class DownloadService {
       });
     } catch (e) {
       debugPrint('❌ Lỗi tải ${task.chapterTitle}: $e');
-      task.status = DownloadStatus.failed;
-      task.errorMessage = e.toString();
 
-      if (!task.isSilent) {
-        await _showDownloadCompleteSafely(
-          notifId,
-          'Lỗi tải',
-          task.chapterTitle,
-          isError: true,
-        );
+      // Auto-retry thông minh: thử lại tối đa 3 lần với delay tăng dần (2s, 5s, 10s)
+      const maxAutoRetries = 3;
+      if (task.retryCount < maxAutoRetries) {
+        task.retryCount++;
+        task.status = DownloadStatus.queued;
+        task.errorMessage = null;
+        final delaySeconds = [2, 5, 10][task.retryCount - 1];
+        debugPrint('🔄 Auto-retry ${task.retryCount}/$maxAutoRetries cho "${task.chapterTitle}" sau ${delaySeconds}s...');
+        _notifyListeners();
+        Future.delayed(Duration(seconds: delaySeconds), () {
+          if (_downloadQueue.containsKey(task.chapterId) &&
+              task.status == DownloadStatus.queued) {
+            _processQueue();
+          }
+        });
+      } else {
+        task.status = DownloadStatus.failed;
+        task.errorMessage = e.toString();
+        if (!task.isSilent) {
+          await _showDownloadCompleteSafely(
+            notifId,
+            'Lỗi tải',
+            task.chapterTitle,
+            isError: true,
+          );
+        }
       }
     } finally {
       _activeDownloads--;
@@ -511,6 +546,25 @@ class DownloadService {
     }
   }
 
+  Future<void> _deleteTaskPartFiles(DownloadTask task) async {
+    try {
+      final mangaFolderPath = await FolderService.getMangaPathByTitle(task.mangaTitle);
+      final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
+      final safeChapterId = FolderService.sanitize(task.chapterId);
+      final baseFileName = safeChapterTitle.isEmpty
+          ? safeChapterId
+          : '${safeChapterTitle}_$safeChapterId';
+      String fileName = baseFileName;
+      if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
+        fileName = '$fileName.${task.fileType}';
+      }
+      final partFile = File('$mangaFolderPath/$fileName.part');
+      final file = File('$mangaFolderPath/$fileName');
+      if (await partFile.exists()) await partFile.delete();
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   Future<void> cancelDownload(String chapterId) async {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
@@ -527,25 +581,8 @@ class DownloadService {
       } catch (e) {
         debugPrint('⚠️ Download cancel wait failed for $chapterId: $e');
       }
-    } else {
-      // Nếu task đang pause hoặc chưa tải, chủ động xóa file .part
-      try {
-        final mangaFolderPath = await FolderService.getMangaPathByTitle(task.mangaTitle);
-        final safeChapterTitle = FolderService.sanitize(task.chapterTitle);
-        final safeChapterId = FolderService.sanitize(task.chapterId);
-        final baseFileName = safeChapterTitle.isEmpty
-            ? safeChapterId
-            : '${safeChapterTitle}_$safeChapterId';
-        String fileName = baseFileName;
-        if (!fileName.toLowerCase().endsWith('.${task.fileType}')) {
-          fileName = '$fileName.${task.fileType}';
-        }
-        final partFile = File('$mangaFolderPath/$fileName.part');
-        final file = File('$mangaFolderPath/$fileName');
-        if (await partFile.exists()) await partFile.delete();
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
     }
+    await _deleteTaskPartFiles(task);
 
     _cancelNotificationSafely(task.chapterId.hashCode);
     _processQueue();
@@ -576,30 +613,36 @@ class DownloadService {
     }
   }
 
-  /// Thử lại quá trình tải (khi bị lỗi)
-  void retryDownload(String chapterId) {
+  /// Thử lại quá trình tải (khi bị lỗi) - Xóa file part cũ để tải mới hoàn toàn
+  Future<void> retryDownload(String chapterId) async {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
     if (task.status == DownloadStatus.failed) {
+      await _deleteTaskPartFiles(task);
       task.status = DownloadStatus.queued;
       task.progress = 0.0;
+      task.downloadedBytes = 0;
+      task.totalBytes = null;
       task.errorMessage = null;
+      task.retryCount = 0; // Reset khi người dùng chủ động retry
       _notifyListeners();
       _processQueue();
-      debugPrint('🔄 Thử lại: ${task.chapterTitle}');
+      debugPrint('🔄 Thử lại (manual): ${task.chapterTitle}');
     }
   }
 
-  void retryAllFailed() {
+  Future<void> retryAllFailed() async {
     var changed = false;
     for (final task in _downloadQueue.values) {
       if (task.status == DownloadStatus.failed) {
+        await _deleteTaskPartFiles(task);
         task.status = DownloadStatus.queued;
         task.progress = 0.0;
-        task.downloadedBytes = null;
+        task.downloadedBytes = 0;
         task.totalBytes = null;
         task.errorMessage = null;
+        task.retryCount = 0; // Reset khi người dùng chủ động retry all
         changed = true;
       }
     }
@@ -636,16 +679,17 @@ class DownloadService {
   }
 
   /// Xóa toàn bộ hàng đợi
-  void clearQueue() {
+  Future<void> clearQueue() async {
     for (final task in _downloadQueue.values) {
       task.status = DownloadStatus.cancelled;
       _cancelNotificationSafely(task.chapterId.hashCode);
+      await _deleteTaskPartFiles(task);
     }
     _downloadQueue.clear();
     _notifyListeners();
     WakelockPlus.disable();
     BackgroundService.stop();
-    debugPrint('🗑️ Đã xóa hàng đợi');
+    debugPrint('🗑️ Đã xóa sạch hàng đợi và file tạm');
   }
 
   bool _isMangaInQueue(String mangaId) {
@@ -764,7 +808,7 @@ class DownloadService {
 
   Future<void> _saveQueue() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
       final List<String> jsonList = _downloadQueue.values
           .where(
             (task) =>
@@ -781,7 +825,7 @@ class DownloadService {
 
   Future<void> restoreQueue() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _getPrefs();
 
       // Khôi phục cấu hình số luồng tải đồng thời
       final savedConcurrency = prefs.getInt(_concurrencyPrefsKey);

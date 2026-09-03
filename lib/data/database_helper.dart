@@ -477,6 +477,38 @@ class DatabaseHelper {
     );
   }
 
+  /// Lưu danh sách lịch sử đọc hàng loạt bằng một Transaction duy nhất (siêu nhanh)
+  ///
+  /// [alreadySynced]: truyền `true` khi batch đến từ cloud (Firestore) để tránh
+  /// SyncService push ngược lại gây vòng lặp thừa.
+  Future<void> saveHistoryBatch(
+    List<ReadingHistory> histories, {
+    bool alreadySynced = false,
+  }) async {
+    if (histories.isEmpty) return;
+    final db = await instance.database;
+    final batch = db.batch();
+    for (final history in histories) {
+      final map = history.toMap();
+      final dbMap = {
+        'userId': map['userId'],
+        'comicId': map['mangaId'] ?? map['comicId'],
+        'chapterId': map['chapterId'],
+        'chapterTitle': map['chapterTitle'],
+        'lastPageIndex': map['lastPageIndex'],
+        'totalPages': map['totalPages'],
+        'updatedAt': map['updatedAt'],
+        'isSynced': alreadySynced ? 1 : 0,
+      };
+      batch.insert(
+        'history',
+        dbMap,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
   // Lấy các bản ghi lịch sử chưa đồng bộ (isSynced = 0).
   // SyncService gọi hàm này khi app khởi động có mạng để push lên Firestore.
   Future<List<ReadingHistory>> getUnsyncedHistory(String userId) async {
@@ -636,6 +668,141 @@ class DatabaseHelper {
     return readIds;
   }
 
+  // Đánh dấu 1 chương là đã đọc
+  Future<void> markChapterAsRead({
+    required String mangaId,
+    required String chapterId,
+    String? userId,
+  }) async {
+    final uId = userId ?? 'guest';
+    final now = DateTime.now();
+    final activity = ReadingActivity(
+      id: '$uId|$mangaId|$chapterId|${ReadingActivity.dateKeyFor(now)}',
+      userId: uId,
+      mangaId: mangaId,
+      chapterId: chapterId,
+      pageIndex: 0,
+      totalPages: 1,
+      progressPercent: 1.0,
+      readAt: now,
+      dateKey: ReadingActivity.dateKeyFor(now),
+    );
+    await saveReadingActivity(activity);
+  }
+
+  // Đánh dấu 1 chương là chưa đọc
+  Future<void> markChapterAsUnread({
+    required String mangaId,
+    required String chapterId,
+    String? userId,
+  }) async {
+    final db = await instance.database;
+    final uId = userId ?? 'guest';
+    await db.delete(
+      'reading_activity',
+      where: 'mangaId = ? AND chapterId = ?',
+      whereArgs: [mangaId, chapterId],
+    );
+    await db.delete(
+      'history',
+      where: 'comicId = ? AND chapterId = ? AND (userId = ? OR userId = ?)',
+      whereArgs: [mangaId, chapterId, uId, 'guest'],
+    );
+    await db.delete(
+      'reader_progress',
+      where: 'mangaId = ? AND chapterId = ?',
+      whereArgs: [mangaId, chapterId],
+    );
+  }
+
+  // Đánh dấu danh sách các chương là đã đọc
+  Future<void> markChaptersAsRead({
+    required String mangaId,
+    required List<String> chapterIds,
+    String? userId,
+  }) async {
+    final db = await instance.database;
+    final uId = userId ?? 'guest';
+    final now = DateTime.now();
+    final dateKey = ReadingActivity.dateKeyFor(now);
+    final batch = db.batch();
+    for (final cid in chapterIds) {
+      final activity = ReadingActivity(
+        id: '$uId|$mangaId|$cid|$dateKey',
+        userId: uId,
+        mangaId: mangaId,
+        chapterId: cid,
+        pageIndex: 0,
+        totalPages: 1,
+        progressPercent: 1.0,
+        readAt: now,
+        dateKey: dateKey,
+      );
+      batch.insert(
+        'reading_activity',
+        activity.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  // Đánh dấu danh sách các chương là chưa đọc
+  Future<void> markChaptersAsUnread({
+    required String mangaId,
+    required List<String> chapterIds,
+    String? userId,
+  }) async {
+    if (chapterIds.isEmpty) return;
+    final db = await instance.database;
+    final uId = userId ?? 'guest';
+    final placeholders = List.filled(chapterIds.length, '?').join(',');
+    final batch = db.batch();
+    batch.delete(
+      'reading_activity',
+      where: 'mangaId = ? AND chapterId IN ($placeholders)',
+      whereArgs: [mangaId, ...chapterIds],
+    );
+    batch.delete(
+      'history',
+      where:
+          'comicId = ? AND chapterId IN ($placeholders) AND (userId = ? OR userId = ?)',
+      whereArgs: [mangaId, ...chapterIds, uId, 'guest'],
+    );
+    batch.delete(
+      'reader_progress',
+      where: 'mangaId = ? AND chapterId IN ($placeholders)',
+      whereArgs: [mangaId, ...chapterIds],
+    );
+    await batch.commit(noResult: true);
+  }
+
+  // Đánh dấu toàn bộ truyện là chưa đọc
+  Future<void> markAllChaptersAsUnread({
+    required String mangaId,
+    String? userId,
+  }) async {
+    final db = await instance.database;
+    final uId = userId ?? 'guest';
+    final batch = db.batch();
+    batch.delete(
+      'reading_activity',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+    );
+    batch.delete(
+      'history',
+      where: 'comicId = ? AND (userId = ? OR userId = ?)',
+      whereArgs: [mangaId, uId, 'guest'],
+    );
+    batch.delete(
+      'reader_progress',
+      where: 'mangaId = ?',
+      whereArgs: [mangaId],
+    );
+    await batch.commit(noResult: true);
+  }
+
   // Xóa toàn bộ cache (pages → chapters → comics theo thứ tự để không vi phạm FOREIGN KEY).
   Future<void> clearAll() async {
     final db = await instance.database;
@@ -710,6 +877,23 @@ class DatabaseHelper {
     );
   }
 
+  Future<Map<String, ReaderProgress>> getAllReaderProgressMap() async {
+    final db = await instance.database;
+    try {
+      final rows = await db.query('reader_progress');
+      final map = <String, ReaderProgress>{};
+      for (final r in rows) {
+        final p = ReaderProgress.fromMap(r);
+        if (p.mangaId.isNotEmpty) {
+          map[p.mangaId] = p;
+        }
+      }
+      return map;
+    } catch (e) {
+      return {};
+    }
+  }
+
   Future<void> saveBookmark(ReaderBookmark bookmark) async {
     final db = await instance.database;
     await db.insert(
@@ -749,6 +933,19 @@ class DatabaseHelper {
   Future<void> deleteBookmark(String id) async {
     final db = await instance.database;
     await db.delete('bookmarks', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> updateBookmarkNote(String id, String? note) async {
+    final db = await instance.database;
+    await db.update(
+      'bookmarks',
+      {
+        'note': (note == null || note.trim().isEmpty) ? null : note.trim(),
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> deleteBookmarksForManga(String mangaId) async {

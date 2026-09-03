@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/database_helper.dart';
 import '../data/drive_service.dart';
+import '../data/models.dart';
+import 'download_service.dart';
 
 class AppNotification {
   final String id;
@@ -158,7 +161,8 @@ class NotificationService {
     return score;
   }
 
-  // ─── LOCAL NOTIFICATIONS (Download Progress Bar) ───────────────────────────
+  // ─── LOCAL NOTIFICATIONS (Download Progress Bar & TTS Audiobook) ─────────
+  static void Function(String actionId)? onTtsActionReceived;
 
   Future<void> initLocalNotifications() async {
     const androidSettings = AndroidInitializationSettings(
@@ -167,13 +171,81 @@ class NotificationService {
     final initSettings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(
       settings: initSettings,
-      onDidReceiveNotificationResponse: (details) {},
+      onDidReceiveNotificationResponse: (details) {
+        final actionId = details.actionId;
+        if (actionId != null && actionId.startsWith('tts_')) {
+          onTtsActionReceived?.call(actionId);
+        }
+      },
     );
     final androidImpl = _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidImpl?.requestNotificationsPermission();
+  }
+
+  Future<void> showTtsMediaNotification({
+    required String title,
+    required String body,
+    required bool isPlaying,
+    int currentChunk = 0,
+    int totalChunks = 0,
+  }) async {
+    try {
+      final androidDetails = AndroidNotificationDetails(
+        'tts_media_channel',
+        'Audiobook Reader',
+        channelDescription: 'Điều khiển trình đọc truyện Audiobook & TTS',
+        importance: Importance.low,
+        priority: Priority.low,
+        onlyAlertOnce: true,
+        ongoing: isPlaying,
+        autoCancel: false,
+        showWhen: false,
+        actions: [
+          const AndroidNotificationAction(
+            'tts_prev',
+            '⏮️ Lùi',
+            showsUserInterface: true,
+            cancelNotification: false,
+          ),
+          AndroidNotificationAction(
+            'tts_play_pause',
+            isPlaying ? '⏸️ Dừng' : '▶️ Tiếp',
+            showsUserInterface: true,
+            cancelNotification: false,
+          ),
+          const AndroidNotificationAction(
+            'tts_next',
+            '⏩ Kế',
+            showsUserInterface: true,
+            cancelNotification: false,
+          ),
+          const AndroidNotificationAction(
+            'tts_stop',
+            '⏹️ Tắt',
+            showsUserInterface: true,
+            cancelNotification: false,
+          ),
+        ],
+      );
+
+      await _localNotifications.show(
+        id: 999,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('Error showing TTS media notification: $e');
+    }
+  }
+
+  Future<void> cancelTtsMediaNotification() async {
+    try {
+      await _localNotifications.cancel(id: 999);
+    } catch (_) {}
   }
 
   Future<void> showDownloadProgress(
@@ -268,133 +340,75 @@ class NotificationService {
 
     List<AppNotification> globalNotifs = [];
     List<AppNotification> forumNotifs = [];
-    final globalBySource = <String, Map<String, AppNotification>>{};
-    final globalSubscriptions =
-        <StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>[];
+    final Map<String, Map<String, dynamic>> rawGlobalNotifications = {};
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? globalSubscription;
     var followingIds = <String>{};
     var readIds = <String>{};
     var dismissedIds = <String>{};
 
     void emitMerged() {
-      final merged = [...globalNotifs, ...forumNotifs]
-          .where((note) => !dismissedIds.contains(note.id))
-          .toList();
+      final merged = [
+        ...globalNotifs,
+        ...forumNotifs,
+      ].where((note) => !dismissedIds.contains(note.id)).toList();
       merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       _latestUserNotifications = merged;
       controller.add(merged);
     }
 
     void rebuildGlobalNotifs() {
-      final mergedById = <String, AppNotification>{};
-      for (final sourceMap in globalBySource.values) {
-        for (final entry in sourceMap.entries) {
-          if (dismissedIds.contains(entry.key)) continue;
-          mergedById[entry.key] = entry.value.copyWith(
-            isRead: readIds.contains(entry.key),
+      final list = <AppNotification>[];
+      for (final entry in rawGlobalNotifications.entries) {
+        final id = entry.key;
+        if (dismissedIds.contains(id)) continue;
+        final data = entry.value;
+        final type = data['type']?.toString() ?? '';
+        final mangaId = (data['mangaId'] ?? data['comicId'])?.toString() ?? '';
+
+        // Giữ lại thông báo hệ thống hoặc thông báo của truyện đang follow
+        if (type == 'system' || (mangaId.isNotEmpty && followingIds.contains(mangaId))) {
+          list.add(
+            _globalNotificationFromData(
+              id: id,
+              data: data,
+              isRead: readIds.contains(id),
+            ),
           );
         }
       }
-      globalNotifs = mergedById.values.toList();
+      globalNotifs = list;
       emitMerged();
     }
 
-    void cancelGlobalSubscriptions() {
-      for (final sub in globalSubscriptions) {
-        unawaited(sub.cancel());
-      }
-      globalSubscriptions.clear();
-    }
-
-    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>
-    listenGlobalNotificationsByMangaField(String field, List<String> ids) {
-      final sourceKey = '$field:${ids.join('|')}';
-      final sourceMap = globalBySource[sourceKey] = <String, AppNotification>{};
-      return _db
+    void startGlobalSubscription() {
+      globalSubscription?.cancel();
+      globalSubscription = _db
           .collection('notifications')
-          .where(field, whereIn: ids)
           .orderBy('timestamp', descending: true)
-          .limit(50)
+          .limit(100)
           .snapshots()
           .listen(
             (snapshot) {
               for (final change in snapshot.docChanges) {
                 if (change.type == DocumentChangeType.removed) {
-                  sourceMap.remove(change.doc.id);
+                  rawGlobalNotifications.remove(change.doc.id);
                 } else {
                   final data = change.doc.data();
                   if (data != null) {
-                    sourceMap[change.doc.id] = _globalNotificationFromData(
-                      id: change.doc.id,
-                      data: data,
-                      isRead: readIds.contains(change.doc.id),
-                    );
+                    rawGlobalNotifications[change.doc.id] = data;
                   }
                 }
               }
               rebuildGlobalNotifs();
             },
             onError: (Object error, StackTrace stackTrace) {
-              debugPrint('Global notification stream error ($field): $error');
+              debugPrint('Global notification stream error: $error');
               emitMerged();
             },
           );
     }
 
-    void restartGlobalSubscriptions() {
-      cancelGlobalSubscriptions();
-      globalBySource.clear();
-
-      if (followingIds.isEmpty) {
-        // Fetch only system notifications if following list is empty
-      } else {
-        final ids = followingIds.toList();
-        for (var index = 0; index < ids.length; index += 10) {
-          final chunk = ids.skip(index).take(10).toList();
-          globalSubscriptions.add(
-            listenGlobalNotificationsByMangaField('mangaId', chunk),
-          );
-          globalSubscriptions.add(
-            listenGlobalNotificationsByMangaField('comicId', chunk),
-          );
-        }
-      }
-
-      // Always fetch system-wide notifications
-      const systemSourceKey = 'type:system';
-      final systemSourceMap = globalBySource[systemSourceKey] =
-          <String, AppNotification>{};
-      final systemSub = _db
-          .collection('notifications')
-          .where('type', isEqualTo: 'system')
-          .orderBy('timestamp', descending: true)
-          .limit(50)
-          .snapshots()
-          .listen(
-            (snapshot) {
-              for (final change in snapshot.docChanges) {
-                if (change.type == DocumentChangeType.removed) {
-                  systemSourceMap.remove(change.doc.id);
-                } else {
-                  final data = change.doc.data();
-                  if (data != null) {
-                    systemSourceMap[change.doc.id] =
-                        _globalNotificationFromData(
-                          id: change.doc.id,
-                          data: data,
-                          isRead: readIds.contains(change.doc.id),
-                        );
-                  }
-                }
-              }
-              rebuildGlobalNotifs();
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              debugPrint('System notification stream error: $error');
-              emitMerged();
-            },
-          );
-      globalSubscriptions.add(systemSub);
-    }
+    startGlobalSubscription();
 
     final userFollowingSub = _db
         .collection('users')
@@ -403,14 +417,16 @@ class NotificationService {
         .snapshots()
         .listen(
           (snapshot) {
-            followingIds = snapshot.docs.map((doc) => doc.id).toSet();
-            restartGlobalSubscriptions();
+            followingIds = snapshot.docs
+                .where((doc) => doc.data()['notifyEnabled'] != false)
+                .map((doc) => doc.id)
+                .toSet();
+            rebuildGlobalNotifs();
           },
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('Following stream error: $error');
             followingIds = <String>{};
-            restartGlobalSubscriptions();
-            emitMerged();
+            rebuildGlobalNotifs();
           },
         );
 
@@ -422,7 +438,9 @@ class NotificationService {
           (snapshot) {
             final data = snapshot.data();
             readIds = Set<String>.from(data?['readNotificationIds'] ?? []);
-            dismissedIds = Set<String>.from(data?['dismissedNotificationIds'] ?? []);
+            dismissedIds = Set<String>.from(
+              data?['dismissedNotificationIds'] ?? [],
+            );
             rebuildGlobalNotifs();
           },
           onError: (Object error, StackTrace stackTrace) {
@@ -465,7 +483,7 @@ class NotificationService {
     controller.onCancel = () {
       userFollowingSub.cancel();
       userSub.cancel();
-      cancelGlobalSubscriptions();
+      globalSubscription?.cancel();
       forumSub.cancel();
       _userNotificationsStream = null;
       _userNotificationsStreamUserId = null;
@@ -546,6 +564,8 @@ class NotificationService {
       'forum_comment' => 'forum.post_commented',
       'forum_reply' => 'forum.comment_replied',
       'forum_comment_like' => 'forum.comment_liked',
+      'forum_chat_reply' => 'forum.chat_replied',
+      'forum_chat_mention' => 'forum.chat_mentioned',
       _ => type.contains('.') ? type : 'forum.$type',
     };
   }
@@ -676,15 +696,14 @@ class NotificationService {
       }
     }
 
-    await _db
-        .collection('users')
-        .doc(userId)
-        .set({
-          'dismissedNotificationIds': FieldValue.arrayUnion([note.id]),
-        }, SetOptions(merge: true));
+    await _db.collection('users').doc(userId).set({
+      'dismissedNotificationIds': FieldValue.arrayUnion([note.id]),
+    }, SetOptions(merge: true));
   }
 
-  Future<void> clearReadNotifications(List<AppNotification> notifications) async {
+  Future<void> clearReadNotifications(
+    List<AppNotification> notifications,
+  ) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null || notifications.isEmpty) return;
 
@@ -719,12 +738,9 @@ class NotificationService {
     await commitBatchIfNeeded(force: true);
 
     if (dismissedIds.isNotEmpty) {
-      await _db
-          .collection('users')
-          .doc(userId)
-          .set({
-            'dismissedNotificationIds': FieldValue.arrayUnion(dismissedIds),
-          }, SetOptions(merge: true));
+      await _db.collection('users').doc(userId).set({
+        'dismissedNotificationIds': FieldValue.arrayUnion(dismissedIds),
+      }, SetOptions(merge: true));
     }
   }
 
@@ -791,7 +807,13 @@ class NotificationService {
     );
     // Dùng hash của (title + body + timestamp giây) để tránh ID trùng
     // khi 2 thông báo đến trong cùng 1 giây.
-    final id = (title + body + (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString()).hashCode.abs() % 100000;
+    final id =
+        (title +
+                body +
+                (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString())
+            .hashCode
+            .abs() %
+        100000;
     await _localNotifications.show(
       id: id,
       title: title,
@@ -800,36 +822,153 @@ class NotificationService {
     );
   }
 
-  Future<void> checkLocalChapterUpdates() async {
+  Future<int> getCheckIntervalHours() async {
     try {
-      await initLocalNotifications();
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt('chapter_check_interval_hours') ?? 6;
+    } catch (_) {
+      return 6;
+    }
+  }
+
+  Future<void> setCheckIntervalHours(int hours) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('chapter_check_interval_hours', hours);
+    } catch (_) {}
+  }
+
+  Future<void> checkLocalChapterUpdates({bool force = false}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      if (!force) {
+        final intervalHours = prefs.getInt('chapter_check_interval_hours') ?? 6;
+        if (intervalHours > 0) {
+          final lastCheck = prefs.getInt('last_chapter_check_timestamp') ?? 0;
+          final elapsedMs = DateTime.now().millisecondsSinceEpoch - lastCheck;
+          final intervalMs = intervalHours * 3600 * 1000;
+          if (elapsedMs < intervalMs) {
+            // Chưa đến chu kỳ quét kế tiếp -> Bỏ qua để tiết kiệm pin & mạng
+            return;
+          }
+        }
+      }
+
       final db = await DatabaseHelper.instance.database;
       final libraryRows = await db.query('lib_mapping', columns: ['mangaId']);
-      final libraryIds = libraryRows
+      final targetMangaIds = libraryRows
           .map((row) => row['mangaId']?.toString() ?? '')
           .where((id) => id.isNotEmpty)
           .toSet();
-      if (libraryIds.isEmpty) return;
 
-      final prefs = await SharedPreferences.getInstance();
+      final user = _auth.currentUser;
+      if (user != null) {
+        try {
+          final followingDocs = await _db
+              .collection('users')
+              .doc(user.uid)
+              .collection('following')
+              .get();
+          for (final doc in followingDocs.docs) {
+            if (doc.data()['notifyEnabled'] != false) {
+              targetMangaIds.add(doc.id);
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (targetMangaIds.isEmpty) return;
+
+      // Lưu lại mốc thời gian vừa quét thành công
+      await prefs.setInt(
+        'last_chapter_check_timestamp',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      final autoDownloadEnabled =
+          prefs.getBool('auto_download_new_chapters') ?? false;
+      final maxAutoChapters =
+          prefs.getInt('auto_download_max_chapters') ?? 1;
+
       final mangas = await DriveService.instance.getMangas();
       for (final manga in mangas.where(
-        (manga) => libraryIds.contains(manga.id),
+        (manga) => targetMangaIds.contains(manga.id),
       )) {
         final chapterCount = manga.chapterOrder.length;
         if (chapterCount <= 0) continue;
 
         final key = 'last_notified_chapter_count_${manga.id}';
         final lastCount = prefs.getInt(key);
-        await prefs.setInt(key, chapterCount);
 
-        if (lastCount == null || chapterCount <= lastCount) continue;
+        if (lastCount == null) {
+          // Lần đầu nạp truyện vào thư viện/theo dõi -> Lưu mốc hiện tại để không spam thông báo
+          await prefs.setInt(key, chapterCount);
+          continue;
+        }
 
+        if (chapterCount <= lastCount) continue;
+
+        final newChaptersCount = chapterCount - lastCount;
         await showGeneralNotification(
           title: 'Có chapter mới',
           body:
-              '${manga.title} vừa cập nhật ${chapterCount - lastCount} chapter',
+              '${manga.title} vừa cập nhật $newChaptersCount chapter mới',
         );
+
+        if (autoDownloadEnabled) {
+          try {
+            final allChapters =
+                await DriveService.instance.getChapters(manga.id);
+            if (allChapters.isNotEmpty) {
+              // Lấy các chapter mới nhất (nằm ở cuối danh sách đã sắp xếp) theo giới hạn đã cấu hình
+              final limit = maxAutoChapters >= 999
+                  ? newChaptersCount
+                  : min(newChaptersCount, maxAutoChapters);
+              final toDownload = allChapters.reversed.take(limit);
+
+              // Lưu LocalManga 1 lần duy nhất trước vòng lặp để tránh ghi SQLite N lần
+              final localMangaInfo = Manga(
+                id: manga.id,
+                title: manga.title,
+                coverUrl: manga.coverFileId,
+                author: manga.author,
+                description: manga.description,
+                genres: manga.genres,
+                contentType: manga.contentType,
+              );
+              await DatabaseHelper.instance.saveLocalManga(localMangaInfo);
+
+              int queuedCount = 0;
+              for (final ch in toDownload) {
+                final isDownloaded = await DatabaseHelper.instance
+                    .isChapterDownloaded(ch.id);
+                if (!isDownloaded) {
+                  await DownloadService.instance.addToQueue(
+                    chapterId: ch.id,
+                    mangaId: manga.id,
+                    mangaTitle: manga.title,
+                    chapterTitle: ch.title,
+                    fileType: ch.fileType,
+                    isSilent: true,
+                  );
+                  queuedCount++;
+                }
+              }
+
+              if (queuedCount > 0) {
+                debugPrint(
+                  '⚡ Auto-download queued $queuedCount new chapters for ${manga.title}',
+                );
+              }
+            }
+          } catch (e) {
+            debugPrint('Auto download chapter error for ${manga.title}: $e');
+          }
+        }
+
+        // Chỉ cập nhật mốc chương mới sau khi đã hoàn tất xử lý thông báo & tải ngầm
+        await prefs.setInt(key, chapterCount);
       }
     } catch (e) {
       debugPrint('Local chapter update check failed: $e');
@@ -858,10 +997,4 @@ class NotificationService {
       debugPrint('Lỗi gửi thông báo: $e');
     }
   }
-
-  // Hiện tại app dùng hệ thống "following" tập trung, nên các method này là stub.
-  Stream<bool> streamSubscriptionStatus(String mangaId) => Stream.value(false);
-  // ignore: avoid_returning_null_for_future
-  Future<void> toggleSubscription(String mangaId) async {}
-  Stream<int> streamMangaNotificationCount(String mangaId) => Stream.value(0);
 }

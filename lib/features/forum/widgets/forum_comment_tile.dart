@@ -6,9 +6,12 @@ import '../models/forum_comment.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_forum_repository.dart';
 import '../../../config/admin_config.dart';
+import '../../../widgets/level_badge.dart';
+import '../../../widgets/vip_leaderboard_flair.dart';
+import '../services/leaderboard_service.dart';
 import 'report_dialog.dart';
 
-class ForumCommentTile extends StatelessWidget {
+class ForumCommentTile extends StatefulWidget {
   final String postId;
   final ForumComment comment;
   final VoidCallback? onDeleted;
@@ -23,7 +26,44 @@ class ForumCommentTile extends StatelessWidget {
   });
 
   @override
+  State<ForumCommentTile> createState() => _ForumCommentTileState();
+}
+
+class _ForumCommentTileState extends State<ForumCommentTile> {
+  Stream<bool>? _likeStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initLikeStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant ForumCommentTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.postId != widget.postId || oldWidget.comment.id != widget.comment.id) {
+      _initLikeStream();
+    }
+  }
+
+  void _initLikeStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _likeStream = FirebaseForumRepository().hasLikedComment(
+        widget.postId,
+        widget.comment.id,
+        uid,
+      );
+    } else {
+      _likeStream = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final comment = widget.comment;
+    final authorRank = LeaderboardService.instance.getCachedRank(comment.authorId);
+
     return InkWell(
       onLongPress: () => _showOptions(context),
       child: Padding(
@@ -31,22 +71,39 @@ class ForumCommentTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
+            VipAvatarFrame(
+              rank: authorRank,
               radius: 16,
-              backgroundImage: comment.authorAvatar.isNotEmpty
-                  ? CachedNetworkImageProvider(comment.authorAvatar)
-                  : null,
-              child: comment.authorAvatar.isEmpty
-                  ? const Icon(Icons.person, size: 16)
-                  : null,
+              child: CircleAvatar(
+                radius: 16,
+                backgroundImage: comment.authorAvatar.isNotEmpty
+                    ? CachedNetworkImageProvider(comment.authorAvatar)
+                    : null,
+                child: comment.authorAvatar.isEmpty
+                    ? const Icon(Icons.person, size: 16)
+                    : null,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor.withValues(alpha: 0.5),
+                  color: authorRank == 1
+                      ? const Color(0xFF2C2216).withValues(alpha: 0.8)
+                      : authorRank == 2
+                          ? const Color(0xFF21282D).withValues(alpha: 0.8)
+                          : authorRank == 3
+                              ? const Color(0xFF2B1C17).withValues(alpha: 0.8)
+                              : Theme.of(context).cardColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
+                  border: authorRank == 1
+                      ? Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.2)
+                      : authorRank == 2
+                          ? Border.all(color: Colors.blueGrey.withValues(alpha: 0.4), width: 1.1)
+                          : authorRank == 3
+                              ? Border.all(color: Colors.deepOrange.withValues(alpha: 0.4), width: 1.1)
+                              : null,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,12 +111,26 @@ class ForumCommentTile extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          comment.authorName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              comment.authorName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: comment.authorId == FirebaseAuth.instance.currentUser?.uid
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            LevelBadge(level: comment.authorLevel, fontSize: 9.5),
+                            if (authorRank > 0 && authorRank <= 10) ...[
+                              const SizedBox(width: 6),
+                              VipRankBadge(rank: authorRank, fontSize: 8.5),
+                            ],
+                          ],
                         ),
                         Text(
                           timeago.format(comment.createdAt, locale: 'vi'),
@@ -95,7 +166,7 @@ class ForumCommentTile extends StatelessWidget {
                           Icons.reply_rounded,
                           'Phản hồi',
                           onTap: () {
-                            onReply?.call(comment);
+                            widget.onReply?.call(comment);
                           },
                         ),
                       ],
@@ -112,22 +183,39 @@ class ForumCommentTile extends StatelessWidget {
 
   void _showOptions(BuildContext pageContext) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final isOwner = currentUser?.uid == comment.authorId;
+    final isOwner = currentUser?.uid == widget.comment.authorId;
     final isAdmin = AdminConfig.isAdmin(currentUser?.email);
 
     showModalBottomSheet(
       context: pageContext,
+      backgroundColor: Theme.of(pageContext).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.copy_rounded),
                 title: const Text('Sao chép nội dung'),
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  Clipboard.setData(ClipboardData(text: comment.body));
+                  Clipboard.setData(ClipboardData(text: widget.comment.body));
+                  ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                   ScaffoldMessenger.of(pageContext).showSnackBar(
                     const SnackBar(
                       content: Text('Đã sao chép bình luận'),
@@ -145,8 +233,8 @@ class ForumCommentTile extends StatelessWidget {
                     context: pageContext,
                     builder: (_) => ReportDialog(
                       targetType: 'comment',
-                      targetId: comment.id,
-                      postId: postId,
+                      targetId: widget.comment.id,
+                      postId: widget.postId,
                     ),
                   );
                 },
@@ -163,22 +251,27 @@ class ForumCommentTile extends StatelessWidget {
                     final confirm = await showDialog<bool>(
                       context: pageContext,
                       builder: (dialogContext) => AlertDialog(
-                        title: const Text('Xác nhận xóa'),
+                        backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: const Text('Xác nhận xóa', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                         content: const Text(
                           'Bạn có chắc muốn xóa bình luận này?',
+                          style: TextStyle(color: Colors.white70),
                         ),
                         actions: [
                           TextButton(
                             onPressed: () =>
                                 Navigator.pop(dialogContext, false),
-                            child: const Text('Hủy'),
+                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                           ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext, true),
-                            child: const Text(
-                              'Xóa',
-                              style: TextStyle(color: Colors.red),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
@@ -187,17 +280,22 @@ class ForumCommentTile extends StatelessWidget {
                     if (confirm == true && pageContext.mounted) {
                       try {
                         await FirebaseForumRepository().softDeleteComment(
-                          postId,
-                          comment.id,
+                          widget.postId,
+                          widget.comment.id,
                         );
                         if (pageContext.mounted) {
+                          ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                           ScaffoldMessenger.of(pageContext).showSnackBar(
-                            const SnackBar(content: Text('Đã xóa bình luận')),
+                            const SnackBar(
+                              content: Text('Đã xóa bình luận'),
+                              backgroundColor: Colors.green,
+                            ),
                           );
-                          onDeleted?.call();
+                          widget.onDeleted?.call();
                         }
                       } catch (e) {
                         if (pageContext.mounted) {
+                          ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                           ScaffoldMessenger.of(
                             pageContext,
                           ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -219,7 +317,7 @@ class ForumCommentTile extends StatelessWidget {
       return _buildAction(
         context,
         Icons.thumb_up_outlined,
-        comment.likeCount.toString(),
+        widget.comment.likeCount.toString(),
         onTap: () {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Vui lòng đăng nhập để thích')),
@@ -229,25 +327,21 @@ class ForumCommentTile extends StatelessWidget {
     }
 
     return StreamBuilder<bool>(
-      stream: FirebaseForumRepository().hasLikedComment(
-        postId,
-        comment.id,
-        uid,
-      ),
+      stream: _likeStream,
       builder: (context, snapshot) {
         final isLiked = snapshot.data ?? false;
         return _buildAction(
           context,
           isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-          comment.likeCount.toString(),
+          widget.comment.likeCount.toString(),
           color: isLiked
               ? const Color(0xFFFF5252)
               : _inactiveActionColor(context),
           onTap: () async {
             try {
               await FirebaseForumRepository().toggleLikeComment(
-                postId,
-                comment.id,
+                widget.postId,
+                widget.comment.id,
                 uid,
               );
             } catch (e) {

@@ -27,6 +27,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
   StreamSubscription<List<ForumMessage>>? _streamSubscription;
   final List<ForumMessage> _messages = [];
   bool _isLoadingOlder = false;
+  bool _hasLoadedOlder = false;
   bool _hasMore = true;
   bool _isSending = false;
   bool _isInitialLoading = true;
@@ -46,9 +47,12 @@ class _ForumChatPageState extends State<ForumChatPage> {
     });
   }
 
+  Stream<DocumentSnapshot>? _userSnapshotStream;
+
   @override
   void initState() {
     super.initState();
+    _initUserStream();
     _scrollController.addListener(_onScroll);
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
@@ -57,6 +61,15 @@ class _ForumChatPageState extends State<ForumChatPage> {
         });
       }
     });
+  }
+
+  void _initUserStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _userSnapshotStream = FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots();
+    } else {
+      _userSnapshotStream = null;
+    }
   }
 
   @override
@@ -85,9 +98,10 @@ class _ForumChatPageState extends State<ForumChatPage> {
   void dispose() {
     _muteTimer?.cancel();
     _tabController?.removeListener(_onTabChanged);
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _streamSubscription?.cancel();
     _messageController.dispose();
-    _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -97,30 +111,21 @@ class _ForumChatPageState extends State<ForumChatPage> {
       (newMessages) {
         if (!mounted) return;
         setState(() {
-          // If it's the first load, replace all
-          if (_messages.isEmpty) {
+          if (!_hasLoadedOlder) {
+            _messages.clear();
             _messages.addAll(newMessages);
           } else {
-            // Merge logic: we have reverse list (index 0 is newest)
-            // For simplicity in Phase 4 MVP, we just update the top of the list or replace if we haven't loaded older.
-            // Since it's a stream of the top 50, if we haven't scrolled past 50, we can just replace the first N elements.
-            // A robust way is to use a Map, but for this MVP, if we haven't loaded older messages, replace all.
-            // If we have loaded older, we just prepend the very newest ones.
-
-            if (_messages.length <= 50) {
-              _messages.clear();
-              _messages.addAll(newMessages);
-            } else {
-              // We have older messages. Find which of newMessages are actually new.
-              for (var newMsg in newMessages.reversed) {
-                final index = _messages.indexWhere((m) => m.id == newMsg.id);
-                if (index != -1) {
-                  _messages[index] = newMsg; // Update existing
-                } else {
-                  _messages.insert(0, newMsg); // Prepend new
-                }
+            // Đã load tin cũ: cập nhật các tin hiện tại hoặc chèn thêm tin mới nhất
+            for (var newMsg in newMessages.reversed) {
+              final index = _messages.indexWhere((m) => m.id == newMsg.id);
+              if (index != -1) {
+                _messages[index] = newMsg; // Cập nhật tin có sẵn
+              } else {
+                _messages.insert(0, newMsg); // Thêm tin mới nhất vào đầu
               }
             }
+            // Đảm bảo thứ tự mới nhất -> cũ nhất
+            _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
           }
           _isInitialLoading = false;
         });
@@ -159,7 +164,13 @@ class _ForumChatPageState extends State<ForumChatPage> {
         if (olderMessages.isEmpty || olderMessages.length < 50) {
           _hasMore = false;
         }
-        _messages.addAll(olderMessages);
+        if (olderMessages.isNotEmpty) {
+          _hasLoadedOlder = true;
+          // Loại bỏ trùng lặp nếu có
+          final existingIds = _messages.map((m) => m.id).toSet();
+          final uniqueOlder = olderMessages.where((m) => !existingIds.contains(m.id)).toList();
+          _messages.addAll(uniqueOlder);
+        }
       });
     } catch (e) {
       if (mounted) {
@@ -196,15 +207,20 @@ class _ForumChatPageState extends State<ForumChatPage> {
 
     setState(() => _isSending = true);
 
+    final authorName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : 'Người dùng';
+
     try {
       await _repository.sendMessage(
         uid: user.uid,
-        authorName: user.displayName ?? 'Người dùng',
+        authorName: authorName,
         authorAvatar: user.photoURL ?? '',
         body: text,
         gifUrl: _gifUrl,
         imageFile: _imageFile,
         replyToMessageId: _replyingTo?.id,
+        replyToUserId: _replyingTo?.authorId,
         replyToAuthorName: _replyingTo?.authorName,
         replyToBody: _replyingTo?.body.isNotEmpty == true
             ? _replyingTo!.body
@@ -263,9 +279,10 @@ class _ForumChatPageState extends State<ForumChatPage> {
       return _buildChatLayout(null, false, null, false);
     }
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
-      builder: (context, snapshot) {
+    if (_userSnapshotStream != null) {
+      return StreamBuilder<DocumentSnapshot>(
+        stream: _userSnapshotStream,
+        builder: (context, snapshot) {
         bool isMuted = false;
         bool isBanned = false;
         DateTime? mutedUntil;
@@ -308,6 +325,9 @@ class _ForumChatPageState extends State<ForumChatPage> {
         return _buildChatLayout(user, isMuted, mutedUntil, isBanned);
       },
     );
+    }
+    
+    return _buildChatLayout(user, false, null, false);
   }
 
   Widget _buildChatLayout(User? user, bool isMuted, DateTime? mutedUntil, bool isBanned) {
@@ -317,7 +337,42 @@ class _ForumChatPageState extends State<ForumChatPage> {
           child: _isInitialLoading
               ? const Center(child: CircularProgressIndicator())
               : _messages.isEmpty
-              ? const Center(child: Text('Chưa có tin nhắn nào'))
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.forum_outlined,
+                          size: 44,
+                          color: Colors.blueAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Chưa có tin nhắn nào',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Hãy là người đầu tiên gửi tin nhắn trò chuyện!',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : ListView.builder(
                   controller: _scrollController,
                   reverse: true, // Tin mới nhất ở dưới cùng
@@ -354,17 +409,24 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       onDelete: () async {
                         final confirm = await showDialog<bool>(
                           context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Xóa tin nhắn'),
-                            content: const Text('Bạn có chắc muốn xóa tin nhắn này?'),
+                          builder: (dialogCtx) => AlertDialog(
+                            backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            title: const Text('Xóa tin nhắn', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            content: const Text('Bạn có chắc muốn xóa tin nhắn này?', style: TextStyle(color: Colors.white70)),
                             actions: [
                               TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Hủy'),
+                                onPressed: () => Navigator.pop(dialogCtx, false),
+                                child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                               ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () => Navigator.pop(dialogCtx, true),
+                                child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
@@ -375,9 +437,16 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         try {
                           await _repository.softDeleteMessage(message.id);
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xóa tin nhắn')));
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Đã xóa tin nhắn'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
                         } catch (e) {
                           if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                         }
                       },
@@ -389,9 +458,16 @@ class _ForumChatPageState extends State<ForumChatPage> {
                             reason: 'Vi phạm quy định diễn đàn',
                           );
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cấm ngôn người dùng')));
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Đã cấm ngôn người dùng'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
                         } catch (e) {
                           if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                         }
                       },
@@ -399,9 +475,16 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         try {
                           await _repository.unmuteForumUser(message.authorId);
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gỡ cấm ngôn')));
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Đã gỡ cấm ngôn'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
                         } catch (e) {
                           if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                         }
                       },
@@ -422,6 +505,23 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         });
                       },
                       onMention: () => _mentionUser(message.authorName),
+                      onReact: (emoji) {
+                        if (user == null) {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Vui lòng đăng nhập để thả cảm xúc'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+                        _repository.toggleMessageReaction(
+                          messageId: message.id,
+                          uid: user.uid,
+                          emoji: emoji,
+                        );
+                      },
                     );
                   },
                 ),
@@ -585,6 +685,8 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         child: TextField(
                           controller: _messageController,
                           focusNode: _focusNode,
+                          textCapitalization: TextCapitalization.sentences,
+                          textInputAction: TextInputAction.send,
                           decoration: InputDecoration(
                             hintText: user == null
                                 ? 'Đăng nhập...'

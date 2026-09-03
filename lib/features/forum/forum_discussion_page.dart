@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../catalog/catalog_cache_service.dart';
@@ -23,18 +25,45 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String? _selectedTag;
+  String _sortBy = 'latest'; // 'latest', 'hot', 'comments'
+  Timer? _searchDebounce;
+  List<String> _existingTags = [];
+
+  List<String> get _availableTags {
+    final tagsSet = <String>{..._existingTags};
+    for (final post in _posts) {
+      for (final tag in post.tags) {
+        final clean = tag.trim().toLowerCase().replaceAll('#', '');
+        if (clean.isNotEmpty) tagsSet.add(clean);
+      }
+    }
+    final list = tagsSet.toList()..sort();
+    return list;
+  }
 
   @override
   void initState() {
     super.initState();
+    _loadTags();
     _loadPosts();
     _scrollController.addListener(_onScroll);
+  }
+
+  Future<void> _loadTags() async {
+    try {
+      final tags = await _repository.fetchExistingTags(type: 'discussion');
+      if (mounted) {
+        setState(() => _existingTags = tags);
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -51,9 +80,15 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
       }
     });
 
+    if (refresh) {
+      _loadTags();
+    }
+
     try {
       final (newPosts, lastDoc) = await _repository.fetchDiscussionPosts(
         startAfter: _lastDocument,
+        tag: _selectedTag,
+        sortBy: _sortBy,
       );
 
       if (!mounted) return;
@@ -78,6 +113,24 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
         });
       }
     }
+  }
+
+  void _onTagSelected(String? tag) {
+    if (_selectedTag == tag) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _selectedTag = tag;
+    });
+    _loadPosts(refresh: true);
+  }
+
+  void _onSortChanged(String newSort) {
+    if (_sortBy == newSort) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _sortBy = newSort;
+    });
+    _loadPosts(refresh: true);
   }
 
   void _onScroll() {
@@ -109,13 +162,15 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                 normSharedAuthor.contains(q);
           }).toList();
 
+    final primary = Theme.of(context).colorScheme.primary;
+
     return Stack(
       children: [
         Column(
           children: [
             // Search Bar Header
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
               color: Theme.of(context).cardColor.withValues(alpha: 0.6),
               child: Container(
                 height: 40,
@@ -129,6 +184,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                 child: TextField(
                   controller: _searchController,
                   style: const TextStyle(fontSize: 14),
+                  textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: 'Tìm bài viết, tác giả, nội dung...',
                     hintStyle: TextStyle(
@@ -152,7 +208,138 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
-                  onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                  onChanged: (val) {
+                    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+                      if (mounted) setState(() => _searchQuery = val);
+                    });
+                  },
+                ),
+              ),
+            ),
+
+            // Top Hashtag Filter Bar
+            Builder(
+              builder: (context) {
+                final availableTags = _availableTags;
+                if (availableTags.isEmpty && _selectedTag == null) {
+                  return const SizedBox.shrink();
+                }
+
+                return Container(
+                  height: 42,
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.6),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    children: [
+                      // "All" chip
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: const Text('Tất cả'),
+                          selected: _selectedTag == null,
+                          selectedColor: primary.withValues(alpha: 0.22),
+                          labelStyle: TextStyle(
+                            color: _selectedTag == null ? primary : Colors.white70,
+                            fontWeight: _selectedTag == null ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 12,
+                          ),
+                          side: BorderSide(
+                            color: _selectedTag == null ? primary : Colors.white12,
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          onSelected: (_) => _onTagSelected(null),
+                        ),
+                      ),
+                      // If custom active tag is not in available tags, show it
+                      if (_selectedTag != null && !availableTags.contains(_selectedTag))
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text('#$_selectedTag'),
+                            selected: true,
+                            selectedColor: primary.withValues(alpha: 0.22),
+                            labelStyle: TextStyle(
+                              color: primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            side: BorderSide(color: primary),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            onSelected: (_) => _onTagSelected(null),
+                          ),
+                        ),
+                      // Available dynamic tags
+                      ...availableTags.map((tag) {
+                        final isSelected = _selectedTag == tag;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text('#$tag'),
+                            selected: isSelected,
+                            selectedColor: primary.withValues(alpha: 0.22),
+                            labelStyle: TextStyle(
+                              color: isSelected ? primary : Colors.white70,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 12,
+                            ),
+                            side: BorderSide(
+                              color: isSelected ? primary : Colors.white12,
+                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            onSelected: (val) {
+                              _onTagSelected(val ? tag : null);
+                            },
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // Sort Tab Bar
+            Container(
+              height: 38,
+              color: Theme.of(context).cardColor.withValues(alpha: 0.4),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Text(
+                      'Sắp xếp:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildSortChip(
+                      label: 'Mới nhất',
+                      icon: Icons.access_time_rounded,
+                      value: 'latest',
+                      color: primary,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildSortChip(
+                      label: 'Nhiều Tim',
+                      icon: Icons.local_fire_department_rounded,
+                      value: 'hot',
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildSortChip(
+                      label: 'Sôi nổi',
+                      icon: Icons.chat_bubble_outline_rounded,
+                      value: 'comments',
+                      color: Colors.orangeAccent,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -169,25 +356,69 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  _searchQuery.isEmpty
-                                      ? Icons.forum_outlined
-                                      : Icons.search_off_rounded,
-                                  size: 48,
-                                  color: Theme.of(context).disabledColor,
+                                Container(
+                                  padding: const EdgeInsets.all(18),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    _searchQuery.isEmpty
+                                        ? Icons.forum_outlined
+                                        : Icons.search_off_rounded,
+                                    size: 44,
+                                    color: Colors.blueAccent,
+                                  ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
                                 Text(
                                   _searchQuery.isEmpty
                                       ? 'Chưa có bài viết nào'
                                       : 'Không tìm thấy bài viết phù hợp',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                        color: Theme.of(context).disabledColor,
-                                      ),
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
                                 ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _searchQuery.isEmpty
+                                      ? 'Hãy là người đầu tiên bắt đầu một chủ đề thảo luận sôi nổi!'
+                                      : 'Thử tìm kiếm với từ khóa hoặc thẻ khác',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 13, color: Colors.white54),
+                                ),
+                                if (_searchQuery.isEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: () async {
+                                      HapticFeedback.lightImpact();
+                                      if (FirebaseAuth.instance.currentUser == null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Vui lòng đăng nhập để đăng bài')),
+                                        );
+                                        return;
+                                      }
+                                      final created = await context.push<bool>('/forum/create?type=discussion');
+                                      if (created == true && mounted) {
+                                        await _loadPosts(refresh: true);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.edit_rounded, size: 18),
+                                    label: const Text('Tạo bài viết đầu tiên', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -210,12 +441,14 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                           final post = filteredPosts[index];
                           return ForumPostCard(
                             post: post,
+                            onTagTap: (tag) => _onTagSelected(tag),
                             onDeleted: () {
                               setState(
                                 () => _posts.removeWhere((p) => p.id == post.id),
                               );
                             },
                             onTap: () async {
+                              HapticFeedback.selectionClick();
                               final deleted = await context.push<bool>(
                                 '/forum/detail/${post.id}',
                               );
@@ -240,7 +473,9 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
           right: 16,
           child: FloatingActionButton(
             heroTag: 'create_discussion',
+            tooltip: 'Tạo bài thảo luận',
             onPressed: () async {
+              HapticFeedback.lightImpact();
               if (FirebaseAuth.instance.currentUser == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -260,6 +495,50 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSortChip({
+    required String label,
+    required IconData icon,
+    required String value,
+    required Color color,
+  }) {
+    final isSelected = _sortBy == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _onSortChanged(value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color.withValues(alpha: 0.6) : Colors.white12,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 12,
+              color: isSelected ? color : Colors.white60,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? color : Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

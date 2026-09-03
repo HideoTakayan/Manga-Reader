@@ -16,6 +16,12 @@ class HistoryService {
   Future<void> saveHistory(ReadingHistory history) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
+    if (history.mangaId.startsWith('LOCAL_NOVEL') ||
+        history.mangaId.startsWith('local_') ||
+        history.mangaId.contains('/') ||
+        history.mangaId.contains('\\')) {
+      return;
+    }
 
     try {
       final data = history.toMap()..remove('comicId');
@@ -27,6 +33,8 @@ class HistoryService {
           .set({...data, 'updatedAt': FieldValue.serverTimestamp()});
     } catch (e) {
       debugPrint('Lỗi khi lưu lịch sử lên cloud: $e');
+      // Let SyncService retain this local record for a later retry.
+      rethrow;
     }
   }
 
@@ -51,7 +59,7 @@ class HistoryService {
   }
 
   /// Lấy toàn bộ lịch sử — orderBy updatedAt để hiện mới nhất trước
-  Future<List<ReadingHistory>> getAllHistory() async {
+  Future<List<ReadingHistory>> getAllHistory({int limit = 150}) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return [];
 
@@ -61,7 +69,7 @@ class HistoryService {
           .doc(uid)
           .collection('history')
           .orderBy('updatedAt', descending: true)
-          .limit(50)
+          .limit(limit)
           .get();
 
       return snapshot.docs.map((doc) {
@@ -88,18 +96,27 @@ class HistoryService {
     }
   }
 
-  /// Xóa toàn bộ history — dùng Batch Write để xóa nhiều document trong 1 request
+  /// Xóa toàn bộ history in batches. Firestore supports at most 500 writes
+  /// per batch, while a user can have more history records than that.
   Future<void> clearAllHistory() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     try {
       final collection = _db.collection('users').doc(uid).collection('history');
-      final snapshot = await collection.get();
-      final batch = _db.batch();
-      for (var doc in snapshot.docs) {
-        batch.delete(doc.reference);
+      const batchSize = 450;
+
+      while (true) {
+        final snapshot = await collection.limit(batchSize).get();
+        if (snapshot.docs.isEmpty) return;
+
+        final batch = _db.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+
+        if (snapshot.docs.length < batchSize) return;
       }
-      await batch.commit();
     } catch (e) {
       debugPrint('Lỗi khi xoá toàn bộ lịch sử: $e');
     }

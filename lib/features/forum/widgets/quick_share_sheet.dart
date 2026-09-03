@@ -47,9 +47,12 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
     setState(() => _isSharing = true);
     try {
       final caption = _captionController.text.trim();
+      final authorName = user.displayName?.trim().isNotEmpty == true
+          ? user.displayName!.trim()
+          : 'Người dùng';
       await _repository.createSharePost(
         uid: user.uid,
-        authorName: user.displayName ?? 'Người dùng',
+        authorName: authorName,
         authorAvatar: user.photoURL ?? '',
         body: caption,
         sharedMangaId: widget.manga.id,
@@ -61,6 +64,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
       if (!mounted) return;
       Navigator.pop(context);
 
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Row(
@@ -72,7 +76,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
               ),
             ],
           ),
-          backgroundColor: const Color(0xFF2C2C2E),
+          backgroundColor: Theme.of(context).cardColor,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
@@ -86,6 +90,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Lỗi chia sẻ: $e'),
@@ -102,12 +107,14 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
     final manga = widget.manga;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return Container(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      decoration: const BoxDecoration(
-        color: Color(0xFF18181C),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    return PopScope(
+      canPop: !_isSharing,
+      child: Container(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        decoration: BoxDecoration(
+          color: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
       child: SafeArea(
         top: false,
         child: SingleChildScrollView(
@@ -256,6 +263,8 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                   controller: _captionController,
                   maxLines: 3,
                   maxLength: 2000,
+                  textInputAction: TextInputAction.done,
+                  textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Nhập cảm nghĩ hoặc lý do bạn muốn giới thiệu bộ truyện này (không bắt buộc)...',
@@ -357,6 +366,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -5,8 +5,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 // Dữ liệu lưu ở subcollection users/{uid}/following/{mangaId}
 // và đồng thời cập nhật likeCount trong collection 'comics'.
 class FollowService {
+  static final FollowService instance = FollowService._internal();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  FollowService._internal();
+  factory FollowService() => instance;
 
   Stream<bool> isFollowing(String mangaId) {
     final uid = _auth.currentUser?.uid;
@@ -43,6 +47,7 @@ class FollowService {
         'title': title,
         'coverUrl': coverUrl,
         'followedAt': Timestamp.now(),
+        'notifyEnabled': true,
       });
       transaction.set(mangaRef, {
         'likeCount': FieldValue.increment(1),
@@ -113,6 +118,7 @@ class FollowService {
           'title': title,
           'coverUrl': coverUrl,
           'followedAt': Timestamp.now(),
+          'notifyEnabled': true,
         });
         transaction.set(mangaRef, {
           'likeCount': FieldValue.increment(1),
@@ -120,4 +126,45 @@ class FollowService {
       });
     }
   }
+
+  /// Lắng nghe trạng thái bật/tắt thông báo cho bộ truyện (Mặc định là true nếu theo dõi)
+  Stream<bool> isNotificationEnabled(String mangaId) {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return Stream.value(false);
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .doc(mangaId)
+        .snapshots()
+        .map((snap) {
+      if (!snap.exists) return false;
+      final data = snap.data();
+      return data?['notifyEnabled'] is bool ? data!['notifyEnabled'] as bool : true;
+    });
+  }
+
+  /// Bật/Tắt chuông thông báo chương mới cho bộ truyện
+  Future<bool> toggleNotification(String mangaId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) throw Exception('Chưa đăng nhập');
+
+    final ref = _db
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .doc(mangaId);
+
+    final doc = await ref.get();
+    if (!doc.exists) return false;
+
+    final current = doc.data()?['notifyEnabled'] is bool
+        ? doc.data()!['notifyEnabled'] as bool
+        : true;
+    final next = !current;
+
+    await ref.update({'notifyEnabled': next});
+    return next;
+  }
 }
+

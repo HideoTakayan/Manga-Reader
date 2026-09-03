@@ -29,6 +29,14 @@ InputDecoration _inputDeco(String hint) {
 }
 
 class _EditCategoriesPageState extends State<EditCategoriesPage> {
+  late Stream<List<String>> _categoriesStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoriesStream = LibraryService.instance.streamCategories();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,7 +50,7 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
       // StreamBuilder: danh sách categories realtime từ Firestore
       // Mỗi khi thêm/xóa/sửa/reorder → stream phát → list tự cập nhật
       body: StreamBuilder<List<String>>(
-        stream: LibraryService.instance.streamCategories(),
+        stream: _categoriesStream,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -76,30 +84,70 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddDialog(context),
-        label: const Text('Thêm'),
-        icon: const Icon(Icons.add),
-        backgroundColor: Colors.orange,
-        foregroundColor: Colors.white,
+      floatingActionButton: StreamBuilder<List<String>>(
+        stream: _categoriesStream,
+        builder: (context, snapshot) {
+          final categories = snapshot.data ?? [];
+          return FloatingActionButton.extended(
+            onPressed: () => _showAddDialog(context, categories),
+            label: const Text('Thêm'),
+            icon: const Icon(Icons.add),
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+          );
+        },
       ),
     );
   }
 
-  // Dialog thêm danh mục mới — chỉ gọi addCategory nếu tên không rỗng
-  void _showAddDialog(BuildContext context) {
+  // Dialog thêm danh mục mới — kiểm tra tên không rỗng & không trùng
+  void _showAddDialog(BuildContext context, List<String> existingCategories) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Thêm danh mục', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: _inputDeco('Tên danh mục'),
+        content: StatefulBuilder(
+          builder: (context, _) {
+            void submit() {
+              final newName = controller.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tên danh mục không được để trống')),
+                );
+                return;
+              }
+              if (newName.toLowerCase() == 'mặc định' ||
+                  existingCategories.any(
+                    (c) => c.toLowerCase() == newName.toLowerCase(),
+                  )) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Danh mục "$newName" đã tồn tại')),
+                );
+                return;
+              }
+              LibraryService.instance.addCategory(newName);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Đã thêm danh mục "$newName"')),
+              );
+            }
+
+            return TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => submit(),
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco('Tên danh mục'),
+            );
+          },
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -109,10 +157,30 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
           ),
           ElevatedButton(
             onPressed: () {
-              if (controller.text.isNotEmpty) {
-                LibraryService.instance.addCategory(controller.text);
-                Navigator.pop(ctx);
+              final newName = controller.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tên danh mục không được để trống')),
+                );
+                return;
               }
+              if (newName.toLowerCase() == 'mặc định' ||
+                  existingCategories.any(
+                    (c) => c.toLowerCase() == newName.toLowerCase(),
+                  )) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Danh mục "$newName" đã tồn tại')),
+                );
+                return;
+              }
+              LibraryService.instance.addCategory(newName);
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Đã thêm danh mục "$newName"')),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
@@ -124,7 +192,7 @@ class _EditCategoriesPageState extends State<EditCategoriesPage> {
           ),
         ],
       ),
-    );
+    ).whenComplete(controller.dispose);
   }
 }
 
@@ -140,7 +208,7 @@ class _CategoryItem extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF2C2C2C),
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
@@ -173,20 +241,64 @@ class _CategoryItem extends StatelessWidget {
     );
   }
 
-  // Pre-fill tên cũ vào TextField — chỉ gọi updateCategory nếu tên mới không rỗng
+  // Pre-fill tên cũ vào TextField — kiểm tra tên mới không rỗng & không trùng
   void _showEditDialog(BuildContext context) {
     final controller = TextEditingController(text: name);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Sửa danh mục', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: _inputDeco('Tên mới'),
+        content: StatefulBuilder(
+          builder: (context, _) {
+            Future<void> submit() async {
+              final newName = controller.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tên danh mục không được để trống')),
+                );
+                return;
+              }
+              if (newName != name) {
+                final existingCategories =
+                    await LibraryService.instance.getCategories();
+                if (newName.toLowerCase() == 'mặc định' ||
+                    existingCategories.any(
+                      (c) => c.toLowerCase() == newName.toLowerCase(),
+                    )) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Danh mục "$newName" đã tồn tại')),
+                    );
+                  }
+                  return;
+                }
+              }
+              LibraryService.instance.updateCategory(name, newName);
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+              }
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Đã đổi tên danh mục thành "$newName"')),
+                );
+              }
+            }
+
+            return TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => submit(),
+              style: const TextStyle(color: Colors.white),
+              decoration: _inputDeco('Tên mới'),
+            );
+          },
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -195,10 +307,40 @@ class _CategoryItem extends StatelessWidget {
             child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                LibraryService.instance.updateCategory(name, controller.text);
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tên danh mục không được để trống')),
+                );
+                return;
+              }
+              if (newName != name) {
+                final existingCategories =
+                    await LibraryService.instance.getCategories();
+                if (newName.toLowerCase() == 'mặc định' ||
+                    existingCategories.any(
+                      (c) => c.toLowerCase() == newName.toLowerCase(),
+                    )) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Danh mục "$newName" đã tồn tại')),
+                    );
+                  }
+                  return;
+                }
+              }
+              LibraryService.instance.updateCategory(name, newName);
+              if (ctx.mounted) {
                 Navigator.pop(ctx);
+              }
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Đã đổi tên danh mục thành "$newName"')),
+                );
               }
             },
             style: ElevatedButton.styleFrom(
@@ -211,7 +353,7 @@ class _CategoryItem extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ).whenComplete(controller.dispose);
   }
 
   // Xóa danh mục: tất cả truyện trong mục này bị gỡ bỏ khỏi mục (không xóa truyện)
@@ -220,7 +362,7 @@ class _CategoryItem extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Xóa danh mục?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text(
           'Tất cả truyện trong mục "$name" sẽ bị gỡ bỏ khỏi mục này.',
@@ -236,6 +378,10 @@ class _CategoryItem extends StatelessWidget {
             onPressed: () {
               LibraryService.instance.removeCategory(name);
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Đã xóa danh mục "$name"')),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,

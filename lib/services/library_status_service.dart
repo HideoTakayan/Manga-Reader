@@ -1,15 +1,32 @@
 import 'dart:convert';
-
+import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../data/database_helper.dart';
 
 enum MangaReadingStatus { reading, completed, paused, dropped, planToRead }
 
-class LibraryStatusService {
+class LibraryStatusService extends ChangeNotifier {
   LibraryStatusService._();
 
   static final LibraryStatusService instance = LibraryStatusService._();
+
+  static (String label, IconData icon, Color color) getStatusDisplay(
+    MangaReadingStatus status,
+  ) {
+    switch (status) {
+      case MangaReadingStatus.reading:
+        return ('Đang đọc', Icons.menu_book_rounded, Colors.greenAccent);
+      case MangaReadingStatus.completed:
+        return ('Đã xong', Icons.check_circle_outline_rounded, Colors.blueAccent);
+      case MangaReadingStatus.paused:
+        return ('Tạm dừng', Icons.pause_circle_outline_rounded, Colors.amberAccent);
+      case MangaReadingStatus.planToRead:
+        return ('Dự định đọc', Icons.bookmark_outline_rounded, Colors.purpleAccent);
+      case MangaReadingStatus.dropped:
+        return ('Bỏ dở', Icons.cancel_outlined, Colors.redAccent);
+    }
+  }
 
   Future<void> setStatus(String mangaId, MangaReadingStatus status) async {
     final current = await getEntry(mangaId);
@@ -21,6 +38,7 @@ class LibraryStatusService {
         updatedAt: DateTime.now(),
       ),
     );
+    notifyListeners();
   }
 
   Future<void> setTags(String mangaId, List<String> tags) async {
@@ -37,6 +55,7 @@ class LibraryStatusService {
         updatedAt: DateTime.now(),
       ),
     );
+    notifyListeners();
   }
 
   Future<LibraryStatusEntry?> getEntry(String mangaId) async {
@@ -82,6 +101,7 @@ class LibraryStatusService {
       where: 'mangaId = ?',
       whereArgs: [mangaId],
     );
+    notifyListeners();
   }
 }
 

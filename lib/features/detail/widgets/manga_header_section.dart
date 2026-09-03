@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
 import '../../../data/models_cloud.dart';
@@ -7,6 +9,7 @@ import '../../../services/interaction_service.dart';
 import '../../../services/group_service.dart';
 import '../../../services/library_status_service.dart';
 import '../../shared/drive_image.dart';
+import '../../shared/custom_tag_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 
@@ -118,6 +121,7 @@ class MangaHeaderSection extends StatelessWidget {
                       onTap: manga.author.trim().isEmpty
                           ? null
                           : () {
+                              HapticFeedback.selectionClick();
                               context.push(
                                 Uri(
                                   path: '/search-global',
@@ -165,11 +169,15 @@ class MangaHeaderSection extends StatelessWidget {
                           color: Colors.white70,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          manga.status,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
+                        Expanded(
+                          child: Text(
+                            manga.status,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -179,108 +187,29 @@ class MangaHeaderSection extends StatelessWidget {
                       children: [
                         const Icon(Icons.list, size: 16, color: Colors.white70),
                         const SizedBox(width: 4),
-                        Text(
-                          '${manga.contentType.unitLabel} $chaptersLength',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
+                        Expanded(
+                          child: Text(
+                            '${manga.contentType.unitLabel} $chaptersLength',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
                     if (manga.uploaderGroupId != null && manga.uploaderGroupId!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      FutureBuilder<ScanlationGroup?>(
-                        future: GroupService.instance.getGroupById(manga.uploaderGroupId!),
-                        builder: (context, snapshot) {
-                          final group = snapshot.data;
-                          if (group == null) return const SizedBox.shrink();
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: () {
-                              context.push(
-                                '/group/profile/${group.id}',
-                                extra: group,
-                              );
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.groups_2_outlined,
-                                    size: 16,
-                                    color: Colors.lightBlueAccent,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      'Nhóm dịch: ${group.name}',
-                                      style: const TextStyle(
-                                        color: Colors.lightBlueAccent,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor: Colors.lightBlueAccent,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                      _GroupBadge(groupId: manga.uploaderGroupId!),
                     ],
                     const SizedBox(height: 8),
-                    StreamBuilder<Map<String, int>>(
-                      stream: InteractionService.instance.streamMangaStats(
-                        manga.id,
-                      ),
-                      builder: (context, statsSnapshot) {
-                        final stats =
-                            statsSnapshot.data ??
-                            {
-                              'viewCount': manga.viewCount,
-                              'likeCount': manga.likeCount,
-                            };
-                        final viewCount = stats['viewCount'] ?? 0;
-                        final likeCount = stats['likeCount'] ?? 0;
-
-                        return Row(
-                          children: [
-                            const Icon(
-                              Icons.remove_red_eye_outlined,
-                              size: 16,
-                              color: Colors.white70,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _formatCount(viewCount),
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            const Icon(
-                              Icons.favorite_border,
-                              size: 16,
-                              color: Colors.white70,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _formatCount(likeCount),
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    _MangaStatsRow(
+                      mangaId: manga.id,
+                      initialViewCount: manga.viewCount,
+                      initialLikeCount: manga.likeCount,
+                      formatCount: _formatCount,
                     ),
                     const SizedBox(height: 8),
                     _RatingWidget(mangaId: manga.id),
@@ -297,6 +226,76 @@ class MangaHeaderSection extends StatelessWidget {
   }
 }
 
+/// Widget con StatefulWidget để cache stream stats — tránh tạo Firestore stream
+/// mới mỗi lần StatelessWidget parent rebuild.
+class _MangaStatsRow extends StatefulWidget {
+  final String mangaId;
+  final int initialViewCount;
+  final int initialLikeCount;
+  final String Function(int) formatCount;
+
+  const _MangaStatsRow({
+    required this.mangaId,
+    required this.initialViewCount,
+    required this.initialLikeCount,
+    required this.formatCount,
+  });
+
+  @override
+  State<_MangaStatsRow> createState() => _MangaStatsRowState();
+}
+
+class _MangaStatsRowState extends State<_MangaStatsRow> {
+  late Stream<Map<String, int>> _statsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _statsStream = InteractionService.instance.streamMangaStats(widget.mangaId);
+  }
+
+  @override
+  void didUpdateWidget(_MangaStatsRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mangaId != widget.mangaId) {
+      _statsStream = InteractionService.instance.streamMangaStats(widget.mangaId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Map<String, int>>(
+      stream: _statsStream,
+      builder: (context, statsSnapshot) {
+        final stats = statsSnapshot.data ?? {
+          'viewCount': widget.initialViewCount,
+          'likeCount': widget.initialLikeCount,
+        };
+        final viewCount = stats['viewCount'] ?? 0;
+        final likeCount = stats['likeCount'] ?? 0;
+
+        return Row(
+          children: [
+            const Icon(Icons.remove_red_eye_outlined, size: 16, color: Colors.white70),
+            const SizedBox(width: 4),
+            Text(
+              widget.formatCount(viewCount),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(width: 16),
+            const Icon(Icons.favorite_border, size: 16, color: Colors.white70),
+            const SizedBox(width: 4),
+            Text(
+              widget.formatCount(likeCount),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _RatingWidget extends StatefulWidget {
   final String mangaId;
   const _RatingWidget({required this.mangaId});
@@ -308,11 +307,21 @@ class _RatingWidget extends StatefulWidget {
 class _RatingWidgetState extends State<_RatingWidget> {
   int _userRating = 0;
   bool _isRating = false;
+  late Stream<Map<String, dynamic>> _ratingStream;
 
   @override
   void initState() {
     super.initState();
+    _ratingStream = InteractionService.instance.streamMangaRating(widget.mangaId);
     _loadUserRating();
+  }
+
+  @override
+  void didUpdateWidget(_RatingWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mangaId != widget.mangaId) {
+      _ratingStream = InteractionService.instance.streamMangaRating(widget.mangaId);
+    }
   }
 
   Future<void> _loadUserRating() async {
@@ -325,19 +334,46 @@ class _RatingWidgetState extends State<_RatingWidget> {
   }
 
   Future<void> _rate(int stars) async {
-    if (_userRating > 0 || _isRating) return; // Chỉ cho rate 1 lần
+    if (_isRating) return; // Chỉ chặn khi đang xử lý, cho phép thay đổi
+    if (_userRating == stars) return; // Bấm cùng sao — không làm gì
+    HapticFeedback.lightImpact();
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Vui lòng đăng nhập để đánh giá truyện.'),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isRating = true);
 
     try {
       await InteractionService.instance.rateManga(widget.mangaId, stars);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('rating_${widget.mangaId}', stars);
-      if (mounted) setState(() => _userRating = stars);
-    } catch (_) {
+      if (mounted) {
+        setState(() => _userRating = stars);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cảm ơn bạn đã đánh giá $stars sao!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Không thể lưu đánh giá. Vui lòng thử lại.'),
+        SnackBar(
+          content: Text('Không thể lưu đánh giá: $e'),
         ),
       );
     } finally {
@@ -348,39 +384,78 @@ class _RatingWidgetState extends State<_RatingWidget> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Map<String, dynamic>>(
-      stream: InteractionService.instance.streamMangaRating(widget.mangaId),
+      stream: _ratingStream,
       builder: (context, snapshot) {
         final data = snapshot.data ?? {'sum': 0, 'count': 0};
         final sum = _readInt(data, 'sum');
         final count = _readInt(data, 'count');
         final double average = count > 0 ? sum / count : 0.0;
 
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(5, (index) {
-                final starValue = index + 1;
-                return GestureDetector(
-                  onTap: () => _rate(starValue),
-                  child: Icon(
-                    starValue <=
-                            (_userRating > 0 ? _userRating : average.round())
-                        ? Icons.star
-                        : Icons.star_border,
-                    size: 16,
-                    color: Colors.amber,
+              children: [
+                Tooltip(
+                  message: _userRating > 0
+                      ? 'Bạn đã đánh giá $_userRating sao — bấm để thay đổi'
+                      : 'Bấm sao để đánh giá',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(5, (index) {
+                      final starValue = index + 1;
+                      return GestureDetector(
+                        onTap: () => _rate(starValue),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(
+                            starValue <=
+                                    (_userRating > 0 ? _userRating : average.round())
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            key: ValueKey('star_${starValue}_${_userRating}_${average.round()}'),
+                            size: 18,
+                            color: _userRating > 0 && starValue <= _userRating
+                                ? Colors.orangeAccent
+                                : Colors.amber,
+                          ),
+                        ),
+                      );
+                    }),
                   ),
-                );
-              }),
+                ),
+                const SizedBox(width: 6),
+                if (_isRating)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                  )
+                else
+                  Flexible(
+                    child: Text(
+                      average > 0
+                          ? '${average.toStringAsFixed(1)} ($count lượt)'
+                          : 'Chưa có đánh giá',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 4),
-            Text(
-              average > 0
-                  ? '${average.toStringAsFixed(1)} ($count)'
-                  : 'Chưa có',
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
-            ),
+            if (_userRating > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  'Đánh giá của bạn: $_userRating ★',
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -409,7 +484,14 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
   @override
   void initState() {
     super.initState();
+    LibraryStatusService.instance.addListener(_loadStatus);
     _loadStatus();
+  }
+
+  @override
+  void dispose() {
+    LibraryStatusService.instance.removeListener(_loadStatus);
+    super.dispose();
   }
 
   Future<void> _loadStatus() async {
@@ -427,13 +509,24 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   child: Text(
                     'Trạng thái đọc',
                     style: TextStyle(
@@ -446,7 +539,7 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                 const Divider(color: Colors.white12),
                 ...MangaReadingStatus.values.map((status) {
                   final isSelected = _entry?.status == status;
-                  final (label, icon, color) = _statusInfo(status);
+                  final (label, icon, color) = LibraryStatusService.getStatusDisplay(status);
                   return ListTile(
                     leading: Icon(icon, color: color),
                     title: Text(
@@ -460,7 +553,6 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                     onTap: () async {
                       Navigator.pop(ctx);
                       await LibraryStatusService.instance.setStatus(widget.mangaId, status);
-                      _loadStatus();
                     },
                   );
                 }),
@@ -472,7 +564,6 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                     onTap: () async {
                       Navigator.pop(ctx);
                       await LibraryStatusService.instance.removeEntry(widget.mangaId);
-                      _loadStatus();
                     },
                   ),
                 ],
@@ -484,58 +575,165 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
     );
   }
 
-  (String, IconData, Color) _statusInfo(MangaReadingStatus status) {
-    switch (status) {
-      case MangaReadingStatus.reading:
-        return ('Đang đọc', Icons.menu_book, Colors.tealAccent);
-      case MangaReadingStatus.completed:
-        return ('Đã hoàn thành', Icons.check_circle_outline, Colors.greenAccent);
-      case MangaReadingStatus.paused:
-        return ('Tạm dừng', Icons.pause_circle_outline, Colors.amberAccent);
-      case MangaReadingStatus.planToRead:
-        return ('Dự định đọc', Icons.bookmark_outline, Colors.blueAccent);
-      case MangaReadingStatus.dropped:
-        return ('Bỏ dở', Icons.cancel_outlined, Colors.redAccent);
-    }
+  @override
+  Widget build(BuildContext context) {
+    final status = _entry?.status;
+    final tags = _entry?.tags ?? [];
+    final (label, icon, color) = status != null
+        ? LibraryStatusService.getStatusDisplay(status)
+        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Colors.white60);
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        // Reading status chip
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: _showStatusDialog,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: (status != null ? color : Colors.white).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: (status != null ? color : Colors.white30).withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.arrow_drop_down, size: 16, color: color),
+              ],
+            ),
+          ),
+        ),
+
+        // Custom tags
+        ...tags.map((tag) => CustomTagBadge(
+              tag: tag,
+              isSmall: true,
+              onTap: () async {
+                final updated = await CustomTagManagerDialog.show(
+                  context,
+                  mangaId: widget.mangaId,
+                  currentTags: tags,
+                );
+                if (updated != null) _loadStatus();
+              },
+            )),
+
+        // Add Tag button
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            final updated = await CustomTagManagerDialog.show(
+              context,
+              mangaId: widget.mangaId,
+              currentTags: tags,
+            );
+            if (updated != null) _loadStatus();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white24,
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bookmark_add_outlined, size: 13, color: Colors.orangeAccent),
+                SizedBox(width: 4),
+                Text(
+                  '+ Nhãn',
+                  style: TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// StatefulWidget riêng để cache Future getGroupById — tránh gọi network
+// mỗi lần build() của MangaHeaderSection (StatelessWidget) bị trigger lại.
+class _GroupBadge extends StatefulWidget {
+  final String groupId;
+  const _GroupBadge({required this.groupId});
+
+  @override
+  State<_GroupBadge> createState() => _GroupBadgeState();
+}
+
+class _GroupBadgeState extends State<_GroupBadge> {
+  late final Future<ScanlationGroup?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = GroupService.instance.getGroupById(widget.groupId);
   }
 
   @override
   Widget build(BuildContext context) {
-    final status = _entry?.status;
-    final (label, icon, color) = status != null
-        ? _statusInfo(status)
-        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Colors.white60);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: _showStatusDialog,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: (status != null ? color : Colors.white).withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: (status != null ? color : Colors.white30).withValues(alpha: 0.4),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+    return FutureBuilder<ScanlationGroup?>(
+      future: _future,
+      builder: (context, snapshot) {
+        final group = snapshot.data;
+        if (group == null) return const SizedBox.shrink();
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            context.push('/group/profile/${group.id}', extra: group);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.groups_2_outlined, size: 16, color: Colors.lightBlueAccent),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    'Nhóm dịch: ${group.name}',
+                    style: const TextStyle(
+                      color: Colors.lightBlueAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                      decorationColor: Colors.lightBlueAccent,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 2),
-            Icon(Icons.arrow_drop_down, size: 16, color: color),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

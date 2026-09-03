@@ -32,10 +32,12 @@ Corrupted `.zip` or `.epub` files shouldn't crash the entire app.
 
 ## Features
 
-- **Multi-Format**: `.cbz`, `.zip`, `.pdf`, and `.epub` (with Text-to-Speech support).
+- **Multi-Format Reader**: `.cbz`, `.zip`, `.cbt`, `.tar`, `.cbr`, `.pdf`, and `.epub` (with Text-to-Speech support).
+- **Night Reading Filters**: Screen brightness dimming, warm blue light filter, and comic color inversion.
+- **Reading Analytics & Insights**: Track daily reading habits, total chapters completed, and trends with interactive charts.
 - **Background Downloads**: Queue system safely downloads large files even when the app is minimized (using `flutter_background_service` and `wakelock_plus`).
-- **Community Forum**: Real-time discussions and post threads. Optimized using a single parent Firebase Stream to dramatically reduce document reads.
-- **Admin Panel**: Built-in dashboard to manage manga metadata, user reports, and banners. Admins are whitelisted via email.
+- **Community Forum & Chat**: Real-time discussions, manga recommendations, post threads, and group chat. Optimized using a single parent Firebase Stream to dramatically reduce document reads.
+- **Admin & Scanlation Group Panel**: Built-in dashboards to manage manga metadata, user reports, banners, and translation team workflows.
 
 ## Tech Stack
 
@@ -54,6 +56,9 @@ Corrupted `.zip` or `.epub` files shouldn't crash the entire app.
 
 ## Roadmap
 
-- [ ] CBR (Comic Book RAR) support
+- [x] CBT (Comic Book TAR) & TAR support
+- [x] Advanced Reading Analytics (`fl_chart`)
+- [x] Night Reading Filter (Dim/Warm/Invert)
+- [ ] CBR (Comic Book RAR) native unrar engine
 - [ ] iOS/Cross-platform adaptation
 - [ ] Collaborative reading / Co-reading mode

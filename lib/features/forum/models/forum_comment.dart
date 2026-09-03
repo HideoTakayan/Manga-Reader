@@ -5,6 +5,7 @@ class ForumComment {
   final String authorId;
   final String authorName;
   final String authorAvatar;
+  final int authorLevel;
   final String body;
   final String? gifUrl;
   final int likeCount;
@@ -20,6 +21,7 @@ class ForumComment {
     required this.authorId,
     required this.authorName,
     required this.authorAvatar,
+    this.authorLevel = 1,
     required this.body,
     this.gifUrl,
     this.likeCount = 0,
@@ -42,6 +44,7 @@ class ForumComment {
       authorId: _readString(data['authorId']),
       authorName: _readString(data['authorName'], fallback: 'Unknown'),
       authorAvatar: _readString(data['authorAvatar']),
+      authorLevel: _readInt(data['authorLevel']) > 0 ? _readInt(data['authorLevel']) : 1,
       body: _readString(data['body']),
       gifUrl: _readNullableString(data['gifUrl']),
       likeCount: _readInt(data['likeCount']),
@@ -70,6 +73,7 @@ class ForumComment {
       'authorId': authorId,
       'authorName': authorName,
       'authorAvatar': authorAvatar,
+      'authorLevel': authorLevel,
       'body': body,
       if (gifUrl != null) 'gifUrl': gifUrl,
       'likeCount': likeCount,

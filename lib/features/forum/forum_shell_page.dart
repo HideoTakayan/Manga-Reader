@@ -6,6 +6,7 @@ import 'admin_reports_screen.dart';
 import 'forum_chat_page.dart';
 import 'forum_share_page.dart';
 import 'forum_discussion_page.dart';
+import 'leaderboard_page.dart';
 
 class ForumShellPage extends StatelessWidget {
   final int initialIndex;
@@ -16,8 +17,8 @@ class ForumShellPage extends StatelessWidget {
     final isAdmin = AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email);
 
     return DefaultTabController(
-      length: 3,
-      initialIndex: initialIndex.clamp(0, 2),
+      length: 4,
+      initialIndex: initialIndex.clamp(0, 3),
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Diễn đàn'),
@@ -37,15 +38,23 @@ class ForumShellPage extends StatelessWidget {
               ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: 'Chat tổng'),
               Tab(text: 'Chia sẻ truyện'),
               Tab(text: 'Thảo luận'),
+              Tab(text: 'BXH 🏆'),
             ],
           ),
         ),
         body: const TabBarView(
-          children: [ForumChatPage(), ForumSharePage(), ForumDiscussionPage()],
+          children: [
+            ForumChatPage(),
+            ForumSharePage(),
+            ForumDiscussionPage(),
+            LeaderboardPage(),
+          ],
         ),
       ),
     );

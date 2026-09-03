@@ -7,19 +7,25 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/forum_post.dart';
 import '../services/firebase_forum_repository.dart';
 import '../../../config/admin_config.dart';
+import '../../../widgets/level_badge.dart';
+import '../../../widgets/vip_leaderboard_flair.dart';
+import '../services/leaderboard_service.dart';
 import 'shared_manga_card.dart';
 import 'report_dialog.dart';
+import 'forum_poll_widget.dart';
 
 class ForumPostCard extends StatefulWidget {
   final ForumPost post;
   final VoidCallback onTap;
   final VoidCallback? onDeleted;
+  final ValueChanged<String>? onTagTap;
 
   const ForumPostCard({
     super.key,
     required this.post,
     required this.onTap,
     this.onDeleted,
+    this.onTagTap,
   });
 
   @override
@@ -27,28 +33,45 @@ class ForumPostCard extends StatefulWidget {
 }
 
 class _ForumPostCardState extends State<ForumPostCard> {
+  ForumPost get post => widget.post;
+  VoidCallback get onTap => widget.onTap;
+  VoidCallback? get onDeleted => widget.onDeleted;
+
   late int _likeCount;
+  Stream<bool>? _likeStream;
 
   @override
   void initState() {
     super.initState();
     _likeCount = widget.post.likeCount;
+    _initLikeStream();
   }
 
-  @override
-  void didUpdateWidget(ForumPostCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.post.id != oldWidget.post.id || widget.post.likeCount != oldWidget.post.likeCount) {
-      _likeCount = widget.post.likeCount;
+  void _initLikeStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _likeStream = FirebaseForumRepository().hasLikedPost(widget.post.id, uid);
+    } else {
+      _likeStream = null;
     }
   }
 
-  ForumPost get post => widget.post;
-  VoidCallback get onTap => widget.onTap;
-  VoidCallback? get onDeleted => widget.onDeleted;
+  @override
+  void didUpdateWidget(covariant ForumPostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.likeCount != widget.post.likeCount) {
+      _likeCount = widget.post.likeCount;
+    }
+    if (oldWidget.post.id != widget.post.id) {
+      _initLikeStream();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final post = widget.post;
+    final authorRank = LeaderboardService.instance.getCachedRank(post.authorId);
+
     return Column(
       children: [
         // Thick divider between posts like Facebook
@@ -57,37 +80,106 @@ class _ForumPostCardState extends State<ForumPostCard> {
           color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
         ),
         Container(
-          color: Theme.of(context).cardColor,
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            border: authorRank == 1
+                ? Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.2)
+                : authorRank == 2
+                    ? Border.all(color: Colors.blueGrey.withValues(alpha: 0.4), width: 1.2)
+                    : authorRank == 3
+                        ? Border.all(color: Colors.deepOrange.withValues(alpha: 0.4), width: 1.2)
+                        : null,
+            boxShadow: authorRank == 1
+                ? [
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: 0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
           child: InkWell(
-            onTap: onTap,
+            onTap: widget.onTap,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Pinned Post Ribbon
+                if (post.isPinned)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.amber.shade900.withValues(alpha: 0.6),
+                          Colors.orangeAccent.withValues(alpha: 0.3),
+                        ],
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.push_pin_rounded, size: 13, color: Colors.amberAccent),
+                        SizedBox(width: 6),
+                        Text(
+                          'Bài viết được Ghim nổi bật',
+                          style: TextStyle(
+                            color: Colors.amberAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Top 10 VIP Ribbon
+                if (authorRank > 0 && authorRank <= 10)
+                  VipPostRibbon(rank: authorRank),
+
                 // Header: Avatar, Name, Time
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
-                      CircleAvatar(
+                      VipAvatarFrame(
+                        rank: authorRank,
                         radius: 20,
-                        backgroundImage: post.authorAvatar.isNotEmpty
-                            ? CachedNetworkImageProvider(post.authorAvatar)
-                            : null,
-                        child: post.authorAvatar.isEmpty
-                            ? const Icon(Icons.person)
-                            : null,
+                        child: CircleAvatar(
+                          radius: 20,
+                          backgroundImage: post.authorAvatar.isNotEmpty
+                              ? CachedNetworkImageProvider(post.authorAvatar)
+                              : null,
+                          child: post.authorAvatar.isEmpty
+                              ? const Icon(Icons.person)
+                              : null,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              post.authorName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    post.authorName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                LevelBadge(level: post.authorLevel, fontSize: 10),
+                                if (authorRank > 0 && authorRank <= 10) ...[
+                                  const SizedBox(width: 6),
+                                  VipRankBadge(rank: authorRank, fontSize: 8.5),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: 2),
                             Text(
@@ -114,14 +206,52 @@ class _ForumPostCardState extends State<ForumPostCard> {
                 if (post.body.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      post.body,
-                      style: const TextStyle(fontSize: 15, height: 1.3),
-                      maxLines: 5,
-                      overflow: TextOverflow.ellipsis,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const style = TextStyle(fontSize: 15, height: 1.3);
+                        final textPainter = TextPainter(
+                          text: TextSpan(text: post.body, style: style),
+                          maxLines: 5,
+                          textDirection: TextDirection.ltr,
+                        )..layout(maxWidth: constraints.maxWidth);
+                        final isOverflowing = textPainter.didExceedMaxLines;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              post.body,
+                              style: style,
+                              maxLines: 5,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (isOverflowing)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  'Xem thêm',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 if (post.body.isNotEmpty) const SizedBox(height: 12),
+
+                // Interactive Poll
+                if (post.poll != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: ForumPollWidget(
+                      postId: post.id,
+                      poll: post.poll!,
+                    ),
+                  ),
 
                 // Image or GIF (Full width, no padding, no border radius)
                 if (post.imageUrl != null)
@@ -164,6 +294,43 @@ class _ForumPostCardState extends State<ForumPostCard> {
                     ),
                   ),
 
+                // Hashtags Chip Wrap (#skibidi, #review, #anime, etc.)
+                if (post.tags.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: post.tags.map((tag) {
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            widget.onTagTap?.call(tag);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              '#$tag',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+
                 // Post Stats (Optional: typically Facebook shows number of likes/comments above the buttons)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -190,11 +357,15 @@ class _ForumPostCardState extends State<ForumPostCard> {
                           ),
                         ],
                       ),
-                      Text(
-                        '${post.commentCount} bình luận • ${post.viewCount} lượt xem',
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodySmall?.color,
-                          fontSize: 13,
+                      Flexible(
+                        child: Text(
+                          '${post.commentCount} bình luận • ${post.viewCount} lượt xem',
+                          style: TextStyle(
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -216,6 +387,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                           Icons.chat_bubble_outline,
                           'Bình luận',
                           color: _inactiveActionColor(context),
+                          onTap: onTap,
                         ),
                       ),
                     ],
@@ -245,7 +417,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
     }
 
     return StreamBuilder<bool>(
-      stream: FirebaseForumRepository().hasLikedPost(post.id, uid),
+      stream: _likeStream,
       builder: (context, snapshot) {
         final isLiked = snapshot.data ?? false;
         return _buildAction(
@@ -327,11 +499,27 @@ class _ForumPostCardState extends State<ForumPostCard> {
 
     showModalBottomSheet(
       context: pageContext,
+      backgroundColor: Theme.of(pageContext).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.copy_rounded),
                 title: const Text('Sao chép nội dung'),
@@ -373,22 +561,27 @@ class _ForumPostCardState extends State<ForumPostCard> {
                     final confirm = await showDialog<bool>(
                       context: pageContext,
                       builder: (dialogContext) => AlertDialog(
-                        title: const Text('Xác nhận xóa'),
+                        backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: const Text('Xác nhận xóa', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                         content: const Text(
                           'Bạn có chắc muốn xóa bài viết này?',
+                          style: TextStyle(color: Colors.white70),
                         ),
                         actions: [
                           TextButton(
                             onPressed: () =>
                                 Navigator.pop(dialogContext, false),
-                            child: const Text('Hủy'),
+                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                           ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext, true),
-                            child: const Text(
-                              'Xóa',
-                              style: TextStyle(color: Colors.red),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),

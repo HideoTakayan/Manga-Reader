@@ -7,31 +7,56 @@ import '../data/database_helper.dart';
 import '../data/models.dart';
 import 'folder_service.dart';
 import 'library_service.dart';
+import 'novel_service.dart';
 
-// LocalScanService: quét thư mục MangaReader và import truyện vào SQLite.
-// Dùng khi user cài app mới hoặc chuyển thiết bị — khôi phục lại truyện đã tải.
+// LocalScanService: quét thư mục MangaReader và import truyện vào SQLite & SharedPreferences.
+// Dùng khi user cài app mới hoặc chuyển thiết bị — khôi phục lại truyện đã tải & truyện chữ.
 // Logic: Mỗi subfolder trong downloads/ = 1 manga → đọc details.json → import.
+// Quét thư mục _novels/ để tự động phục hồi toàn bộ file EPUB vào Thư viện.
 class LocalScanService {
   static final LocalScanService instance = LocalScanService._();
   LocalScanService._();
 
-  /// Quét và import tất cả mangas từ filesystem — trả về số manga đã import
+  /// Quét và import tất cả mangas & novels từ filesystem — trả về số mục đã import
   Future<int> scanAndImport() async {
     int importedCount = 0;
     try {
       final downloadPath = FolderService.downloadPath;
       final rootDir = Directory(downloadPath);
-      if (!await rootDir.exists()) return 0;
-
-      debugPrint('🔍 Scanning Local Library: $downloadPath');
-      final entities = rootDir.listSync();
-      for (var entity in entities) {
-        if (entity is Directory) {
-          await _importMangaFromFolder(entity);
-          importedCount++;
+      if (await rootDir.exists()) {
+        debugPrint('🔍 Scanning Local Library: $downloadPath');
+        final entities = rootDir.listSync();
+        for (var entity in entities) {
+          if (entity is Directory) {
+            await _importMangaFromFolder(entity);
+            importedCount++;
+          }
         }
       }
-      debugPrint('✅ Scan Hoàn Tất. Đã nhập $importedCount truyện.');
+
+      // Quét thư mục _novels để khôi phục truyện chữ EPUB
+      if (FolderService.rootPath != null) {
+        final novelsDir = Directory('${FolderService.rootPath}/_novels');
+        if (await novelsDir.exists()) {
+          debugPrint('📖 Scanning Local Novels: ${novelsDir.path}');
+          final novelEntities = novelsDir.listSync();
+          for (var entity in novelEntities) {
+            if (entity is File && p.extension(entity.path).toLowerCase() == '.epub') {
+              final novelTitle = p.basenameWithoutExtension(entity.path);
+              final novel = LocalNovel(
+                path: entity.path,
+                title: novelTitle,
+                importedAt: entity.lastModifiedSync(),
+              );
+              final added = await NovelService.instance.add(novel);
+              if (added) importedCount++;
+            }
+          }
+        }
+      }
+
+      LibraryService.instance.notifyMappingChanged();
+      debugPrint('✅ Scan Hoàn Tất. Đã nhập $importedCount mục.');
     } catch (e) {
       debugPrint('❌ Scan Lỗi: $e');
     }

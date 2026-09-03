@@ -25,17 +25,21 @@ class InteractionService {
   /// Tăng viewCount cho cả chapter lẫn manga (cascade)
   Future<void> incrementChapterView(String mangaId, String chapterId) async {
     try {
-      // 1. Tăng view chapter trong subcollection
       final chapterRef = _db
           .collection('comics')
           .doc(mangaId)
           .collection('chapters')
           .doc(chapterId);
-      await chapterRef.set({
-        'viewCount': FieldValue.increment(1),
-      }, SetOptions(merge: true));
-      // 2. Cascade lên manga tổng
-      await incrementMangaView(mangaId);
+      final mangaRef = _db.collection('comics').doc(mangaId);
+
+      await Future.wait([
+        chapterRef.set({
+          'viewCount': FieldValue.increment(1),
+        }, SetOptions(merge: true)),
+        mangaRef.set({
+          'viewCount': FieldValue.increment(1),
+        }, SetOptions(merge: true)),
+      ]);
     } catch (e) {
       debugPrint('Lỗi khi tăng lượt xem chapter: $e');
     }

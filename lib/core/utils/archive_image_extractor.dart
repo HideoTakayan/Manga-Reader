@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
@@ -28,7 +29,10 @@ class ArchiveImageExtractor {
 
     final args = {'filePath': filePath, 'outPath': cacheDir.path};
 
-    return compute(_extractZipImagesToDisk, args);
+    final paths = await compute(_extractZipImagesToDisk, args);
+    // Tự động kiểm tra và dọn dẹp dung lượng đĩa nền sau khi trích xuất xong
+    unawaited(cleanUpOldCache());
+    return paths;
   }
 
   static Future<List<String>?> getCachedExtractedPages(String chapterId) async {
@@ -131,33 +135,53 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
   InputFileStream? inputStream;
   try {
     inputStream = InputFileStream(filePath);
-    final archive = ZipDecoder().decodeBuffer(inputStream);
-    final sortedFiles = archive.files.toList()
-      ..sort((a, b) => _naturalCompare(a.name, b.name));
+    Archive? archive;
 
-    int index = 0;
-    for (final file in sortedFiles) {
-      if (!file.isFile) continue;
-      final name = file.name.toLowerCase();
-      if (!_isSupportedImage(name)) continue;
-
-      final content = file.content;
-      if (content == null) continue;
-      Uint8List fileBytes;
-      if (content is Uint8List) {
-        fileBytes = content;
-      } else if (content is List<int>) {
-        fileBytes = Uint8List.fromList(content);
-      } else {
-        continue;
+    // Thử giải nén dạng ZIP/CBZ trước
+    try {
+      archive = ZipDecoder().decodeBuffer(inputStream);
+    } catch (zipError) {
+      // Fallback: Thử giải nén dạng TAR/CBT nếu không phải cấu trúc ZIP
+      try {
+        inputStream.close();
+        inputStream = InputFileStream(filePath);
+        archive = TarDecoder().decodeBuffer(inputStream);
+      } catch (_) {
+        debugPrint('Lỗi giải nén archive (ZIP/TAR): $zipError');
       }
+    }
 
-      final ext = p.extension(name);
-      final fileName = 'page_${index.toString().padLeft(4, '0')}$ext';
-      final outFile = File(p.join(outPath, fileName));
-      outFile.writeAsBytesSync(fileBytes);
-      imagePaths.add(outFile.path);
-      index++;
+    if (archive != null) {
+      final sortedFiles = archive.files.toList()
+        ..sort((a, b) => _naturalCompare(a.name, b.name));
+
+      int index = 0;
+      for (final file in sortedFiles) {
+        if (!file.isFile) continue;
+        final name = file.name.toLowerCase();
+        if (name.contains('__macosx') || p.basename(name).startsWith('.')) {
+          continue;
+        }
+        if (!_isSupportedImage(name)) continue;
+
+        final content = file.content;
+        if (content == null) continue;
+        Uint8List fileBytes;
+        if (content is Uint8List) {
+          fileBytes = content;
+        } else if (content is List<int>) {
+          fileBytes = Uint8List.fromList(content);
+        } else {
+          continue;
+        }
+
+        final ext = p.extension(name);
+        final fileName = 'page_${index.toString().padLeft(4, '0')}$ext';
+        final outFile = File(p.join(outPath, fileName));
+        outFile.writeAsBytesSync(fileBytes);
+        imagePaths.add(outFile.path);
+        index++;
+      }
     }
   } catch (e) {
     debugPrint('Lỗi giải nén: $e');
@@ -171,17 +195,21 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
 bool _isSupportedImage(String name) {
   return name.endsWith('.jpg') ||
       name.endsWith('.jpeg') ||
+      name.endsWith('.jfif') ||
       name.endsWith('.png') ||
       name.endsWith('.webp') ||
       name.endsWith('.avif') ||
+      name.endsWith('.heic') ||
+      name.endsWith('.heif') ||
       name.endsWith('.bmp') ||
       name.endsWith('.gif');
 }
 
+final _tokenRegExp = RegExp(r'(\d+)|(\D+)');
+
 int _naturalCompare(String a, String b) {
-  final regExp = RegExp(r'(\d+)|(\D+)');
-  final am = regExp.allMatches(a.toLowerCase()).toList();
-  final bm = regExp.allMatches(b.toLowerCase()).toList();
+  final am = _tokenRegExp.allMatches(a.toLowerCase()).toList();
+  final bm = _tokenRegExp.allMatches(b.toLowerCase()).toList();
 
   for (int i = 0; i < am.length && i < bm.length; i++) {
     final ap = am[i].group(0)!;
@@ -194,5 +222,5 @@ int _naturalCompare(String a, String b) {
     return ap.compareTo(bp);
   }
 
-  return a.length.compareTo(b.length);
+  return am.length.compareTo(bm.length);
 }

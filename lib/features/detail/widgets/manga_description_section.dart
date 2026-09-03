@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class MangaDescriptionSection extends StatefulWidget {
   final String description;
@@ -16,6 +17,7 @@ class _MangaDescriptionSectionState extends State<MangaDescriptionSection> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final text = widget.description.trim();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -30,41 +32,57 @@ class _MangaDescriptionSectionState extends State<MangaDescriptionSection> {
             ),
           ),
           const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _isDescriptionExpanded = !_isDescriptionExpanded;
-              });
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.description,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    height: 1.4,
-                    color: Colors.white70,
-                  ),
-                  maxLines: _isDescriptionExpanded ? null : 4,
-                  overflow: _isDescriptionExpanded
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                ),
-                if (widget.description.length > 150)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
+          if (text.isEmpty)
+            Text(
+              'Chưa có phần giới thiệu cho bộ truyện này.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                height: 1.4,
+                color: Colors.white38,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() {
+                  _isDescriptionExpanded = !_isDescriptionExpanded;
+                });
+              },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
                     child: Text(
-                      _isDescriptionExpanded ? 'Rút gọn' : 'Xem thêm...',
-                      style: TextStyle(
-                        color: theme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                      text,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.4,
+                        color: Colors.white70,
                       ),
+                      maxLines: _isDescriptionExpanded ? null : 4,
+                      overflow: _isDescriptionExpanded
+                          ? TextOverflow.visible
+                          : TextOverflow.ellipsis,
                     ),
                   ),
-              ],
+                  if (text.length > 150)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _isDescriptionExpanded ? 'Rút gọn' : 'Xem thêm...',
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

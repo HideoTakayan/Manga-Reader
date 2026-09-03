@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../services/auth_service.dart';
 import '../../forum/services/image_upload_service.dart';
 
 // Trang chỉnh sửa hồ sơ: tên hiển thị, bio, avatar.
@@ -72,6 +74,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Future<void> _saveChanges() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    final displayName = _nameController.text.trim();
+    if (displayName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tên hiển thị không được để trống')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -84,8 +95,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
         await user.updatePhotoURL(avatarUrl);
       }
 
-      final displayName = _nameController.text.trim();
       await user.updateDisplayName(displayName);
+
+      // Cập nhật trạng thái cục bộ tức thì
+      AuthService.persistedName = displayName;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_name', displayName);
+        if (avatarUrl != null && avatarUrl.isNotEmpty) {
+          await prefs.setString('user_avatar', avatarUrl);
+        }
+      } catch (_) {}
 
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'name': displayName,
@@ -136,8 +156,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chỉnh sửa thông tin'),
-        backgroundColor: Colors.blueAccent,
+        title: const Text('Chỉnh sửa thông tin', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        elevation: 0,
       ),
       // Spinner toàn màn hình khi đang lưu — tránh double tap
       body: _isLoading
@@ -176,6 +197,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 32),
                     TextField(
                       controller: _nameController,
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.words,
                       decoration: InputDecoration(
                         labelText: 'Tên hiển thị',
                         filled: true,
@@ -190,6 +213,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _bioController,
+                      textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
                         labelText: 'Giới thiệu bản thân',
                         filled: true,

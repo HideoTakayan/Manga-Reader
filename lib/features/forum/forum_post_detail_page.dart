@@ -33,17 +33,33 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
 
   ForumPost? _post;
   List<ForumComment> _comments = [];
+  List<CommentNode> _commentTree = [];
   bool _isLoading = true;
   bool _isSubmitting = false;
   ForumComment? _replyingTo;
+  Stream<DocumentSnapshot>? _userSnapshotStream;
 
   @override
   void initState() {
     super.initState();
+    _initUserStream();
     _loadComments();
   }
 
+  void _initUserStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _userSnapshotStream = FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots();
+    } else {
+      _userSnapshotStream = const Stream.empty();
+    }
+  }
+
+  static final Set<String> _viewedPostIdsInSession = {};
+
   Future<void> _incrementViewCount() async {
+    if (_viewedPostIdsInSession.contains(widget.postId)) return;
+    _viewedPostIdsInSession.add(widget.postId);
     try {
       await _repository.incrementViewCount(widget.postId);
     } catch (e) {
@@ -58,7 +74,10 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadComments() async {
+  Future<void> _loadComments({bool showLoading = true}) async {
+    if (showLoading && _post == null) {
+      setState(() => _isLoading = true);
+    }
     try {
       final post = await _repository.fetchPost(widget.postId);
 
@@ -75,6 +94,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
         setState(() {
           _post = post;
           _comments = comments;
+          _commentTree = _buildCommentTree(comments);
           _isLoading = false;
         });
       } else {
@@ -82,6 +102,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
         setState(() {
           _post = null;
           _comments = [];
+          _commentTree = [];
           _isLoading = false;
         });
       }
@@ -99,6 +120,16 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     final body = _commentController.text.trim();
     if (body.isEmpty) return;
 
+    if (body.length > 2000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bình luận không được vượt quá 2000 ký tự'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(
@@ -109,23 +140,63 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
 
     setState(() => _isSubmitting = true);
 
+    final authorName = user.displayName?.trim().isNotEmpty == true
+        ? user.displayName!.trim()
+        : 'Người dùng';
+
+    final replyingToComment = _replyingTo;
+
+    // Optimistic UI update: thêm comment vào cây ngay lập tức
+    final optimisticComment = ForumComment(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      authorId: user.uid,
+      authorName: authorName,
+      authorAvatar: user.photoURL ?? '',
+      body: body,
+      replyToCommentId: replyingToComment?.id,
+      replyToAuthorName: replyingToComment?.authorName,
+      replyToUserId: replyingToComment?.authorId,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    final updatedComments = List<ForumComment>.from(_comments)..add(optimisticComment);
+    final updatedTree = _buildCommentTree(updatedComments);
+
+    _commentController.clear();
+    setState(() {
+      _replyingTo = null;
+      _comments = updatedComments;
+      _commentTree = updatedTree;
+      if (_post != null) {
+        _post = _post!.copyWith(commentCount: _post!.commentCount + 1);
+      }
+    });
+
     try {
       await _repository.createComment(
         postId: widget.postId,
         uid: user.uid,
-        authorName: user.displayName ?? 'Người dùng',
+        authorName: authorName,
         authorAvatar: user.photoURL ?? '',
         body: body,
-        replyToCommentId: _replyingTo?.id,
-        replyToAuthorName: _replyingTo?.authorName,
-        replyToUserId: _replyingTo?.authorId,
+        replyToCommentId: replyingToComment?.id,
+        replyToAuthorName: replyingToComment?.authorName,
+        replyToUserId: replyingToComment?.authorId,
       );
 
-      _commentController.clear();
-      setState(() => _replyingTo = null);
-      await _loadComments(); // Tải lại danh sách comment
+      // Đồng bộ ngầm để cập nhật ID thật từ server
+      unawaited(_loadComments(showLoading: false));
     } catch (e) {
+      // Rollback nếu gửi lỗi
       if (mounted) {
+        setState(() {
+          _comments.removeWhere((c) => c.id == optimisticComment.id);
+          _commentTree = _buildCommentTree(_comments);
+          if (_post != null && _post!.commentCount > 0) {
+            _post = _post!.copyWith(commentCount: _post!.commentCount - 1);
+          }
+        });
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -137,12 +208,12 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     }
   }
 
-  List<CommentNode> _buildCommentTree() {
+  List<CommentNode> _buildCommentTree(List<ForumComment> comments) {
     final Map<String, List<ForumComment>> childrenMap = {};
     final List<ForumComment> roots = [];
-    final allIds = _comments.map((c) => c.id).toSet();
+    final allIds = comments.map((c) => c.id).toSet();
 
-    for (final c in _comments) {
+    for (final c in comments) {
       if (c.replyToCommentId == null || !allIds.contains(c.replyToCommentId)) {
         roots.add(c);
       } else {
@@ -162,6 +233,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
       }
     }
 
+    roots.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     for (final root in roots) {
       traverse(root, 0);
     }
@@ -170,8 +242,6 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final commentTree = _buildCommentTree();
-
     return Scaffold(
       appBar: AppBar(title: const Text('Chi tiết bài viết')),
       body: Column(
@@ -180,49 +250,123 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _post == null
-                ? const Center(child: Text('Không tìm thấy bài viết'))
-                  : ListView.builder(
-                    itemCount: commentTree.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return ForumPostCard(
-                          post: _post!,
-                          onDeleted: () {
-                            if (mounted) context.pop(true);
-                          },
-                          onTap: () {}, // Already in detail page
-                        );
-                      }
-                      final node = commentTree[index - 1];
-                      return Padding(
-                        padding: EdgeInsets.only(left: node.depth * 44.0),
-                        child: ForumCommentTile(
-                          postId: widget.postId,
-                          comment: node.comment,
-                          onDeleted: () {
-                            setState(
-                              () => _comments.removeWhere(
-                                (item) => item.id == node.comment.id,
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.purpleAccent.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.article_outlined,
+                              size: 48,
+                              color: Colors.purpleAccent,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Không tìm thấy bài viết',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Bài viết có thể đã bị tác giả xóa hoặc đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              if (context.canPop()) {
+                                context.pop();
+                              } else {
+                                context.go('/forum');
+                              }
+                            },
+                            icon: const Icon(Icons.forum_outlined, size: 18),
+                            label: const Text(
+                              'Quay lại Diễn đàn',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            );
-                            unawaited(_loadComments());
-                          },
-                          onReply: (comment) {
-                            setState(() {
-                              _replyingTo = comment;
-                            });
-                            _commentFocusNode.requestFocus();
-                          },
-                        ),
-                      );
-                    },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => _loadComments(showLoading: false),
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: _commentTree.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return ForumPostCard(
+                            post: _post!,
+                            onDeleted: () {
+                              if (mounted) context.pop(true);
+                            },
+                            onTap: () {}, // Already in detail page
+                          );
+                        }
+                        final node = _commentTree[index - 1];
+                        return Padding(
+                          padding: EdgeInsets.only(left: node.depth * 44.0),
+                          child: ForumCommentTile(
+                            postId: widget.postId,
+                            comment: node.comment,
+                            onDeleted: () {
+                              setState(() {
+                                _comments.removeWhere(
+                                  (item) => item.id == node.comment.id,
+                                );
+                                _commentTree = _buildCommentTree(_comments);
+                                if (_post != null && _post!.commentCount > 0) {
+                                  _post = _post!.copyWith(
+                                    commentCount: _post!.commentCount - 1,
+                                  );
+                                }
+                              });
+                              unawaited(_loadComments(showLoading: false));
+                            },
+                            onReply: (comment) {
+                              setState(() {
+                                _replyingTo = comment;
+                              });
+                              _commentFocusNode.requestFocus();
+                            },
+                          ),
+                        );
+                      },
+                    ),
                   ),
           ),
 
-          // Sticky Comment Input Bar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
+          // Sticky Comment Input Bar (chỉ hiện khi bài viết tồn tại)
+          if (_post != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
               color: Theme.of(context).cardColor,
               border: Border(
                 top: BorderSide(
@@ -232,7 +376,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
             ),
             child: SafeArea(
               child: StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseAuth.instance.currentUser != null ? FirebaseFirestore.instance.collection('users').doc(FirebaseAuth.instance.currentUser!.uid).snapshots() : const Stream.empty(),
+                stream: _userSnapshotStream,
                 builder: (context, snapshot) {
                   bool isBanned = false;
                   bool isMuted = false;
@@ -313,13 +457,34 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                             child: TextField(
                               controller: _commentController,
                               focusNode: _commentFocusNode,
+                              textCapitalization: TextCapitalization.sentences,
+                              maxLines: null,
                               decoration: const InputDecoration(
                                 hintText: 'Viết bình luận...',
                                 border: InputBorder.none,
                               ),
                               onChanged: (_) => setState(() {}),
+                              onSubmitted: (_) {
+                                if (_commentController.text.trim().isNotEmpty && !_isSubmitting) {
+                                  _submitComment();
+                                }
+                              },
                             ),
                           ),
+                          // Bộ đếm ký tự — chỉ hiện khi > 80% giới hạn
+                          if (_commentController.text.length > 1600) ...[  
+                            Text(
+                              '${_commentController.text.length}/2000',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: _commentController.text.length > 2000
+                                    ? Colors.redAccent
+                                    : Colors.orangeAccent,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                           IconButton(
                             icon: _isSubmitting
                                 ? const SizedBox(
@@ -330,8 +495,12 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                                     ),
                                   )
                                 : const Icon(Icons.send),
-                            color: const Color(0xFFFF5252),
-                            onPressed: _isSubmitting ? null : _submitComment,
+                            color: _commentController.text.trim().isEmpty || _isSubmitting
+                                ? Colors.grey
+                                : Theme.of(context).colorScheme.primary,
+                            onPressed: _commentController.text.trim().isEmpty || _isSubmitting
+                                ? null
+                                : _submitComment,
                           ),
                         ],
                       ),

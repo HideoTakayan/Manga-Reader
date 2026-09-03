@@ -23,6 +23,15 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
   MangaContentType _contentType = MangaContentType.manga;
   bool _isUploading = false;
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _authorController.dispose();
+    _descController.dispose();
+    _genresController.dispose();
+    super.dispose();
+  }
+
   // Mở file picker giới hạn chỉ ảnh, lưu file đã chọn vào _coverFile.
   Future<void> _pickCover() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
@@ -33,7 +42,9 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
 
   // Validate → upload lên Drive → đóng dialog trả về true (để dashboard biết cần refresh).
   Future<void> _submit() async {
-    if (_titleController.text.isEmpty || _coverFile == null) {
+    final title = _titleController.text.trim();
+    if (title.isEmpty || _coverFile == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập tên và chọn ảnh bìa')),
       );
@@ -43,9 +54,9 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
     setState(() => _isUploading = true);
     try {
       await DriveService.instance.addManga(
-        title: _titleController.text,
-        author: _authorController.text,
-        description: _descController.text,
+        title: title,
+        author: _authorController.text.trim(),
+        description: _descController.text.trim(),
         coverFile: _coverFile!,
         // Split chuỗi thể loại theo dấu phẩy, trim khoảng trắng, bỏ chuỗi rỗng
         genres: _genresController.text
@@ -114,7 +125,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
             DropdownButtonFormField<MangaContentType>(
               initialValue: _contentType,
               decoration: _inputDeco('Loại nội dung', Icons.category),
-              dropdownColor: const Color(0xFF2C2C2E),
+              dropdownColor: Theme.of(context).cardColor,
               items: MangaContentType.values
                   .map(
                     (type) => DropdownMenuItem(
@@ -147,12 +158,15 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
               controller: _descController,
               style: const TextStyle(color: Colors.white),
               maxLines: 3,
+              textInputAction: TextInputAction.next,
               decoration: _inputDeco('Mô tả', Icons.description_outlined),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _genresController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _isUploading ? null : _submit(),
               decoration: _inputDeco(
                 'Thể loại (cách nhau bởi dấu phẩy)',
                 Icons.local_offer_outlined,
@@ -193,7 +207,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
                       child: Text(
                         _coverFile == null
                             ? 'Tải lên Ảnh Bìa'
-                            : 'Đã chọn: ${_coverFile!.path.split('/').last}',
+                            : 'Đã chọn: ${_coverFile!.path.split(RegExp(r'[/\\]')).last}',
                         style: TextStyle(
                           color: _coverFile != null
                               ? Colors.green

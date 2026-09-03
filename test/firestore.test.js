@@ -1,4 +1,4 @@
-﻿const {
+const {
   assertFails,
   assertSucceeds,
   initializeTestEnvironment,
@@ -917,6 +917,89 @@ describe("Firestore Rules - Patch A", () => {
   });
 
   describe("R8: Notification privacy and forum post schema", () => {
+    it("Non-admin user CANNOT create a global notification", async () => {
+      const db = testEnv.authenticatedContext("reader_uid", {
+        email: "reader@example.com",
+      }).firestore();
+
+      await assertFails(
+        db.collection("notifications").doc("spam_notification").set({
+          mangaId: "manga1",
+          title: "Spam",
+          body: "This must be rejected",
+          type: "new_chapter",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Admin CAN create a valid global notification", async () => {
+      const db = testEnv.authenticatedContext("admin_uid", {
+        email: "admin@gmail.com",
+      }).firestore();
+
+      await assertSucceeds(
+        db.collection("notifications").doc("admin_notification").set({
+          mangaId: "manga1",
+          title: "Có chapter mới",
+          body: "Truyện đã cập nhật",
+          type: "new_chapter",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Admin CAN create a system notification without mangaId", async () => {
+      const db = testEnv.authenticatedContext("admin_uid", {
+        email: "admin@gmail.com",
+      }).firestore();
+
+      await assertSucceeds(
+        db.collection("notifications").doc("system_notif").set({
+          title: "Thông báo hệ thống",
+          body: "Nội dung quan trọng",
+          type: "system",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("Admin CANNOT create a notification with title exceeding 200 chars", async () => {
+      const db = testEnv.authenticatedContext("admin_uid", {
+        email: "admin@gmail.com",
+      }).firestore();
+
+      await assertFails(
+        db.collection("notifications").doc("too_long_notif").set({
+          mangaId: "manga1",
+          title: "A".repeat(201),
+          body: "Nội dung",
+          type: "new_chapter",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+      );
+    });
+
+    it("User CAN persist a dismissed global notification id", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection("users").doc("reader_uid").set({
+          uid: "reader_uid",
+          email: "reader@example.com",
+          name: "Reader",
+        });
+      });
+
+      const db = testEnv.authenticatedContext("reader_uid", {
+        email: "reader@example.com",
+      }).firestore();
+
+      await assertSucceeds(
+        db.collection("users").doc("reader_uid").update({
+          dismissedNotificationIds: ["notification_1"],
+        })
+      );
+    });
+
     it("User CAN read global notification for a followed manga", async () => {
       await testEnv.withSecurityRulesDisabled(async (context) => {
         const db = context.firestore();

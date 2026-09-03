@@ -15,9 +15,11 @@ import '../../services/permission_service.dart';
 import '../../services/folder_service.dart';
 import '../../services/sync_service.dart';
 import '../../services/follow_service.dart';
+import '../../services/recommendation_service.dart';
 import '../../core/utils/archive_image_extractor.dart';
 
 import 'widgets/continue_reading_section.dart';
+import 'widgets/random_manga_dialog.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Trang chủ — wrapper mỏng chỉ đặt Scaffold, toàn bộ logic nằm trong _HomeContent.
@@ -45,12 +47,21 @@ class _HomeData {
   final List<CloudManga> mangas;
   final List<String> mangaBannerIds;
   final List<String> novelBannerIds;
-  _HomeData(this.mangas, this.mangaBannerIds, this.novelBannerIds);
+  final List<CloudManga> recommendedMangas;
+  _HomeData(
+    this.mangas,
+    this.mangaBannerIds,
+    this.novelBannerIds, {
+    this.recommendedMangas = const [],
+  });
 }
 
-class _HomeContentState extends State<_HomeContent> {
+class _HomeContentState extends State<_HomeContent>
+    with SingleTickerProviderStateMixin {
   // Future lưu kết quả getMangas() và banner settings
   late Future<_HomeData> _homeDataFuture;
+  late AnimationController _shimmerController;
+  late Animation<double> _shimmerAnimation;
   MangaContentType _selectedContentType = MangaContentType.manga;
 
   @override
@@ -59,12 +70,22 @@ class _HomeContentState extends State<_HomeContent> {
     _homeDataFuture = _loadData();
     _loadContentTypePreference();
 
+    // AnimationController cho shimmer skeleton — loop vĩnh viễn, không cần setState
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _shimmerAnimation = Tween<double>(begin: 0.05, end: 0.15).animate(
+      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut),
+    );
+    _shimmerController.repeat(reverse: true);
+
     // Dùng addPostFrameCallback vì không được gọi side-effect trong initState —
     // widget chưa gắn vào tree, context chưa sẵn sàng.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Đồng bộ lịch sử đọc offline (khi không có mạng) lên Firestore
       SyncService.instance.syncPendingHistory();
-      
+
       // Dọn rác cache để tránh đầy ổ cứng
       ArchiveImageExtractor.cleanUpOldCache();
     });
@@ -94,8 +115,17 @@ class _HomeContentState extends State<_HomeContent> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('home_content_type', next.name);
     if (mounted) {
-      setState(() => _selectedContentType = next);
+      setState(() {
+        _selectedContentType = next;
+        _homeDataFuture = _loadData();
+      });
     }
+  }
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
   }
 
   Future<_HomeData> _loadData({bool forceRefresh = false}) async {
@@ -126,7 +156,20 @@ class _HomeContentState extends State<_HomeContent> {
       novelBannerIds = List<String>.from(data?['novelIds'] ?? []);
     }
 
-    return _HomeData(mangas, mangaBannerIds, novelBannerIds);
+    // Tính toán danh sách truyện gợi ý thông minh theo sở thích
+    final recommendations = await RecommendationService.instance
+        .getPersonalizedRecommendations(
+      catalog: mangas,
+      contentType: _selectedContentType,
+      limit: 10,
+    );
+
+    return _HomeData(
+      mangas,
+      mangaBannerIds,
+      novelBannerIds,
+      recommendedMangas: recommendations,
+    );
   }
 
   // Nếu chưa có quyền storage → hiện dialog xin quyền.
@@ -139,16 +182,26 @@ class _HomeContentState extends State<_HomeContent> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: const Text('Cấp quyền truy cập'),
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Cấp quyền truy cập', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           content: const Text(
             'Để lưu truyện vào thư mục "/MangaReader" ở bộ nhớ máy và dễ dàng quản lý file, ứng dụng cần quyền truy cập bộ nhớ.',
+            style: TextStyle(color: Colors.white70),
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Để sau'),
+              child: const Text('Để sau', style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
               onPressed: () async {
                 Navigator.of(ctx).pop();
                 final granted =
@@ -167,7 +220,7 @@ class _HomeContentState extends State<_HomeContent> {
                   }
                 }
               },
-              child: const Text('Cấp quyền'),
+              child: const Text('Cấp quyền', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -181,7 +234,7 @@ class _HomeContentState extends State<_HomeContent> {
       _homeDataFuture = _loadData(forceRefresh: true);
     });
     await _homeDataFuture;
-    await NotificationService.instance.checkLocalChapterUpdates();
+    await NotificationService.instance.checkLocalChapterUpdates(force: true);
   }
 
   // Helper: chuyển CloudManga → Manga (local model) để truyền vào các widget con
@@ -254,14 +307,12 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   // Shimmer skeleton hiển thị khi đang chờ getMangas() — không cần package ngoài.
-  // Dùng TweenAnimationBuilder để tạo hiệu ứng opacity pulse liên tục.
+  // Dùng AnimationController + AnimatedBuilder để loop mượt mà, không gọi setState mỗi frame.
   Widget _buildShimmerSkeleton(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.05, end: 0.15),
-      duration: const Duration(milliseconds: 800),
-      curve: Curves.easeInOut,
-      onEnd: () => setState(() {}), // loop animation
-      builder: (context, alpha, _) {
+    return AnimatedBuilder(
+      animation: _shimmerAnimation,
+      builder: (context, _) {
+        final alpha = _shimmerAnimation.value;
         return CustomScrollView(
           physics: const NeverScrollableScrollPhysics(),
           slivers: [
@@ -365,19 +416,56 @@ class _HomeContentState extends State<_HomeContent> {
                   slivers: [
                     SliverFillRemaining(
                       child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Đã xảy ra lỗi:\n${snapshot.error}',
-                              style: const TextStyle(color: Colors.redAccent),
-                              textAlign: TextAlign.center,
-                            ),
-                            TextButton(
-                              onPressed: _refresh,
-                              child: const Text('Tải lại'),
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent.withValues(alpha: 0.12),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.redAccent.withValues(alpha: 0.25),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.cloud_off_rounded,
+                                  size: 48,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                'Không thể tải dữ liệu trang chủ',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau giây lát.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
+                              ),
+                              const SizedBox(height: 22),
+                              ElevatedButton.icon(
+                                onPressed: _refresh,
+                                icon: const Icon(Icons.refresh_rounded, size: 18),
+                                label: const Text('Tải lại', style: TextStyle(fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -472,6 +560,8 @@ class _HomeContentState extends State<_HomeContent> {
                 visibleCloudMangas,
                 10,
               ); // Sort theo likeCount
+              final recommended = homeData?.recommendedMangas ?? [];
+              final recommendedMangas = recommended.map(_fromCloud).toList();
 
               return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -526,6 +616,7 @@ class _HomeContentState extends State<_HomeContent> {
                             alignment: Alignment.center,
                             children: [
                               IconButton(
+                                tooltip: 'Thông báo',
                                 icon: Icon(
                                   Icons.notifications_none,
                                   color: Theme.of(context).iconTheme.color,
@@ -551,6 +642,20 @@ class _HomeContentState extends State<_HomeContent> {
                         },
                       ),
                       IconButton(
+                        tooltip: 'Khám phá ngẫu nhiên',
+                        icon: const Icon(
+                          Icons.casino_rounded,
+                          color: Colors.purpleAccent,
+                        ),
+                        onPressed: () {
+                          RandomMangaDialog.show(
+                            context,
+                            mangas: cloudMangas,
+                            initialContentType: _selectedContentType,
+                          );
+                        },
+                      ),
+                      IconButton(
                         tooltip: _selectedContentType.isManga
                             ? 'Chuyển sang Novel'
                             : 'Chuyển sang Truyện tranh',
@@ -561,6 +666,7 @@ class _HomeContentState extends State<_HomeContent> {
                         onPressed: _toggleContentType,
                       ),
                       IconButton(
+                        tooltip: 'Tìm kiếm',
                         icon: Icon(
                           Icons.search,
                           color: Theme.of(context).iconTheme.color,
@@ -572,12 +678,25 @@ class _HomeContentState extends State<_HomeContent> {
                     ],
                   ),
 
-                  const ContinueReadingSection(),
-
+                  // 1. Hero Banner Nổi Bật (Auto-Slide)
                   SliverToBoxAdapter(
                     child: _AutoSlideBanner(mangas: featured),
                   ),
 
+                  // 2. Tiếp Tục Đọc Dở (Tự động ẩn nếu chưa có lịch sử đọc)
+                  const ContinueReadingSection(),
+
+                  // 3. Gợi ý cá nhân hóa
+                  if (recommendedMangas.isNotEmpty) ...[
+                    _SectionTitle(
+                      label: _selectedContentType.isNovel
+                          ? '✨ Gợi Ý Cho Bạn'
+                          : '✨ Dành Riêng Cho Bạn',
+                    ),
+                    _MangaReaderCarousel(mangas: recommendedMangas),
+                  ],
+
+                  // 4. Truyện Hot Hôm Nay
                   _SectionTitle(
                     label: _selectedContentType.isNovel
                         ? 'Novel Hot Hôm Nay'
@@ -585,6 +704,7 @@ class _HomeContentState extends State<_HomeContent> {
                   ),
                   _MangaReaderCarousel(mangas: hotToday),
 
+                  // 5. Mới Cập Nhật
                   _SectionTitle(
                     label: _selectedContentType.isNovel
                         ? 'Novel Mới Cập Nhật'
@@ -592,6 +712,7 @@ class _HomeContentState extends State<_HomeContent> {
                   ),
                   _MangaReaderCarousel(mangas: newUpdates),
 
+                  // 6. Bảng Xếp Hạng Top Trending
                   _SectionTitle(
                     label: _selectedContentType.isNovel
                         ? 'Top Novel'
@@ -756,6 +877,21 @@ class _FollowButton extends StatefulWidget {
 class _FollowButtonState extends State<_FollowButton> {
   final FollowService _followService = FollowService();
   bool _isToggling = false;
+  late Stream<bool> _followStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _followStream = _followService.isFollowing(widget.manga.id);
+  }
+
+  @override
+  void didUpdateWidget(_FollowButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.manga.id != widget.manga.id) {
+      _followStream = _followService.isFollowing(widget.manga.id);
+    }
+  }
 
   Future<void> _toggleFollow(bool isFollowing) async {
     if (_isToggling) return;
@@ -787,7 +923,7 @@ class _FollowButtonState extends State<_FollowButton> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<bool>(
-      stream: _followService.isFollowing(widget.manga.id),
+      stream: _followStream,
       initialData: false,
       builder: (context, snapshot) {
         final isFollowing = snapshot.data ?? false;

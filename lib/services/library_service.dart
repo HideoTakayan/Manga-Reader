@@ -2,21 +2,67 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import '../data/database_helper.dart';
 
+class _ValueStreamController<T> {
+  T value;
+  final StreamController<T> _controller = StreamController<T>.broadcast();
+
+  _ValueStreamController(this.value);
+
+  Stream<T> get stream => _controller.stream;
+
+  void add(T newValue) {
+    value = newValue;
+    _controller.add(newValue);
+  }
+
+  void close() {
+    _controller.close();
+  }
+}
+
 // LibraryService: quản lý Categories và Mapping trong SQLite local.
 // Dùng StreamController thủ công vì SQLite không có built-in reactive streams như Firestore.
 // Mỗi khi data thay đổi, service tự push update vào controller để UI rebuild.
 class LibraryService {
   static final LibraryService instance = LibraryService._();
-  LibraryService._();
+  LibraryService._() {
+    _refreshCategories();
+  }
 
   final _dbHelper = DatabaseHelper.instance;
 
-  final _categoriesController = StreamController<List<String>>.broadcast();
+  final _categoriesController = _ValueStreamController<List<String>>([]);
   final _mappingController = StreamController<void>.broadcast();
+
+  void notifyMappingChanged() {
+    _mappingController.add(null);
+  }
+
+  Future<List<String>> getCategories() async {
+    final db = await _dbHelper.database;
+    final maps = await db.query('lib_categories', orderBy: 'sortIndex ASC');
+    final cats = maps
+        .map((m) => _readString(m, 'name'))
+        .where((name) => name.isNotEmpty)
+        .toList();
+    if (cats.isEmpty) {
+      await addCategory('Mặc định');
+      return ['Mặc định'];
+    }
+    return cats;
+  }
+
+  Future<void> refreshCategories() => _refreshCategories();
+
   Stream<List<String>> streamCategories() {
-    _refreshCategories();
+    // If empty, we trigger a refresh but return the stream immediately
+    if (_categoriesController.value.isEmpty) {
+      _refreshCategories();
+    }
     return _categoriesController.stream;
   }
+  
+  List<String> get currentCategories => _categoriesController.value;
 
   Future<void> _refreshCategories() async {
     final db = await _dbHelper.database;
@@ -34,32 +80,35 @@ class LibraryService {
   }
 
   Future<void> addCategory(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
     final db = await _dbHelper.database;
     final countMap = await db.rawQuery(
       'SELECT count(*) as count FROM lib_categories',
     );
     final count = _readInt(countMap.first, 'count');
     await db.insert('lib_categories', {
-      'name': name,
+      'name': trimmed,
       'sortIndex': count,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
     _refreshCategories();
   }
 
   Future<void> updateCategory(String oldName, String newName) async {
-    if (oldName == 'Mặc định') return; // Bảo vệ danh mục mặc định
+    final trimmedNew = newName.trim();
+    if (oldName == 'Mặc định' || trimmedNew.isEmpty) return; // Bảo vệ danh mục mặc định và chống rỗng
     final db = await _dbHelper.database;
     // transaction: đảm bảo cả 2 update thành công hoặc cả 2 rollback
     await db.transaction((txn) async {
       await txn.update(
         'lib_categories',
-        {'name': newName},
+        {'name': trimmedNew},
         where: 'name = ?',
         whereArgs: [oldName],
       );
       await txn.update(
         'lib_mapping',
-        {'categoryName': newName},
+        {'categoryName': trimmedNew},
         where: 'categoryName = ?',
         whereArgs: [oldName],
       );
@@ -143,6 +192,34 @@ class LibraryService {
     return controller.stream;
   }
 
+  final Map<String, _ValueStreamController<List<String>>> _mangasInCatControllers = {};
+
+  Stream<List<String>> streamMangasInCategory(String category) {
+    if (!_mangasInCatControllers.containsKey(category)) {
+      final controller = _ValueStreamController<List<String>>([]);
+      _mangasInCatControllers[category] = controller;
+
+      Future<void> fetch() async {
+        try {
+          final db = await _dbHelper.database;
+          final maps = await db.query(
+            'lib_mapping',
+            columns: ['mangaId'],
+            where: 'categoryName = ?',
+            whereArgs: [category],
+          );
+          final list = maps.map((m) => m['mangaId'] as String).toList();
+          controller.add(list);
+        } catch (_) {}
+      }
+
+      fetch();
+      _mappingController.stream.listen((_) => fetch());
+    }
+
+    return _mangasInCatControllers[category]!.stream;
+  }
+
   Future<void> setMangaCategories(
     String mangaId,
     List<String> categories,
@@ -164,28 +241,7 @@ class LibraryService {
     _mappingController.add(null);
   }
 
-  Stream<List<String>> streamMangasInCategory(String category) {
-    final controller = StreamController<List<String>>();
-    Future<void> fetch() async {
-      final db = await _dbHelper.database;
-      final maps = await db.query(
-        'lib_mapping',
-        where: 'categoryName = ?',
-        whereArgs: [category],
-      );
-      controller.add(
-        maps
-            .map((m) => _readString(m, 'mangaId'))
-            .where((id) => id.isNotEmpty)
-            .toList(),
-      );
-    }
 
-    fetch();
-    final subscription = _mappingController.stream.listen((_) => fetch());
-    controller.onCancel = () => subscription.cancel();
-    return controller.stream;
-  }
 
   Future<List<String>> getMangaCategories(String mangaId) async {
     final db = await _dbHelper.database;

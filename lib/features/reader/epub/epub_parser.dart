@@ -594,8 +594,14 @@ class EpubParser {
   }
 
   static String _normalizePath(String path) {
+    String decodedPath = path;
+    try {
+      decodedPath = Uri.decodeFull(path);
+    } catch (_) {
+      decodedPath = path;
+    }
     final parts = <String>[];
-    for (final part in Uri.decodeFull(path).replaceAll('\\', '/').split('/')) {
+    for (final part in decodedPath.replaceAll('\\', '/').split('/')) {
       if (part.isEmpty || part == '.') continue;
       if (part == '..') {
         if (parts.isNotEmpty) parts.removeLast();

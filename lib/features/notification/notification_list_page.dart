@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/notification_service.dart';
 
-// Trang danh sách thông báo — StatelessWidget vì toàn bộ state đến từ Stream Firestore.
-// Thông báo do Admin ghi vào Firestore khi có chapter mới, hiển thị cho tất cả user.
+// Trang danh sách thông báo — StatefulWidget với TabBar lọc theo nguồn.
+// Thông báo nhóm theo ngày: Hôm nay / Hôm qua / Tuần này / Cũ hơn.
 class NotificationListPage extends StatefulWidget {
   const NotificationListPage({super.key});
 
@@ -11,27 +11,44 @@ class NotificationListPage extends StatefulWidget {
   State<NotificationListPage> createState() => _NotificationListPageState();
 }
 
-class _NotificationListPageState extends State<NotificationListPage> {
+class _NotificationListPageState extends State<NotificationListPage>
+    with SingleTickerProviderStateMixin {
   late final Stream<List<AppNotification>> _stream;
+  late final TabController _tabController;
   bool _isMarkingAll = false;
+
+  // Tab config: source == null nghĩa là "Tất cả"
+  static const _tabDefs = [
+    (label: 'Tất cả', source: null as String?),
+    (label: 'Manga', source: 'manga'),
+    (label: 'Diễn đàn', source: 'forum'),
+    (label: 'Hệ thống', source: 'system'),
+  ];
 
   @override
   void initState() {
     super.initState();
     _stream = NotificationService.instance.streamUserNotifications();
+    _tabController = TabController(length: _tabDefs.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _markAllAsRead(List<AppNotification> notifications) async {
     if (_isMarkingAll) return;
-
     setState(() => _isMarkingAll = true);
     try {
-      await NotificationService.instance.markAllNotificationsAsRead(
-        notifications,
-      );
+      await NotificationService.instance.markAllNotificationsAsRead(notifications);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã đánh dấu tất cả là đã đọc')),
+        const SnackBar(
+          content: Text('Đã đánh dấu tất cả là đã đọc'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -39,6 +56,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
         SnackBar(
           content: Text('Không thể đánh dấu tất cả: $e'),
           backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -58,17 +76,30 @@ class _NotificationListPageState extends State<NotificationListPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Dọn dẹp thông báo?'),
-        content: Text('Bạn có muốn xóa ${readNotes.length} thông báo đã đọc khỏi hòm thư?'),
+        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Dọn dẹp thông báo?',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: Text(
+          'Bạn có muốn xóa ${readNotes.length} thông báo đã đọc khỏi hòm thư?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Xóa', style: TextStyle(color: Colors.redAccent)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -79,15 +110,36 @@ class _NotificationListPageState extends State<NotificationListPage> {
     try {
       await NotificationService.instance.clearReadNotifications(notifications);
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã dọn dẹp ${readNotes.length} thông báo đã đọc')),
+        SnackBar(
+          content: Text('Đã dọn dẹp ${readNotes.length} thông báo đã đọc'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi dọn dẹp thông báo: $e'), backgroundColor: Colors.redAccent),
+        SnackBar(
+          content: Text('Lỗi dọn dẹp thông báo: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
+  }
+
+  /// Trả về nhãn nhóm ngày để tạo section headers trong danh sách.
+  String _dateGroup(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(dt.year, dt.month, dt.day);
+    final diff = today.difference(date).inDays;
+    if (diff == 0) return 'Hôm nay';
+    if (diff == 1) return 'Hôm qua';
+    if (diff <= 7) return 'Tuần này';
+    return 'Cũ hơn';
   }
 
   @override
@@ -98,8 +150,8 @@ class _NotificationListPageState extends State<NotificationListPage> {
       stream: _stream,
       initialData: const [],
       builder: (context, snapshot) {
-        final notifications = snapshot.data ?? [];
-        final hasRead = notifications.any((note) => note.isRead);
+        final allNotifications = snapshot.data ?? [];
+        final hasRead = allNotifications.any((note) => note.isRead);
 
         return Scaffold(
           backgroundColor: theme.scaffoldBackgroundColor,
@@ -112,214 +164,417 @@ class _NotificationListPageState extends State<NotificationListPage> {
                 IconButton(
                   icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white70),
                   tooltip: 'Xóa thông báo đã đọc',
-                  onPressed: () => _clearReadNotifications(notifications),
+                  onPressed: () => _clearReadNotifications(allNotifications),
                 ),
             ],
-          ),
-          body: () {
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Lỗi tải thông báo:\n${snapshot.error}',
-                    style: const TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              );
-            }
-
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final hasUnread = notifications.any((note) => !note.isRead);
-            if (notifications.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.notifications_off_outlined,
-                      size: 64,
-                      color: theme.disabledColor,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Chưa có thông báo nào',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.disabledColor,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            return Column(
-              children: [
-                if (hasUnread)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _isMarkingAll
-                            ? null
-                            : () => _markAllAsRead(notifications),
-                        icon: _isMarkingAll
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.done_all),
-                        label: const Text('Đánh dấu tất cả đã đọc'),
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: notifications.length,
-                    separatorBuilder: (context, index) =>
-                        const Divider(height: 24),
-                    itemBuilder: (context, index) {
-                      final note = notifications[index];
-                      final isRead = note.isRead;
-
-                      return Dismissible(
-                        key: ValueKey(note.id),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 16),
+            bottom: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              padding: const EdgeInsets.only(left: 8),
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: Colors.white54,
+              indicatorColor: theme.colorScheme.primary,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              tabs: _tabDefs.map((t) {
+                final tabNotes = t.source == null
+                    ? allNotifications
+                    : allNotifications.where((n) => n.source == t.source).toList();
+                final unread = tabNotes.where((n) => !n.isRead).length;
+                return Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(t.label),
+                      if (unread > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: Colors.redAccent.withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(12),
+                            color: theme.colorScheme.primary,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Xóa',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              SizedBox(width: 6),
-                              Icon(Icons.delete_outline, color: Colors.white, size: 20),
-                            ],
+                          child: Text(
+                            '$unread',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        onDismissed: (_) async {
-                          await NotificationService.instance.deleteNotification(note);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Đã xóa thông báo'),
-                                behavior: SnackBarBehavior.floating,
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          body: TabBarView(
+            controller: _tabController,
+            children: _tabDefs.map((tab) {
+              final notifications = tab.source == null
+                  ? allNotifications
+                  : allNotifications.where((n) => n.source == tab.source).toList();
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.notifications_off_outlined,
+                            size: 56,
+                            color: Colors.redAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Không thể tải thông báo',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (notifications.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.notifications_none_rounded,
+                            size: 56,
+                            color: Colors.blueAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Hòm thư thông báo trống',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Bạn sẽ nhận được thông báo khi các bộ truyện đang theo dõi có chương mới hoặc có cập nhật quan trọng.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 13,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () => context.go('/'),
+                          icon: const Icon(Icons.explore_rounded, size: 18),
+                          label: const Text(
+                            'Khám phá truyện',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              // Xây dựng list kết hợp giữa header ngày và notification items
+              final List<dynamic> listItems = [];
+              String? currentGroup;
+              for (final note in notifications) {
+                final group = _dateGroup(note.createdAt);
+                if (group != currentGroup) {
+                  listItems.add(group);
+                  currentGroup = group;
+                }
+                listItems.add(note);
+              }
+
+              final hasUnread = notifications.any((note) => !note.isRead);
+
+              return Column(
+                children: [
+                  if (hasUnread)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _isMarkingAll
+                              ? null
+                              : () => _markAllAsRead(notifications),
+                          icon: _isMarkingAll
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.done_all),
+                          label: const Text('Đánh dấu tất cả đã đọc'),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      itemCount: listItems.length,
+                      itemBuilder: (context, index) {
+                        final item = listItems[index];
+
+                        // Header ngày
+                        if (item is String) {
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 12, 0, 6),
+                            child: Row(
+                              children: [
+                                Text(
+                                  item,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Divider(
+                                    color: theme.colorScheme.primary.withValues(alpha: 0.25),
+                                    height: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        // Notification item
+                        final note = item as AppNotification;
+                        final isRead = note.isRead;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Dismissible(
+                            key: ValueKey(note.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            );
-                          }
-                        },
-                        child: InkWell(
-                          onTap: () async {
-                            if (!isRead) {
-                              await NotificationService.instance
-                                  .markNotificationAsRead(note);
-                            }
-                            if (context.mounted) {
-                              final route = note.route;
-                              if (route != null && route.isNotEmpty) {
-                                context.go(route);
-                                return;
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Xóa',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                                ],
+                              ),
+                            ),
+                            confirmDismiss: (direction) async {
+                              try {
+                                await NotificationService.instance.deleteNotification(note);
+                                return true;
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Không thể xóa: $e'),
+                                      backgroundColor: Colors.redAccent,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                                return false; // Ngăn Dismissible gỡ Widget nếu lỗi
                               }
-                            }
-                          },
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                margin: const EdgeInsets.only(top: 4, right: 12),
-                                width: 32,
-                                height: 32,
+                            },
+                            onDismissed: (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Đã xóa thông báo'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                            child: InkWell(
+                              onTap: () async {
+                                if (!isRead) {
+                                  await NotificationService.instance
+                                      .markNotificationAsRead(note);
+                                }
+                                if (context.mounted) {
+                                  final route = note.route;
+                                  if (route != null && route.isNotEmpty) {
+                                    context.push(route);
+                                    return;
+                                  }
+                                  final targetId = note.targetId;
+                                  if (targetId != null && targetId.isNotEmpty) {
+                                    if (note.source == 'forum' ||
+                                        note.type.contains('forum')) {
+                                      context.push('/forum/detail/$targetId');
+                                    } else {
+                                      context.push('/detail/$targetId');
+                                    }
+                                  }
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _iconFor(note.source),
-                                  size: 17,
                                   color: isRead
-                                      ? theme.disabledColor
-                                      : theme.colorScheme.primary,
+                                      ? Colors.transparent
+                                      : theme.colorScheme.primary.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isRead
+                                        ? Colors.white.withValues(alpha: 0.05)
+                                        : theme.colorScheme.primary.withValues(alpha: 0.15),
+                                  ),
                                 ),
-                              ),
-                              Expanded(
-                                child: Column(
+                                child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      note.title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: isRead
-                                            ? FontWeight.normal
-                                            : FontWeight.bold,
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 4, right: 12),
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.surfaceContainerHighest,
+                                        shape: BoxShape.circle,
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      note.body,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                      child: Icon(
+                                        _iconFor(note.source),
+                                        size: 17,
                                         color: isRead
                                             ? theme.disabledColor
-                                            : theme.textTheme.bodyMedium?.color,
+                                            : theme.colorScheme.primary,
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          '${_formatTimestamp(note.createdAt)} • ${_labelFor(note.source)}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: theme.disabledColor,
-                                          ),
-                                        ),
-                                        if (!isRead) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            width: 6,
-                                            height: 6,
-                                            decoration: BoxDecoration(
-                                              color: theme.colorScheme.primary,
-                                              shape: BoxShape.circle,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            note.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.titleSmall?.copyWith(
+                                              fontWeight: isRead
+                                                  ? FontWeight.normal
+                                                  : FontWeight.bold,
                                             ),
                                           ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            note.body,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              color: isRead
+                                                  ? theme.disabledColor
+                                                  : theme.textTheme.bodyMedium?.color,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                '${_formatTimestamp(note.createdAt)} • ${_labelFor(note.source)}',
+                                                style: theme.textTheme.bodySmall?.copyWith(
+                                                  color: theme.disabledColor,
+                                                ),
+                                              ),
+                                              if (!isRead) ...[
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  width: 6,
+                                                  height: 6,
+                                                  decoration: BoxDecoration(
+                                                    color: theme.colorScheme.primary,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
                                         ],
-                                      ],
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
-              ],
-            );
-          }(),
+                ],
+              );
+            }).toList(),
+          ),
         );
       },
     );
@@ -328,6 +583,7 @@ class _NotificationListPageState extends State<NotificationListPage> {
   String _formatTimestamp(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
+    if (diff.inSeconds < 60) return 'Vừa xong';
     if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
     if (diff.inHours < 24) return '${diff.inHours} giờ trước';
     return '${dt.day}/${dt.month}/${dt.year}';

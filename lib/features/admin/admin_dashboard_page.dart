@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../config/admin_config.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
@@ -40,9 +41,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   final TextEditingController _searchController = TextEditingController();
   bool _isLoadingMangas = true;
   Timer? _debounceTimer;
-
-  // Whitelist email được vào trang Admin
-  final _adminEmails = ['admin@gmail.com', 'anhlasinhvien2k51@gmail.com'];
 
   @override
   void initState() {
@@ -90,7 +88,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   // Nếu email hiện tại không có trong whitelist, redirect về Home và hiện thông báo.
   // Dùng addPostFrameCallback vì không được điều hướng trong initState (widget chưa được gắn vào tree).
   void _checkAdmin() {
-    if (!_adminEmails.contains(user?.email)) {
+    if (!AdminConfig.isAdmin(user?.email)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.go('/');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -150,7 +148,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   Widget build(BuildContext context) {
     // Nếu chưa xác nhận quyền (kiểm tra email), hiện loading tạm để tránh flash nội dung Admin
-    if (!_adminEmails.contains(user?.email)) {
+    if (!AdminConfig.isAdmin(user?.email)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -269,6 +267,22 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           },
                         ),
                       ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _AdminToolButton(
+                          icon: Icons.manage_accounts,
+                          iconColor: Colors.cyanAccent,
+                          label: 'Quản lý người dùng',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const UsersListPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ],
                   ),
 
@@ -371,22 +385,26 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           final confirm = await showDialog<bool>(
             context: context,
             builder: (ctx) => AlertDialog(
-              backgroundColor: Theme.of(context).cardColor,
-              title: const Text('Ngắt kết nối Drive?'),
+              backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               content: Text(
                 'Bạn đang kết nối với email: ${_driveAccount!.email}',
+                style: const TextStyle(color: Colors.white70),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Hủy'),
+                  child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text(
-                    'Ngắt kết nối',
-                    style: TextStyle(color: Colors.redAccent),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Ngắt kết nối'),
                 ),
               ],
             ),
@@ -402,6 +420,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   Widget _buildSearchBar() {
     return TextField(
       controller: _searchController,
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Tìm kiếm truyện theo tên hoặc tác giả...',
         prefixIcon: const Icon(Icons.search),
@@ -438,26 +457,44 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     if (_filteredMangas.isEmpty) {
       return SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.all(40.0),
+          padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 48.0),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.search_off,
-                  size: 64,
-                  color: Theme.of(
-                    context,
-                  ).iconTheme.color?.withValues(alpha: 0.3),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.search_off_rounded,
+                    size: 48,
+                    color: Colors.blueAccent,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   _searchController.text.isEmpty
-                      ? 'Chưa có truyện nào'
-                      : 'Không tìm thấy truyện nào phù hợp',
+                      ? 'Chưa có truyện nào trong kho'
+                      : 'Không tìm thấy truyện phù hợp',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).disabledColor,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _searchController.text.isEmpty
+                      ? 'Bấm nút "Thêm Truyện" ở trên để đăng bộ truyện đầu tiên lên hệ thống.'
+                      : 'Hãy thử tìm kiếm với từ khóa khác hoặc xóa bộ lọc tìm kiếm.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ],
             ),
@@ -637,7 +674,7 @@ class _AdminMangaCard extends StatelessWidget {
                                   builder: (context) =>
                                       ChapterManagerPage(manga: manga),
                                 ),
-                              );
+                              ).then((_) => onRefresh());
                             },
                           ),
                           // Mở EditMangaDialog để sửa tên/tác giả/bìa/thể loại
@@ -676,31 +713,31 @@ class _AdminMangaCard extends StatelessWidget {
                               showDialog(
                                 context: context,
                                 builder: (dialogContext) => AlertDialog(
-                                  backgroundColor: Theme.of(context).cardColor,
-                                  title: Text(
+                                  backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  title: const Text(
                                     'Xóa Truyện?',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleLarge,
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                   ),
                                   content: Text(
                                     'Bạn có chắc muốn xóa truyện "${manga.title}" không? Hành động này không thể hoàn tác.',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodyMedium,
+                                    style: const TextStyle(color: Colors.white70),
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () =>
                                           Navigator.pop(dialogContext),
-                                      child: Text(
+                                      child: const Text(
                                         'Hủy',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
+                                        style: TextStyle(color: Colors.grey),
                                       ),
                                     ),
-                                    TextButton(
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.redAccent,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
                                       onPressed: () async {
                                         Navigator.pop(
                                           dialogContext,
@@ -753,7 +790,7 @@ class _AdminMangaCard extends StatelessWidget {
                                       },
                                       child: const Text(
                                         'Xóa',
-                                        style: TextStyle(color: Colors.red),
+                                        style: TextStyle(fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ],

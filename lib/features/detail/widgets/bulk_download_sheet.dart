@@ -1,4 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
+import '../../catalog/catalog_cache_service.dart';
+import '../../../data/content_type.dart';
 import '../../../data/models_cloud.dart';
 import '../../../data/models.dart';
 import '../../../data/database_helper.dart';
@@ -34,11 +40,21 @@ class BulkDownloadSheet extends StatefulWidget {
       ),
     );
 
-    if (count != null && count > 0) {
+    if (count != null && count > 0 && context.mounted) {
+      final router = GoRouter.of(context);
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
           content: Text('Đã thêm $count chương vào hàng đợi tải xuống'),
           backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: 'Xem',
+            textColor: Colors.white,
+            onPressed: () {
+              messenger.hideCurrentSnackBar();
+              router.push('/downloads');
+            },
+          ),
         ),
       );
     }
@@ -52,10 +68,14 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   late TabController _tabController;
   final Set<String> _selectedChapterIds = {};
   Set<String> _downloadedChapterIds = {};
+  Set<String> _readChapterIds = {};
   bool _isLoading = true;
 
   int _rangeStartIndex = 0;
   int _rangeEndIndex = 0;
+  final TextEditingController _chapterSearchController = TextEditingController();
+  String _chapterSearchQuery = '';
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -68,12 +88,16 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _chapterSearchController.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
   Future<void> _loadDownloadedStatus() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     final downloaded = await DatabaseHelper.instance.getDownloadsByManga(widget.manga.id);
+    final readIds = await DatabaseHelper.instance.getReadChapterIds(widget.manga.id, userId: uid);
     final downloadedSet = downloaded
         .map((d) => d['chapterId']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
@@ -82,6 +106,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
     if (mounted) {
       setState(() {
         _downloadedChapterIds = downloadedSet;
+        _readChapterIds = readIds;
         _isLoading = false;
       });
       _selectNextChapters(5);
@@ -118,6 +143,28 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
     setState(() {});
   }
 
+  void _selectUnreadUndownloaded() {
+    _selectedChapterIds.clear();
+    for (final c in _undownloadedChapters) {
+      if (!_readChapterIds.contains(c.id)) {
+        _selectedChapterIds.add(c.id);
+      }
+    }
+    setState(() {});
+  }
+
+  void _invertSelection() {
+    final inverted = <String>{};
+    for (final c in _undownloadedChapters) {
+      if (!_selectedChapterIds.contains(c.id)) {
+        inverted.add(c.id);
+      }
+    }
+    _selectedChapterIds.clear();
+    _selectedChapterIds.addAll(inverted);
+    setState(() {});
+  }
+
   void _applyRangeSelection() {
     if (widget.chapters.isEmpty) return;
     _selectedChapterIds.clear();
@@ -147,6 +194,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
       genres: widget.manga.genres,
       contentType: widget.manga.contentType,
     );
+    await DatabaseHelper.instance.saveLocalManga(localInfo);
 
     for (final chapter in selectedList) {
       await DownloadService.instance.addToQueue(
@@ -155,16 +203,6 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
         mangaTitle: widget.manga.title,
         chapterTitle: chapter.title,
         fileType: chapter.fileType,
-        mangaInfo: localInfo,
-      );
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã thêm ${selectedList.length} chương vào hàng đợi tải xuống'),
-          backgroundColor: Colors.green,
-        ),
       );
     }
   }
@@ -173,7 +211,8 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final selectedCount = _selectedChapterIds.length;
-    final estimatedMb = (selectedCount * 4.5).toStringAsFixed(1);
+    final isNovel = widget.manga.contentType == MangaContentType.novel;
+    final estimatedMb = (selectedCount * (isNovel ? 0.6 : 14.5)).toStringAsFixed(1);
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.75,
@@ -188,9 +227,18 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
                 // Header Sheet
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 16, 8),
                   child: Row(
                     children: [
                       Container(
@@ -223,6 +271,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                         ),
                       ),
                       IconButton(
+                        tooltip: 'Đóng',
                         icon: const Icon(Icons.close, color: Colors.white54),
                         onPressed: () => Navigator.pop(context),
                       ),
@@ -295,7 +344,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                           disabledBackgroundColor: Colors.white12,
                           disabledForegroundColor: Colors.white38,
                           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
                     ],
@@ -307,6 +356,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   }
 
   Widget _buildQuickPresetTab() {
+    final unreadUndownloadedCount = _undownloadedChapters
+        .where((c) => !_readChapterIds.contains(c.id))
+        .length;
+
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -335,6 +388,14 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
         ),
         const SizedBox(height: 12),
         _buildPresetTile(
+          icon: Icons.mark_chat_unread_outlined,
+          title: 'Chỉ các chương chưa đọc',
+          subtitle: 'Tải $unreadUndownloadedCount chap chưa đọc và chưa tải về máy',
+          onTap: _selectUnreadUndownloaded,
+          isSelected: _selectedChapterIds.length == unreadUndownloadedCount && unreadUndownloadedCount > 0,
+        ),
+        const SizedBox(height: 12),
+        _buildPresetTile(
           icon: Icons.all_inclusive,
           title: 'Tất cả chương chưa tải',
           subtitle: 'Tải toàn bộ ${_undownloadedChapters.length} chap còn lại',
@@ -356,7 +417,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -408,8 +472,29 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
 
   Widget _buildRangePickerTab() {
     if (widget.chapters.isEmpty) {
-      return const Center(
-        child: Text('Không có chương nào để tải', style: TextStyle(color: Colors.white54)),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+              child: const Icon(
+                Icons.file_download_off_rounded,
+                size: 40,
+                color: Colors.white38,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Không có chương nào để tải',
+              style: TextStyle(color: Colors.white60, fontSize: 14),
+            ),
+          ],
+        ),
       );
     }
     final maxIdx = widget.chapters.length - 1;
@@ -442,7 +527,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                       DropdownButton<int>(
                         value: _rangeStartIndex,
                         isExpanded: true,
-                        dropdownColor: const Color(0xFF2C2C2E),
+                        dropdownColor: Theme.of(context).cardColor,
                         underline: const SizedBox(),
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         items: List.generate(
@@ -485,7 +570,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                       DropdownButton<int>(
                         value: _rangeEndIndex.clamp(_rangeStartIndex, maxIdx),
                         isExpanded: true,
-                        dropdownColor: const Color(0xFF2C2C2E),
+                        dropdownColor: Theme.of(context).cardColor,
                         underline: const SizedBox(),
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         items: List.generate(
@@ -516,7 +601,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
             child: ElevatedButton.icon(
               onPressed: _applyRangeSelection,
               icon: const Icon(Icons.check),
-              label: const Text('Áp dụng khoảng này'),
+              label: const Text('Áp dụng khoảng này', style: TextStyle(fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white12,
                 foregroundColor: Colors.white,
@@ -530,69 +615,162 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   }
 
   Widget _buildCheckboxListTab() {
+    final displayedChapters = _chapterSearchQuery.isEmpty
+        ? widget.chapters
+        : widget.chapters.where((c) {
+            final q = CatalogCacheService.instance.normalize(_chapterSearchQuery.trim());
+            final t = CatalogCacheService.instance.normalize(c.title);
+            return t.contains(q);
+          }).toList();
+
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    for (final c in _undownloadedChapters) {
-                      _selectedChapterIds.add(c.id);
-                    }
-                  });
-                },
-                child: const Text('Chọn tất cả chưa tải'),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: TextField(
+              controller: _chapterSearchController,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Lọc nhanh tên hoặc số chương...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white38),
+                suffixIcon: _chapterSearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 14, color: Colors.white54),
+                        onPressed: () {
+                          _chapterSearchController.clear();
+                          setState(() => _chapterSearchQuery = '');
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
-              TextButton(
-                onPressed: () => setState(() => _selectedChapterIds.clear()),
-                child: const Text('Bỏ chọn tất cả', style: TextStyle(color: Colors.white54)),
+              onChanged: (val) {
+                if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+                  if (mounted) setState(() => _chapterSearchQuery = val);
+                });
+              },
+            ),
+          ),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            children: [
+              ActionChip(
+                avatar: const Icon(Icons.select_all, size: 16),
+                label: const Text('Tất cả chưa tải', style: TextStyle(fontSize: 12)),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  _selectAllUndownloaded();
+                },
+              ),
+              const SizedBox(width: 8),
+              ActionChip(
+                avatar: const Icon(Icons.mark_chat_unread_outlined, size: 16),
+                label: const Text('Chỉ chưa đọc', style: TextStyle(fontSize: 12)),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  _selectUnreadUndownloaded();
+                },
+              ),
+              const SizedBox(width: 8),
+              ActionChip(
+                avatar: const Icon(Icons.swap_horiz, size: 16),
+                label: const Text('Đảo chọn', style: TextStyle(fontSize: 12)),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  _invertSelection();
+                },
+              ),
+              const SizedBox(width: 8),
+              ActionChip(
+                avatar: const Icon(Icons.clear_all, size: 16),
+                label: const Text('Bỏ chọn', style: TextStyle(fontSize: 12)),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _selectedChapterIds.clear());
+                },
               ),
             ],
           ),
         ),
         const Divider(height: 1, color: Colors.white12),
         Expanded(
-          child: ListView.separated(
-            itemCount: widget.chapters.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-            itemBuilder: (context, index) {
-              final chapter = widget.chapters[index];
-              final isDownloaded = _downloadedChapterIds.contains(chapter.id);
-              final isSelected = _selectedChapterIds.contains(chapter.id);
-
-              return CheckboxListTile(
-                value: isDownloaded ? true : isSelected,
-                enabled: !isDownloaded,
-                activeColor: isDownloaded ? Colors.green : Colors.orange,
-                title: Text(
-                  chapter.title,
-                  style: TextStyle(
-                    color: isDownloaded ? Colors.white38 : Colors.white,
-                    decoration: isDownloaded ? TextDecoration.lineThrough : null,
+          child: displayedChapters.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: 0.05),
+                        ),
+                        child: const Icon(
+                          Icons.search_off_rounded,
+                          size: 32,
+                          color: Colors.white38,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Không tìm thấy chương phù hợp',
+                        style: TextStyle(color: Colors.white38, fontSize: 13),
+                      ),
+                    ],
                   ),
+                )
+              : ListView.separated(
+                  itemCount: displayedChapters.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                  itemBuilder: (context, index) {
+                    final chapter = displayedChapters[index];
+                    final isDownloaded = _downloadedChapterIds.contains(chapter.id);
+                    final isSelected = _selectedChapterIds.contains(chapter.id);
+
+                    return CheckboxListTile(
+                      value: isDownloaded ? true : isSelected,
+                      enabled: !isDownloaded,
+                      activeColor: isDownloaded ? Colors.green : Colors.orange,
+                      title: Text(
+                        chapter.title,
+                        style: TextStyle(
+                          color: isDownloaded ? Colors.white38 : Colors.white,
+                          decoration: isDownloaded ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isDownloaded ? 'Đã tải xuống' : chapter.fileType.toUpperCase(),
+                        style: TextStyle(color: isDownloaded ? Colors.green : Colors.white38, fontSize: 11),
+                      ),
+                      onChanged: isDownloaded
+                          ? null
+                          : (val) {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                if (val == true) {
+                                  _selectedChapterIds.add(chapter.id);
+                                } else {
+                                  _selectedChapterIds.remove(chapter.id);
+                                }
+                              });
+                            },
+                    );
+                  },
                 ),
-                subtitle: Text(
-                  isDownloaded ? 'Đã tải xuống' : chapter.fileType.toUpperCase(),
-                  style: TextStyle(color: isDownloaded ? Colors.green : Colors.white38, fontSize: 11),
-                ),
-                onChanged: isDownloaded
-                    ? null
-                    : (val) {
-                        setState(() {
-                          if (val == true) {
-                            _selectedChapterIds.add(chapter.id);
-                          } else {
-                            _selectedChapterIds.remove(chapter.id);
-                          }
-                        });
-                      },
-              );
-            },
-          ),
         ),
       ],
     );

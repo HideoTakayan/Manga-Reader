@@ -1,5 +1,7 @@
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../services/tts_service.dart';
 import '../../../services/novel_service.dart';
@@ -26,6 +28,10 @@ class MiniTtsPlayer extends StatelessWidget {
               color: Colors.transparent,
               child: InkWell(
                 borderRadius: BorderRadius.circular(16),
+                onLongPress: () {
+                  HapticFeedback.mediumImpact();
+                  _showTtsQuickControlSheet(context, tts);
+                },
                 onTap: () {
                   if (tts.currentChapterId != null && tts.currentMangaId != null) {
                     if (tts.currentMangaId!.startsWith('LOCAL_NOVEL|')) {
@@ -39,7 +45,9 @@ class MiniTtsPlayer extends StatelessWidget {
                         ),
                       );
                     } else {
-                      context.push('/reader/${tts.currentChapterId}?mangaId=${tts.currentMangaId}');
+                      context.push(
+                        '/reader/${tts.currentChapterId}?mangaId=${Uri.encodeComponent(tts.currentMangaId!)}',
+                      );
                     }
                   }
                 },
@@ -156,68 +164,21 @@ class MiniTtsPlayer extends StatelessWidget {
                                   ),
                                 ),
 
-                                // Speed Cycle Button
-                                InkWell(
-                                  onTap: tts.cycleSpeed,
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                                    ),
-                                    child: Text(
-                                      '${tts.rate.toStringAsFixed(tts.rate.truncateToDouble() == tts.rate ? 0 : 2)}x',
-                                      style: const TextStyle(
-                                        color: Colors.blueAccent,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-
-                                // Sleep Timer Popup
-                                PopupMenuButton<int>(
-                                  tooltip: 'Hẹn giờ tắt',
+                                // Quick Control Sheet Button (Tune)
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                  icon: Icon(
-                                    tts.sleepMinutesRemaining > 0
-                                        ? Icons.alarm_on_rounded
-                                        : Icons.alarm_rounded,
-                                    color: tts.sleepMinutesRemaining > 0
-                                        ? Colors.amberAccent
-                                        : Colors.white60,
-                                    size: 20,
+                                  tooltip: 'Tùy chỉnh đọc AI',
+                                  icon: const Icon(
+                                    Icons.tune_rounded,
+                                    color: Colors.white70,
+                                    size: 18,
                                   ),
-                                  color: const Color(0xFF25252A),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  onSelected: (minutes) => tts.setSleepTimer(minutes),
-                                  itemBuilder: (context) => [
-                                    const PopupMenuItem(
-                                      value: 0,
-                                      child: Text('Tắt hẹn giờ', style: TextStyle(color: Colors.white70)),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 15,
-                                      child: Text('15 phút', style: TextStyle(color: Colors.white)),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 30,
-                                      child: Text('30 phút', style: TextStyle(color: Colors.white)),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 45,
-                                      child: Text('45 phút', style: TextStyle(color: Colors.white)),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 60,
-                                      child: Text('60 phút', style: TextStyle(color: Colors.white)),
-                                    ),
-                                  ],
+                                  onPressed: () {
+                                    HapticFeedback.lightImpact();
+                                    _showTtsQuickControlSheet(context, tts);
+                                  },
                                 ),
 
                                 // Previous Chunk Button
@@ -288,6 +249,330 @@ class MiniTtsPlayer extends StatelessWidget {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  void _showTtsQuickControlSheet(BuildContext context, TtsService tts) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return ListenableBuilder(
+          listenable: tts,
+          builder: (context, _) {
+            final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+            final sleepPresets = [0, 15, 30, 45, 60];
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle Bar
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Header Info
+                    Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: tts.coverUrl != null && tts.coverUrl!.isNotEmpty
+                                ? DriveImage(
+                                    fileId: tts.coverUrl!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    color: Colors.blueAccent.withValues(alpha: 0.2),
+                                    child: const Icon(
+                                      Icons.auto_stories,
+                                      color: Colors.blueAccent,
+                                      size: 24,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                tts.currentChapterTitle ?? 'Đang đọc truyện chữ',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${tts.mangaTitle ?? 'Giọng đọc AI'} • Đoạn ${tts.chunkIndex + 1}/${max(1, tts.totalChunks)}',
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Progress bar
+                    if (tts.totalChunks > 0) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: tts.progress,
+                          minHeight: 6,
+                          backgroundColor: Colors.white10,
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    const Divider(color: Colors.white12),
+                    const SizedBox(height: 10),
+
+                    // Speed Setting Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.speed_rounded, size: 18, color: Colors.blueAccent),
+                            SizedBox(width: 8),
+                            Text(
+                              'Tốc độ đọc',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '${tts.rate.toStringAsFixed(2)}x',
+                          style: const TextStyle(
+                            color: Colors.blueAccent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: speeds.map((speed) {
+                          final isSelected = (tts.rate - speed).abs() < 0.05;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text('${speed}x'),
+                              selected: isSelected,
+                              selectedColor: Colors.blueAccent,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : Colors.white70,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 12,
+                              ),
+                              onSelected: (selected) {
+                                if (selected) {
+                                  HapticFeedback.selectionClick();
+                                  tts.setRate(speed);
+                                }
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // Sleep Timer Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.timer_rounded, size: 18, color: Colors.amberAccent),
+                            SizedBox(width: 8),
+                            Text(
+                              'Hẹn giờ tắt',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        if (tts.sleepMinutesRemaining > 0)
+                          Text(
+                            'Còn ${tts.sleepMinutesRemaining} phút',
+                            style: const TextStyle(
+                              color: Colors.amberAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: sleepPresets.map((mins) {
+                          final isSelected = mins == 0
+                              ? tts.sleepMinutesRemaining <= 0
+                              : tts.sleepMinutesRemaining == mins;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(mins == 0 ? 'Tắt hẹn giờ' : '$mins phút'),
+                              selected: isSelected,
+                              selectedColor: Colors.amberAccent,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.black : Colors.white70,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 12,
+                              ),
+                              onSelected: (selected) {
+                                if (selected) {
+                                  HapticFeedback.selectionClick();
+                                  tts.setSleepTimer(mins);
+                                }
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Large Playback Controls
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          iconSize: 36,
+                          icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
+                          tooltip: 'Đoạn trước',
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            tts.prevChunk();
+                          },
+                        ),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          iconSize: 56,
+                          icon: Icon(
+                            tts.isPlaying
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_filled_rounded,
+                            color: Colors.blueAccent,
+                          ),
+                          tooltip: tts.isPlaying ? 'Tạm dừng' : 'Tiếp tục',
+                          onPressed: () {
+                            HapticFeedback.mediumImpact();
+                            tts.togglePlayPause();
+                          },
+                        ),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          iconSize: 36,
+                          icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
+                          tooltip: 'Đoạn tiếp',
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            tts.nextChunk();
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              side: const BorderSide(color: Colors.redAccent),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                            label: const Text('Dừng đọc', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              tts.stopAndHide();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blueAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            icon: const Icon(Icons.fullscreen_rounded, size: 18),
+                            label: const Text('Mở trình đọc', style: TextStyle(fontWeight: FontWeight.bold)),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              if (tts.currentChapterId != null && tts.currentMangaId != null) {
+                                if (tts.currentMangaId!.startsWith('LOCAL_NOVEL|')) {
+                                  final path = tts.currentMangaId!.replaceFirst('LOCAL_NOVEL|', '');
+                                  context.push(
+                                    '/novel-reader',
+                                    extra: LocalNovel(
+                                      title: tts.mangaTitle ?? 'Truyện chữ',
+                                      path: path,
+                                      importedAt: DateTime.now(),
+                                    ),
+                                  );
+                                } else {
+                                  context.push(
+                                    '/reader/${tts.currentChapterId}?mangaId=${Uri.encodeComponent(tts.currentMangaId!)}',
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );

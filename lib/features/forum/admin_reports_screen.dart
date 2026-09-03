@@ -62,25 +62,45 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) {
         return ReportDetailSheet(
           report: report,
           onDismiss: () => _resolveReport(report, 'dismissed'),
-          onAction: () => _showModerationOptions(report),
+          onAction: () => _showModerationOptions(sheetContext, report),
         );
       },
     );
   }
 
-  void _showModerationOptions(ForumReport report) {
-    Navigator.pop(context); // close previous bottom sheet
+  void _showModerationOptions(BuildContext parentSheetContext, ForumReport report) {
+    Navigator.pop(parentSheetContext); // close previous bottom sheet
     showModalBottomSheet(
       context: context,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red),
                 title: const Text('Xóa nội dung vi phạm & Đóng report'),
@@ -213,7 +233,51 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Quản lý Báo cáo (Admin)')),
       body: _reports.isEmpty && !_isLoading
-          ? const Center(child: Text('Không có báo cáo nào đang chờ.'))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.green.withValues(alpha: 0.25),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.verified_user_rounded,
+                        size: 48,
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Hòm báo cáo đang trống',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Không có báo cáo vi phạm nào đang chờ xử lý. Cộng đồng diễn đàn đang hoạt động an toàn và tích cực.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : ListView.builder(
               itemCount: _reports.length + (_hasMore ? 1 : 0),
               itemBuilder: (context, index) {
@@ -335,12 +399,23 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16, right: 16, top: 24,
+        left: 16, right: 16, top: 12,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -458,6 +533,9 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   onPressed: _isProcessing ? null : () async {
                     setState(() => _isProcessing = true);
                     final success = await widget.onDismiss();
@@ -473,9 +551,13 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
                       : const Text('Bỏ qua'),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   onPressed: _isProcessing ? null : widget.onAction,
-                  child: const Text('Xử lý vi phạm', style: TextStyle(color: Colors.white)),
+                  child: const Text('Xử lý vi phạm', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

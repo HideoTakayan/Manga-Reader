@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/library_service.dart';
 
 // Class chứa các dialog dùng chung liên quan đến thư viện cá nhân.
@@ -61,6 +62,7 @@ class LibraryDialogs {
                                 controlAffinity:
                                     ListTileControlAffinity.leading,
                                 onChanged: (val) {
+                                  HapticFeedback.selectionClick();
                                   setDialogState(() {
                                     if (val == true) {
                                       tempSelected.add(cat);
@@ -86,23 +88,26 @@ class LibraryDialogs {
                     ),
                     ElevatedButton(
                       onPressed: () async {
-                        // Ghi danh mục mới vào SQLite cho từng truyện trong batch
-                        for (final id in mangaIds) {
-                          await LibraryService.instance.setMangaCategories(
-                            id,
-                            tempSelected,
-                          );
-                        }
-                        if (context.mounted) Navigator.pop(ctx, true);
+                        final toSave = tempSelected;
+                        // Ghi danh mục mới vào SQLite cho từng truyện trong batch (song song)
+                        await Future.wait(
+                          mangaIds.map(
+                            (id) => LibraryService.instance.setMangaCategories(
+                              id,
+                              toSave,
+                            ),
+                          ),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx, true);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.redAccent,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text('Lưu'),
+                      child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ],
                 );

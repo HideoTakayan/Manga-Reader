@@ -45,19 +45,85 @@ class _PendingGroupsTab extends StatelessWidget {
           .where('status', isEqualTo: 'pending')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const Center(child: Text('Lỗi tải dữ liệu'));
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.cloud_off_rounded,
+                      size: 44,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Lỗi tải yêu cầu nhóm',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
         final docs = snapshot.data!.docs;
         if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle_outline, size: 64, color: Colors.green),
-                SizedBox(height: 12),
-                Text('Không có nhóm nào đang chờ duyệt'),
-              ],
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.group_add_outlined,
+                      size: 48,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Không có nhóm nào đang chờ duyệt',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Tất cả yêu cầu thành lập nhóm dịch mới đã được xử lý xong',
+                    style: TextStyle(color: Colors.white38, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -111,15 +177,43 @@ class _PendingGroupsTab extends StatelessWidget {
                           label: const Text('Từ chối', style: TextStyle(color: Colors.red)),
                           style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red)),
                           onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: const Text('Xác nhận từ chối', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                content: Text('Bạn có chắc muốn từ chối nhóm "${group.name}"?', style: const TextStyle(color: Colors.white70)),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.redAccent,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Từ chối'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm != true) return;
+
                             try {
                               await GroupService.instance.rejectGroup(group.id);
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Đã từ chối nhóm!')),
+                                  SnackBar(content: Text('Đã từ chối nhóm "${group.name}"!')),
                                 );
                               }
                             } catch (e) {
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                               }
                             }
@@ -131,15 +225,46 @@ class _PendingGroupsTab extends StatelessWidget {
                           label: const Text('Duyệt', style: TextStyle(color: Colors.white)),
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                           onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: const Text('Xác nhận duyệt nhóm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                content: Text('Bạn có chắc muốn duyệt nhóm "${group.name}" thành nhóm dịch chính thức?', style: const TextStyle(color: Colors.white70)),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Duyệt'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm != true) return;
+
                             try {
                               await GroupService.instance.approveGroup(group.id, group.leaderId);
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Đã duyệt nhóm thành công!')),
+                                  SnackBar(
+                                    content: Text('Đã duyệt nhóm "${group.name}" thành công!'),
+                                    backgroundColor: Colors.green,
+                                  ),
                                 );
                               }
                             } catch (e) {
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                               }
                             }
@@ -171,7 +296,45 @@ class _DriveRequestsTab extends StatelessWidget {
           .where('status', isEqualTo: 'pending')
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return const Center(child: Text('Lỗi tải dữ liệu'));
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.cloud_off_rounded,
+                      size: 44,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Lỗi tải yêu cầu Drive',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.white54),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
         final docs = List<QueryDocumentSnapshot>.from(snapshot.data!.docs);
@@ -182,14 +345,42 @@ class _DriveRequestsTab extends StatelessWidget {
           return bDate.compareTo(aDate);
         });
         if (docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.cloud_done, size: 64, color: Colors.green),
-                SizedBox(height: 12),
-                Text('Không có yêu cầu truy cập Drive nào'),
-              ],
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.cloud_done_outlined,
+                      size: 48,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Không có yêu cầu quyền Drive nào',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Khi các thành viên nhóm dịch yêu cầu quyền cấp OAuth Drive, yêu cầu sẽ hiển thị ở đây',
+                    style: TextStyle(color: Colors.white38, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -265,8 +456,12 @@ class _DriveRequestsTab extends StatelessWidget {
                               .doc(docId)
                               .update({'status': 'done'});
                           if (context.mounted) {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Đã đánh dấu xong cho $email')),
+                              SnackBar(
+                                content: Text('Đã đánh dấu xong cho $email'),
+                                backgroundColor: Colors.green,
+                              ),
                             );
                           }
                         },

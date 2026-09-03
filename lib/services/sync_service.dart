@@ -39,8 +39,9 @@ class SyncService {
         await Future.wait(
           chunk.map((history) async {
             try {
-              // Local novels are device-specific and shouldn't be pushed to cloud history.
-              if (!history.mangaId.startsWith('LOCAL_NOVEL|')) {
+              // Local files are device-specific and shouldn't be pushed to cloud history.
+              if (!history.mangaId.startsWith('LOCAL_NOVEL|') &&
+                  !history.mangaId.startsWith('local_')) {
                 await HistoryService.instance.saveHistory(history); // Firestore
               }
               await DatabaseHelper.instance.markHistoryAsSynced(

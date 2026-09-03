@@ -1,7 +1,9 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:async';
 
 import '../features/home/home_page.dart';
 import '../features/library/library_page.dart';
@@ -179,7 +181,11 @@ final GoRouter appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/group',
-              builder: (_, __) => const GroupDashboardPage(),
+              redirect: (context, state) {
+                final email = FirebaseAuth.instance.currentUser?.email;
+                return AdminConfig.isAdmin(email) ? '/admin/control' : null;
+              },
+              builder: (_, __) => const _GroupMemberRouteGuard(),
             ),
           ],
         ),
@@ -192,12 +198,13 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) =>
           MangaDetailPage(mangaId: state.pathParameters['id']!),
     ),
-    // Route màn hình đọc truyện - nhận chapterId qua URL (/reader/xyz789)
+    // Route màn hình đọc truyện - nhận chapterId qua URL (/reader/xyz789?page=12)
     GoRoute(
       path: '/reader/:chapterId',
       builder: (context, state) => ReaderPage(
         chapterId: state.pathParameters['chapterId']!,
         mangaId: state.uri.queryParameters['mangaId'],
+        initialPageIndex: int.tryParse(state.uri.queryParameters['page'] ?? ''),
       ),
     ),
     // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?q=...&genre=...&type=...
@@ -209,7 +216,6 @@ final GoRouter appRouter = GoRouter(
         initialContentType: state.uri.queryParameters['type'],
       ),
     ),
-
     // Route trang thống kê đọc (Analytics)
     GoRoute(
       path: '/analytics',
@@ -286,19 +292,161 @@ class _AdminRouteGuard extends StatelessWidget {
   }
 }
 
+/// Group Dashboard belongs to a scanlation group, not to the Admin role.
+/// GoRouter redirects admins synchronously above. Group membership is stored
+/// in Firestore, so this guard waits for that document before showing the
+/// dashboard and keeps non-members out of an empty, misleading screen.
+class _GroupMemberRouteGuard extends StatelessWidget {
+  const _GroupMemberRouteGuard();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const _NotFoundPage(
+        returnPath: '/settings',
+        returnLabel: 'Mở cài đặt',
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final data = snapshot.data?.data();
+        final groupId = data?['groupId']?.toString().trim();
+        if (groupId == null || groupId.isEmpty) {
+          return const _NotFoundPage(
+            returnPath: '/settings',
+            returnLabel: 'Mở cài đặt',
+          );
+        }
+
+        return const GroupDashboardPage();
+      },
+    );
+  }
+}
+
+class _ErrorStateScaffold extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color iconColor;
+  final String headline;
+  final String message;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  const _ErrorStateScaffold({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.iconColor,
+    required this.headline,
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(title),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: isDark ? 0.12 : 0.08),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: iconColor.withValues(alpha: 0.25),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: iconColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, size: 54, color: iconColor),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                headline,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.65),
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 28),
+              ElevatedButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.home_rounded, size: 18),
+                label: Text(
+                  actionLabel,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ForbiddenPage extends StatelessWidget {
   const _ForbiddenPage();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Không có quyền truy cập')),
-      body: Center(
-        child: FilledButton(
-          onPressed: () => context.go('/'),
-          child: const Text('Về trang chủ'),
-        ),
-      ),
+    return _ErrorStateScaffold(
+      title: 'Không có quyền',
+      icon: Icons.lock_person_rounded,
+      iconColor: Colors.amberAccent,
+      headline: 'Không có quyền truy cập',
+      message: 'Khu vực này yêu cầu quyền quản trị viên hoặc thành viên nhóm dịch. Vui lòng kiểm tra lại tài khoản của bạn.',
+      actionLabel: 'Về trang chủ',
+      onAction: () => context.go('/'),
     );
   }
 }
@@ -308,14 +456,14 @@ class _MissingRouteDataPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Không tìm thấy dữ liệu')),
-      body: Center(
-        child: FilledButton(
-          onPressed: () => context.go('/'),
-          child: const Text('Về trang chủ'),
-        ),
-      ),
+    return _ErrorStateScaffold(
+      title: 'Thiếu dữ liệu',
+      icon: Icons.help_outline_rounded,
+      iconColor: Colors.orangeAccent,
+      headline: 'Không tìm thấy dữ liệu',
+      message: 'Liên kết điều hướng bị thiếu thông số hoặc dữ liệu truyện đã không còn tồn tại trên hệ thống.',
+      actionLabel: 'Về trang chủ',
+      onAction: () => context.go('/'),
     );
   }
 }
@@ -330,15 +478,16 @@ class _NotFoundPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _ErrorStateScaffold(
       key: ValueKey(returnLabel),
-      appBar: AppBar(title: const Text('Không tìm thấy dữ liệu')),
-      body: Center(
-        child: FilledButton(
-          onPressed: () => context.go(returnPath),
-          child: const Text('Về trang quản trị'),
-        ),
-      ),
+      title: '404',
+      icon: Icons.search_off_rounded,
+      iconColor: Colors.cyanAccent,
+      headline: 'Trang không tồn tại',
+      message: 'Đường dẫn bạn yêu cầu không thể tìm thấy hoặc đã bị di dời sang vị trí khác.',
+      actionLabel: returnLabel,
+      onAction: () => context.go(returnPath),
     );
   }
 }
+

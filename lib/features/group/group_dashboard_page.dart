@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import '../../data/models_group.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/group_service.dart';
+import '../catalog/catalog_cache_service.dart';
 import 'group_manga_manager_page.dart';
 
 class GroupDashboardPage extends StatefulWidget {
@@ -21,18 +23,35 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   List<CloudManga> _groupMangas = [];
   bool _isLoadingMangas = true;
 
+  StreamSubscription? _authSubscription;
+
   @override
   void initState() {
     super.initState();
     _driveAccount = DriveService.instance.currentUser;
-    DriveService.instance.onAuthStateChanged.listen((account) {
+    _authSubscription = DriveService.instance.onAuthStateChanged.listen((account) {
       if (mounted) setState(() => _driveAccount = account);
     });
     _loadGroupStats();
   }
 
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadGroupStats() async {
-    final allMangas = await DriveService.instance.getMangas();
+    List<CloudManga> allMangas;
+    try {
+      allMangas = await DriveService.instance.getMangas();
+    } catch (_) {
+      try {
+        allMangas = await CatalogCacheService.instance.getCachedCatalog();
+      } catch (_) {
+        allMangas = [];
+      }
+    }
     if (mounted) {
       setState(() {
         _groupMangas = allMangas;
@@ -58,10 +77,49 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           if (snapshot.hasError) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Text(
-                  'Lỗi tải nhóm: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.redAccent),
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 44,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Lỗi tải thông tin nhóm',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, color: Colors.white54),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _loadGroupStats,
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('Thử lại'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -78,17 +136,22 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           final totalViews = groupMangaList.fold<int>(0, (total, m) => total + m.viewCount);
           final totalLikes = groupMangaList.fold<int>(0, (total, m) => total + m.likeCount);
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              // 1. Premium Header with Avatar & Stats Ribbon
-              _buildSliverHeader(context, group, isLeader, groupMangaList.length, totalViews, totalLikes),
+          return RefreshIndicator(
+            onRefresh: _loadGroupStats,
+            color: Colors.blueAccent,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                // 1. Premium Header with Avatar & Stats Ribbon
+                _buildSliverHeader(context, group, isLeader, groupMangaList.length, totalViews, totalLikes),
 
-              // 2. Main Dashboard Content
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
+                // 2. Main Dashboard Content
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
                     // 1. Quản lý Truyện của Nhóm (Sleek Action Card)
                     _buildMainActionBanner(context, group, groupMangaList.length),
                     const SizedBox(height: 14),
@@ -118,10 +181,11 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 ),
               ),
             ],
-          );
-        },
-      ),
-    );
+          ),
+        );
+      },
+    ),
+  );
   }
 
   // ── 1. SLIVER APP BAR & STATS ────────────────────────────────────────────
@@ -563,16 +627,22 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-          title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           content: Text(
             'Tài khoản hiện tại: ${_driveAccount!.email}',
             style: const TextStyle(color: Colors.white70),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-            TextButton(
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Ngắt kết nối', style: TextStyle(color: Colors.redAccent)),
+              child: const Text('Ngắt kết nối', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -583,6 +653,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
   void _showDriveRequestDialog(ScanlationGroup group) {
     final user = FirebaseAuth.instance.currentUser;
+    // ✅ FIX: Khai báo controller ở ngoài để có thể dispose() khi dialog đóng
     final emailController = TextEditingController(text: user?.email ?? '');
     final messenger = ScaffoldMessenger.of(context);
 
@@ -590,7 +661,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -603,6 +674,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             TextField(
               controller: emailController,
               style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
               decoration: InputDecoration(
                 labelText: 'Email Google',
                 labelStyle: const TextStyle(color: Colors.blueAccent),
@@ -614,9 +687,13 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               final email = emailController.text.trim();
               if (email.isEmpty) return;
@@ -649,7 +726,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() => emailController.dispose()); // ✅ FIX: Dispose controller sau khi dialog đóng
   }
 
   // ── 4. LEADER INVITE CODE (FIXED OVERFLOW & CLEAN STYLING) ────────────────
@@ -824,7 +901,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.blueAccent,
                       side: BorderSide(color: Colors.blueAccent.withValues(alpha: 0.4)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       minimumSize: const Size(0, 32),
                     ),
@@ -855,8 +932,10 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => GroupMangaManagerPage(group: group)),
-                    );
+                      MaterialPageRoute(
+                        builder: (_) => GroupMangaManagerPage(group: group),
+                      ),
+                    ).then((_) => _loadGroupStats());
                   },
                   child: Container(
                     width: 115,
@@ -946,9 +1025,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   // ── 6. MEMBERS SECTION ───────────────────────────────────────────────────
 
   Widget _buildMembersSection(BuildContext context, ScanlationGroup group, String? currentUid, bool isLeader) {
-    final theme = Theme.of(context);
-
     return Column(
+
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -981,100 +1059,16 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             final memberId = group.members[index];
             final isMemberLeader = memberId == group.leaderId;
             final isSelf = memberId == currentUid;
-
-            return FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance.collection('users').doc(memberId).get(),
-              builder: (context, userSnapshot) {
-                String displayName = 'Đang tải...';
-                String? avatarUrl;
-
-                if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                  final data = userSnapshot.data!.data() as Map<String, dynamic>?;
-                  if (data != null) {
-                    displayName = data['displayName'] ?? data['name'] ?? 'Thành viên';
-                    avatarUrl = data['photoURL'] ?? data['avatarUrl'] ?? data['avatar'];
-                  }
-                }
-
-                return Container(
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isMemberLeader
-                          ? const Color(0xFFF59E0B).withValues(alpha: 0.25)
-                          : Colors.white.withValues(alpha: 0.05),
-                    ),
-                  ),
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                    leading: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: Colors.white10,
-                          backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
-                          child: (avatarUrl == null || avatarUrl.isEmpty)
-                              ? const Icon(Icons.person_rounded, color: Colors.white54, size: 18)
-                              : null,
-                        ),
-                        if (isMemberLeader)
-                          Positioned(
-                            bottom: -1,
-                            right: -1,
-                            child: Container(
-                              padding: const EdgeInsets.all(1.5),
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Color(0xFFF59E0B),
-                              ),
-                              child: const Icon(Icons.star_rounded, size: 8, color: Colors.black),
-                            ),
-                          ),
-                      ],
-                    ),
-                    title: Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            displayName,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (isSelf) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('BẠN', style: TextStyle(color: Colors.blueAccent, fontSize: 8.5, fontWeight: FontWeight.w800)),
-                          ),
-                        ],
-                      ],
-                    ),
-                    subtitle: Text(
-                      isMemberLeader ? 'Trưởng nhóm' : 'Thành viên',
-                      style: TextStyle(
-                        color: isMemberLeader ? const Color(0xFFFBBF24) : Colors.white.withValues(alpha: 0.45),
-                        fontSize: 11,
-                        fontWeight: isMemberLeader ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                    trailing: (isLeader && !isMemberLeader)
-                        ? IconButton(
-                            icon: const Icon(Icons.person_remove_rounded, color: Colors.redAccent, size: 18),
-                            tooltip: 'Xóa khỏi nhóm',
-                            onPressed: () => _confirmRemoveMember(context, group, memberId, displayName),
-                          )
-                        : null,
-                  ),
-                );
-              },
+            // ✅ FIX: Dùng _GroupMemberTile thay vì FutureBuilder trực tiếp
+            // để cache Firestore future trong initState, tránh gọi lại mỗi lần rebuild
+            return _GroupMemberTile(
+              key: ValueKey(memberId),
+              memberId: memberId,
+              isMemberLeader: isMemberLeader,
+              isSelf: isSelf,
+              isLeader: isLeader,
+              group: group,
+              onRemove: (displayName) => _confirmRemoveMember(context, group, memberId, displayName),
             );
           },
         ),
@@ -1087,12 +1081,17 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        title: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Xác nhận', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Text('Bạn có chắc chắn muốn xóa "$name" khỏi nhóm dịch không?', style: const TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               await GroupService.instance.removeMember(group.id, memberId);
@@ -1102,7 +1101,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 );
               }
             },
-            child: const Text('Xóa', style: TextStyle(color: Colors.white)),
+            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1126,13 +1125,19 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-            title: const Text('Xác nhận rời nhóm?', style: TextStyle(color: Colors.white)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('Xác nhận rời nhóm?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             content: Text('Bạn sẽ không còn là thành viên của "${group.name}".', style: const TextStyle(color: Colors.white70)),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-              TextButton(
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Rời nhóm', style: TextStyle(color: Colors.redAccent)),
+                child: const Text('Rời nhóm', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -1188,5 +1193,140 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
     if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
     if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
     return '$n';
+  }
+}
+
+// ✅ FIX: StatefulWidget riêng để cache Firestore future trong initState,
+// tránh gọi lại N request mỗi lần widget rebuild.
+class _GroupMemberTile extends StatefulWidget {
+  final String memberId;
+  final bool isMemberLeader;
+  final bool isSelf;
+  final bool isLeader;
+  final ScanlationGroup group;
+  final void Function(String displayName) onRemove;
+
+  const _GroupMemberTile({
+    super.key,
+    required this.memberId,
+    required this.isMemberLeader,
+    required this.isSelf,
+    required this.isLeader,
+    required this.group,
+    required this.onRemove,
+  });
+
+  @override
+  State<_GroupMemberTile> createState() => _GroupMemberTileState();
+}
+
+class _GroupMemberTileState extends State<_GroupMemberTile> {
+  late Future<DocumentSnapshot> _userFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    // Cache future ở đây — sẽ không gọi lại Firestore khi widget rebuild
+    _userFuture = FirebaseFirestore.instance.collection('users').doc(widget.memberId).get();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: _userFuture,
+      builder: (context, userSnapshot) {
+        String displayName = 'Đang tải...';
+        String? avatarUrl;
+
+        if (userSnapshot.hasData && userSnapshot.data!.exists) {
+          final data = userSnapshot.data!.data() as Map<String, dynamic>?;
+          if (data != null) {
+            displayName = data['displayName'] ?? data['name'] ?? 'Thành viên';
+            avatarUrl = data['photoURL'] ?? data['avatarUrl'] ?? data['avatar'];
+          }
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: widget.isMemberLeader
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.25)
+                  : Colors.white.withValues(alpha: 0.05),
+            ),
+          ),
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            leading: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white10,
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? const Icon(Icons.person_rounded, color: Colors.white54, size: 18)
+                      : null,
+                ),
+                if (widget.isMemberLeader)
+                  Positioned(
+                    bottom: -1,
+                    right: -1,
+                    child: Container(
+                      padding: const EdgeInsets.all(1.5),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFF59E0B),
+                      ),
+                      child: const Icon(Icons.star_rounded, size: 8, color: Colors.black),
+                    ),
+                  ),
+              ],
+            ),
+            title: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    displayName,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.isSelf) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('BẠN', style: TextStyle(color: Colors.blueAccent, fontSize: 8.5, fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              ],
+            ),
+            subtitle: Text(
+              widget.isMemberLeader ? 'Trưởng nhóm' : 'Thành viên',
+              style: TextStyle(
+                color: widget.isMemberLeader ? const Color(0xFFFBBF24) : Colors.white.withValues(alpha: 0.45),
+                fontSize: 11,
+                fontWeight: widget.isMemberLeader ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+            trailing: (widget.isLeader && !widget.isMemberLeader)
+                ? IconButton(
+                    icon: const Icon(Icons.person_remove_rounded, color: Colors.redAccent, size: 18),
+                    tooltip: 'Xóa khỏi nhóm',
+                    onPressed: () => widget.onRemove(displayName),
+                  )
+                : null,
+          ),
+        );
+      },
+    );
   }
 }

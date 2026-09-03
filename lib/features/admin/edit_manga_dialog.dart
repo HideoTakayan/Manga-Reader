@@ -94,23 +94,29 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
-        title: Text(
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
           'Đổi loại nội dung?',
-          style: Theme.of(context).textTheme.titleLarge,
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        content: Text(message, style: Theme.of(context).textTheme.bodyMedium),
+        content: Text(message, style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Hủy'),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text(
               'Vẫn đổi',
-              style: TextStyle(color: Colors.orange),
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -214,7 +220,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
     final theme = Theme.of(context);
     return AlertDialog(
       backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: const Text(
         'Chỉnh Sửa Truyện',
         style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
@@ -283,6 +289,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             TextField(
               controller: _titleController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.next,
               decoration: _inputDeco('Tên truyện', Icons.title),
             ),
             const SizedBox(height: 16),
@@ -290,7 +297,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             DropdownButtonFormField<MangaContentType>(
               initialValue: _contentType,
               decoration: _inputDeco('Loại nội dung', Icons.category),
-              dropdownColor: const Color(0xFF2C2C2E),
+              dropdownColor: Theme.of(context).cardColor,
               items: MangaContentType.values
                   .map(
                     (type) => DropdownMenuItem(
@@ -315,6 +322,8 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             TextField(
               controller: _authorController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
               decoration: _inputDeco('Tác giả', Icons.person_outline),
             ),
             const SizedBox(height: 16),
@@ -330,6 +339,8 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             TextField(
               controller: _genresController,
               style: const TextStyle(color: Colors.white),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _isUploading ? null : _saveChanges(),
               decoration: _inputDeco(
                 'Thể loại (cách nhau bởi dấu phẩy)',
                 Icons.local_offer_outlined,
@@ -341,7 +352,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
             DropdownButtonFormField<String>(
               initialValue: _status,
               decoration: _inputDeco('Trạng thái', Icons.info_outline),
-              dropdownColor: const Color(0xFF2C2C2E),
+              dropdownColor: Theme.of(context).cardColor,
               items: _statusOptions
                   .map(
                     (value) => DropdownMenuItem<String>(
@@ -386,10 +397,10 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.black,
+                    color: Colors.white,
                   ),
                 )
-              : const Text('Lưu'),
+              : const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

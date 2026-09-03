@@ -35,6 +35,24 @@ void main() {
     expect(File(imagePaths[1]).readAsBytesSync(), [10, 10, 10]);
   });
 
+  test('extracts supported images from TAR / CBT archives', () async {
+    final archive = Archive()
+      ..addFile(ArchiveFile('page1.jfif', 2, [1, 1]))
+      ..addFile(ArchiveFile('page2.webp', 2, [2, 2]))
+      ..addFile(ArchiveFile('page3.heic', 2, [3, 3]))
+      ..addFile(ArchiveFile('ignore.xml', 1, [0]));
+
+    final bytes = Uint8List.fromList(TarEncoder().encode(archive));
+    final tempFile = File('${Directory.systemTemp.path}/test_archive.cbt');
+    await tempFile.writeAsBytes(bytes);
+    final imagePaths = await ArchiveImageExtractor.extract(tempFile.path, 'test_cbt_chapter');
+
+    expect(imagePaths.length, 3);
+    expect(File(imagePaths[0]).readAsBytesSync(), [1, 1]);
+    expect(File(imagePaths[1]).readAsBytesSync(), [2, 2]);
+    expect(File(imagePaths[2]).readAsBytesSync(), [3, 3]);
+  });
+
   test('returns empty list for invalid archive bytes', () async {
     final tempFile = File('${Directory.systemTemp.path}/invalid_archive.zip');
     await tempFile.writeAsBytes([1, 2, 3]);

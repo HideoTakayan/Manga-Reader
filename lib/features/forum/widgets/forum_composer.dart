@@ -7,6 +7,7 @@ class ForumComposer extends StatelessWidget {
   final VoidCallback onEmojiPressed;
   final ValueChanged<String> onGifSelected;
   final ValueChanged<File> onImageSelected;
+  final VoidCallback? onPollPressed;
   final bool showImagePicker;
   final bool enabled;
 
@@ -15,6 +16,7 @@ class ForumComposer extends StatelessWidget {
     required this.onEmojiPressed,
     required this.onGifSelected,
     required this.onImageSelected,
+    this.onPollPressed,
     this.showImagePicker = true,
     this.enabled = true,
   });
@@ -47,23 +49,29 @@ class ForumComposer extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        IconButton(
+          icon: const Icon(Icons.emoji_emotions_outlined),
+          onPressed: enabled ? onEmojiPressed : null,
+          tooltip: 'Chọn Emoji',
+        ),
+        IconButton(
+          icon: const Icon(Icons.gif_box_outlined),
+          onPressed: enabled ? () => _showGifPicker(context) : null,
+          tooltip: 'Chọn GIF',
+        ),
+        if (showImagePicker)
           IconButton(
-            icon: const Icon(Icons.emoji_emotions_outlined),
-            onPressed: enabled ? onEmojiPressed : null,
-            tooltip: 'Chọn Emoji',
+            icon: const Icon(Icons.image_outlined),
+            onPressed: enabled ? _pickImage : null,
+            tooltip: 'Chọn Ảnh',
           ),
+        if (onPollPressed != null)
           IconButton(
-            icon: const Icon(Icons.gif_box_outlined),
-            onPressed: enabled ? () => _showGifPicker(context) : null,
-            tooltip: 'Chọn GIF',
+            icon: const Icon(Icons.poll_outlined),
+            onPressed: enabled ? onPollPressed : null,
+            tooltip: 'Thêm bình chọn',
           ),
-          if (showImagePicker)
-            IconButton(
-              icon: const Icon(Icons.image_outlined),
-              onPressed: enabled ? _pickImage : null,
-              tooltip: 'Chọn Ảnh',
-            ),
-        ],
+      ],
     );
   }
 }

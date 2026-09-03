@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/drive_service.dart';
 import '../../../data/models_cloud.dart';
@@ -8,6 +9,7 @@ import '../../../services/library_status_service.dart';
 import '../../../data/database_helper.dart';
 import '../../catalog/catalog_cache_service.dart';
 import '../../shared/drive_image.dart';
+import '../../shared/custom_tag_widgets.dart';
 import '../../../services/novel_service.dart';
 import '../../../services/folder_service.dart';
 
@@ -27,6 +29,7 @@ class CategoryMangaList extends StatelessWidget {
   final LibraryViewMode viewMode;
   final Set<String> selectedMangaIds;
   final Function(String) onToggleSelect;
+  final bool filterDownloadedOnly;
 
   const CategoryMangaList({
     super.key,
@@ -39,6 +42,7 @@ class CategoryMangaList extends StatelessWidget {
     required this.viewMode,
     required this.selectedMangaIds,
     required this.onToggleSelect,
+    this.filterDownloadedOnly = false,
   });
 
   @override
@@ -52,50 +56,51 @@ class CategoryMangaList extends StatelessWidget {
         }
 
         final mangaIds = snapshot.data ?? [];
-        if (mangaIds.isEmpty) return _buildEmptyState(context);
+        if (mangaIds.isEmpty && category != 'Mặc định') {
+          return _buildEmptyState(context);
+        }
 
-        // fetchMangasWithFallback: thử Drive trước, nếu lỗi → fallback SQLite local
+        // fetchMangasWithFallback: nạp cả Drive online và SQLite local để truyện import/ngoại vi luôn hiển thị
         Future<List<CloudManga>> fetchMangasWithFallback() async {
+          final localMangas = await DatabaseHelper.instance.getAllLocalMangas();
+          final List<CloudManga> localList = [];
+          for (final m in localMangas) {
+            String coverPath = m.coverUrl;
+            try {
+              if (!coverPath.startsWith('/') && !coverPath.contains('\\')) {
+                if (await FolderService.hasCover(m.title)) {
+                  coverPath = await FolderService.getCoverPath(m.title);
+                }
+              }
+            } catch (_) {}
+
+            localList.add(
+              CloudManga(
+                id: m.id,
+                title: m.title,
+                coverFileId: coverPath,
+                author: m.author,
+                description: m.description,
+                updatedAt: DateTime.now(),
+                genres: m.genres,
+                status: 'Offline',
+                chapterOrder: [],
+                contentType: m.contentType,
+              ),
+            );
+          }
+
           try {
             final cloudMangas = await DriveService.instance.getMangas();
-            // Nếu Drive trả về rỗng (offline/token lỗi) → ném exception để vào catch
-            if (cloudMangas.isEmpty) {
-              throw Exception(
-                'Không có dữ liệu trực tuyến, dùng dữ liệu cục bộ',
-              );
+            final combined = List<CloudManga>.from(cloudMangas);
+            for (final local in localList) {
+              if (!combined.any((c) => c.id == local.id)) {
+                combined.add(local);
+              }
             }
-            return cloudMangas;
+            return combined;
           } catch (e) {
-            // Offline mode: đọc từ SQLite, wrap thành CloudManga với status='Offline'
-            final localMangas = await DatabaseHelper.instance
-                .getAllLocalMangas();
-            final List<CloudManga> result = [];
-            for (final m in localMangas) {
-              String coverPath = m.coverUrl;
-              try {
-                if (!coverPath.startsWith('/') && !coverPath.contains('\\')) {
-                  if (await FolderService.hasCover(m.title)) {
-                    coverPath = await FolderService.getCoverPath(m.title);
-                  }
-                }
-              } catch (_) {}
-
-              result.add(
-                CloudManga(
-                  id: m.id,
-                  title: m.title,
-                  coverFileId: coverPath,
-                  author: m.author,
-                  description: m.description,
-                  updatedAt: DateTime.now(),
-                  genres: m.genres,
-                  status: 'Offline',
-                  chapterOrder: [],
-                  contentType: m.contentType,
-                ),
-              );
-            }
-            return result;
+            return localList;
           }
         }
 
@@ -107,39 +112,51 @@ class CategoryMangaList extends StatelessWidget {
             for (final entry in localStatusEntries) entry.mangaId: entry,
           };
           
-          if (category == 'Mặc định') {
-            final novels = await NovelService.instance.getAll();
-            for (final novel in novels) {
-              mangas.add(CloudManga(
-                id: 'LOCAL_NOVEL|${novel.path}',
-                title: novel.title,
-                author: 'Local EPUB',
-                description: '',
-                coverFileId: novel.coverPath,
-                updatedAt: novel.importedAt,
-                genres: [],
-                status: 'Hoàn thành',
-                chapterOrder: [],
-              ));
+          final downloadedList = await DatabaseHelper.instance.getAllDownloads();
+          final downloadedMangaIds = <String>{};
+          for (final d in downloadedList) {
+            final mid = (d['mangaId'] ?? d['comicId'])?.toString().trim();
+            if (mid != null && mid.isNotEmpty) {
+              downloadedMangaIds.add(mid);
             }
+          }
+
+          final novels = await NovelService.instance.getAll();
+          for (final novel in novels) {
+            mangas.add(CloudManga(
+              id: 'LOCAL_NOVEL|${novel.path}',
+              title: novel.title,
+              author: 'Local EPUB',
+              description: '',
+              coverFileId: novel.coverPath,
+              updatedAt: novel.importedAt,
+              genres: [],
+              status: 'Hoàn thành',
+              chapterOrder: [],
+              contentType: MangaContentType.novel,
+            ));
           }
 
           return _CategoryMangaData(
             mangas: mangas,
             statusByMangaId: statusByMangaId,
+            downloadedMangaIds: downloadedMangaIds,
           );
         }
 
-        return FutureBuilder<_CategoryMangaData>(
-          future: fetchCategoryData(),
-          builder: (context, mangaSnapshot) {
-            if (!mangaSnapshot.hasData) return const SizedBox.shrink();
-            final data = mangaSnapshot.data!;
+        return ListenableBuilder(
+          listenable: LibraryStatusService.instance,
+          builder: (context, _) {
+            return FutureBuilder<_CategoryMangaData>(
+              future: fetchCategoryData(),
+              builder: (context, mangaSnapshot) {
+                if (!mangaSnapshot.hasData) return const SizedBox.shrink();
+                final data = mangaSnapshot.data!;
 
-            // Lọc chỉ lấy truyện có id trong danh sách category này hoặc là Local Novel ở mục Mặc định
-            final allMangasInCat = data.mangas
-                .where((m) => mangaIds.contains(m.id) || (category == 'Mặc định' && m.id.startsWith('LOCAL_NOVEL|')))
-                .toList();
+                // Lọc chỉ lấy truyện có id trong danh sách category này hoặc là Local Novel ở mục Mặc định
+                final allMangasInCat = data.mangas
+                    .where((m) => mangaIds.contains(m.id) || (category == 'Mặc định' && m.id.startsWith('LOCAL_NOVEL|')))
+                    .toList();
 
             // Áp dụng search + status filter
             final normalizedQuery = CatalogCacheService.instance.normalize(
@@ -147,7 +164,7 @@ class CategoryMangaList extends StatelessWidget {
             );
             final filteredMangas = allMangasInCat.where((m) {
               final searchText = CatalogCacheService.instance.normalize(
-                '${m.title} ${m.author}',
+                '${m.title} ${m.author} ${m.genres.join(' ')} ${m.contentType.label}',
               );
               final matchesSearch =
                   normalizedQuery.isEmpty || searchText.contains(normalizedQuery);
@@ -173,6 +190,7 @@ class CategoryMangaList extends StatelessWidget {
               }
               var matchesReadingStatus = true;
               var matchesTags = true;
+              var matchesDownloaded = true;
               final localStatus = data.statusByMangaId[m.id];
 
               if (selectedReadingStatuses.isNotEmpty) {
@@ -187,17 +205,25 @@ class CategoryMangaList extends StatelessWidget {
                     selectedTags.every(localStatus.tags.contains);
               }
 
+              if (filterDownloadedOnly) {
+                matchesDownloaded = data.downloadedMangaIds.contains(m.id) ||
+                    m.id.startsWith('LOCAL_NOVEL|') ||
+                    m.status == 'Offline';
+              }
+
               return matchesSearch &&
                   matchesStatus &&
                   matchesReadingStatus &&
-                  matchesTags;
+                  matchesTags &&
+                  matchesDownloaded;
             }).toList();
 
             if (filteredMangas.isEmpty &&
                 (searchQuery.isNotEmpty ||
                     selectedStatuses.isNotEmpty ||
                     selectedReadingStatuses.isNotEmpty ||
-                    selectedTags.isNotEmpty)) {
+                    selectedTags.isNotEmpty ||
+                    filterDownloadedOnly)) {
               return const Center(
                 child: Text(
                   'Không tìm thấy truyện phù hợp',
@@ -208,9 +234,11 @@ class CategoryMangaList extends StatelessWidget {
             if (filteredMangas.isEmpty) return _buildEmptyState(context);
 
             filteredMangas.sort((a, b) {
+              final normA = CatalogCacheService.instance.normalize(a.title);
+              final normB = CatalogCacheService.instance.normalize(b.title);
               switch (sortMode) {
                 case LibrarySortMode.titleAsc:
-                  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+                  return normA.compareTo(normB);
                 case LibrarySortMode.readingStatus:
                   final statusA =
                       data.statusByMangaId[a.id]?.status.index ?? 999;
@@ -218,11 +246,11 @@ class CategoryMangaList extends StatelessWidget {
                       data.statusByMangaId[b.id]?.status.index ?? 999;
                   final byStatus = statusA.compareTo(statusB);
                   if (byStatus != 0) return byStatus;
-                  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+                  return normA.compareTo(normB);
                 case LibrarySortMode.updatedDesc:
                   final byUpdated = b.updatedAt.compareTo(a.updatedAt);
                   if (byUpdated != 0) return byUpdated;
-                  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+                  return normA.compareTo(normB);
               }
             });
 
@@ -257,6 +285,7 @@ class CategoryMangaList extends StatelessWidget {
                 final manga = filteredMangas[index];
                 return _MangaGridItem(
                   manga: manga,
+                  localStatus: data.statusByMangaId[manga.id],
                   isSelected: selectedMangaIds.contains(manga.id),
                   isSelectionMode: selectedMangaIds.isNotEmpty,
                   onToggle: () => onToggleSelect(manga.id),
@@ -267,40 +296,73 @@ class CategoryMangaList extends StatelessWidget {
         );
       },
     );
+      },
+    );
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.library_books_outlined,
-            size: 80,
-            color: Colors.white.withValues(alpha: 0.1),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Chưa có truyện nào',
-            style: TextStyle(color: Colors.grey, fontSize: 16),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => context.go('/'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: primaryColor.withValues(alpha: 0.25),
+                  width: 1.5,
+                ),
+              ),
+              child: Icon(
+                Icons.collections_bookmark_outlined,
+                size: 56,
+                color: primaryColor,
               ),
             ),
-            child: const Text(
-              'Thêm truyện',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(height: 20),
+            Text(
+              'Danh mục đang trống',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Chưa có truyện nào trong mục "$category". Khám phá kho truyện và thêm vào danh mục để đọc bất cứ lúc nào!',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: Colors.white60,
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => context.go('/'),
+              icon: const Icon(Icons.explore_outlined, size: 18),
+              label: const Text(
+                'Khám phá truyện',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -346,10 +408,13 @@ class _MangaListItem extends StatelessWidget {
                   context.push('/detail/${manga.id}');
                 }
               },
-        onLongPress: onToggle,
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          onToggle();
+        },
         child: Ink(
           decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isSelected ? Colors.white : Colors.white12,
@@ -400,6 +465,17 @@ class _MangaListItem extends StatelessWidget {
                           fontSize: 12,
                         ),
                       ),
+                      if (localStatus != null && localStatus!.tags.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          children: localStatus!.tags
+                              .take(3)
+                              .map((t) => CustomTagBadge(tag: t, isSmall: true))
+                              .toList(),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -417,18 +493,7 @@ class _MangaListItem extends StatelessWidget {
   }
 
   static String _readingStatusLabel(MangaReadingStatus status) {
-    switch (status) {
-      case MangaReadingStatus.reading:
-        return 'Đang đọc';
-      case MangaReadingStatus.completed:
-        return 'Đã đọc xong';
-      case MangaReadingStatus.paused:
-        return 'Tạm dừng';
-      case MangaReadingStatus.dropped:
-        return 'Đã bỏ';
-      case MangaReadingStatus.planToRead:
-        return 'Đọc sau';
-    }
+    return LibraryStatusService.getStatusDisplay(status).$1;
   }
 }
 
@@ -437,12 +502,14 @@ class _MangaListItem extends StatelessWidget {
 // onLongPress: luôn toggle chọn (để bắt đầu selection mode).
 class _MangaGridItem extends StatelessWidget {
   final CloudManga manga;
+  final LibraryStatusEntry? localStatus;
   final bool isSelected;
   final bool isSelectionMode;
   final VoidCallback onToggle;
 
   const _MangaGridItem({
     required this.manga,
+    this.localStatus,
     required this.isSelected,
     required this.isSelectionMode,
     required this.onToggle,
@@ -466,7 +533,10 @@ class _MangaGridItem extends StatelessWidget {
                 context.push('/detail/${manga.id}');
               }
             },
-      onLongPress: onToggle, // Long press để bắt đầu selection mode
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        onToggle();
+      }, // Long press để bắt đầu selection mode
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
@@ -546,6 +616,15 @@ class _MangaGridItem extends StatelessWidget {
                     backgroundColor: Colors.white,
                     child: Icon(Icons.check, size: 16, color: Colors.black),
                   ),
+                )
+              else if (localStatus != null && localStatus!.tags.isNotEmpty)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: CustomTagBadge(
+                    tag: localStatus!.tags.first,
+                    isSmall: true,
+                  ),
                 ),
             ],
           ),
@@ -558,9 +637,11 @@ class _MangaGridItem extends StatelessWidget {
 class _CategoryMangaData {
   final List<CloudManga> mangas;
   final Map<String, LibraryStatusEntry> statusByMangaId;
+  final Set<String> downloadedMangaIds;
 
   const _CategoryMangaData({
     required this.mangas,
     required this.statusByMangaId,
+    required this.downloadedMangaIds,
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,9 +17,11 @@ class HelpPage extends StatefulWidget {
 class _HelpPageState extends State<HelpPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -27,19 +30,20 @@ class _HelpPageState extends State<HelpPage> {
     {
       'question': 'App hỗ trợ những định dạng truyện nào?',
       'answer':
-          'MangaReader hỗ trợ đa dạng các định dạng:\n'
-          '- PDF: Tối ưu hoá cực mượt cho cả file khổng lồ (>50MB).\n'
-          '- Truyện tranh: ZIP, CBZ.\n'
-          '- Tiểu thuyết/Light Novel: TXT.\n'
-          '- Sách điện tử: EPUB.',
+          'MangaReader hỗ trợ đa dạng các định dạng phong phú:\n'
+          '- Truyện tranh: CBZ, ZIP, CBT, TAR, PDF tối ưu hoá cực mượt.\n'
+          '- Tiểu thuyết/Ebook: EPUB (Đọc chương, tìm kiếm, tùy chỉnh font/nền, đọc giọng nói TTS).\n'
+          '- Định dạng hình ảnh: JPG, PNG, WEBP, AVIF, HEIC, JFIF, BMP, GIF.\n'
+          '- Nhập truyện từ máy: Hỗ trợ quét tự động thư mục MangaReader hoặc chọn file ngoài.',
     },
     {
-      'question': 'Làm sao để thao tác khi đọc truyện?',
+      'question': 'Làm sao để thao tác khi đọc truyện & tiểu thuyết?',
       'answer':
-          '1. Truyện tranh/EPUB: Swipe (vuốt) sang trái/phải để lật trang.\n'
-          '2. PDF: Vuốt dọc để cuộn trang, dùng 2 ngón tay (Pinch) để phóng to/thu nhỏ.\n'
-          '3. Tiểu thuyết (TXT): Vuốt dọc để cuộn, chạm giữa màn hình để đổi Font chữ, Kích thước hoặc Màu nền.\n'
-          '4. Phím cứng: Dùng phím Tăng/Giảm âm lượng để lật trang (Trừ PDF).',
+          '1. Truyện tranh (CBZ/ZIP/CBT/TAR/PDF): Chạm cạnh trái/phải hoặc vuốt để lật trang; chạm 30% giữa màn hình để bật thanh công cụ.\n'
+          '2. Tiểu thuyết (EPUB): Hỗ trợ đọc cuộn dọc hoặc lật trang, tìm kiếm nội dung thông minh, điều chỉnh cỡ chữ, font chữ, màu nền và Nghe đọc tự động (TTS tiếng Việt).\n'
+          '3. Phím cứng & Bàn phím / Page Turner:\n'
+          '   • Phím Tăng/Giảm âm lượng hoặc Mũi tên / Space / PageUp / PageDown để lật trang.\n'
+          '   • Phím M (Menu), B (Bookmark), A (Tự cuộn), F (Theo dõi), T (Bật/tắt TTS), [/] (Chuyển chương), +/- (Cỡ chữ).',
     },
     {
       'question': 'Diễn đàn (Forum) dùng để làm gì?',
@@ -53,8 +57,8 @@ class _HelpPageState extends State<HelpPage> {
     {
       'question': 'Làm sao để lưu lại trang đang đọc?',
       'answer':
-          'App tự động lưu lại Tiến trình đọc của bạn một cách chính xác.\n\n'
-          'Ngoài ra, bạn có thể chạm vào giữa màn hình, bấm icon Bookmark (Lưu trang) ở góc trên để đánh dấu lại vị trí ưa thích. Sau này có thể truy cập lại thông qua Menu Bookmark.',
+          'App tự động lưu lại Tiến trình đọc của bạn một cách chính xác trên từng trang.\n\n'
+          'Ngoài ra, bạn có thể chạm vào giữa màn hình, bấm icon Bookmark (Lưu trang) ở góc trên để đánh dấu lại vị trí ưa thích. Bấm vào bookmark sẽ nhảy ngay đến trang đã lưu.',
     },
     {
       'question': 'Làm sao để theo dõi & nhận thông báo?',
@@ -62,6 +66,11 @@ class _HelpPageState extends State<HelpPage> {
           '- Theo dõi: Click icon ❤️ ở trang chi tiết, truyện sẽ vào thư viện "Theo dõi".\n'
           '- Thông báo: Click icon 🔔 để nhận cảnh báo khi có Chapter mới.\n\n'
           'Lưu ý: Bạn cần đăng nhập để sử dụng tính năng này.',
+    },
+    {
+      'question': 'Quản lý dung lượng và tải xuống như thế nào?',
+      'answer':
+          'Bạn có thể vào Cài đặt → Quản lý Dung lượng để theo dõi dung lượng bộ nhớ đã tải, xóa cache giải nén hoặc xóa các chương đã đọc để tiết kiệm dung lượng điện thoại.',
     },
     {
       'question': 'Làm sao để đăng nhập bằng Google?',
@@ -93,21 +102,26 @@ class _HelpPageState extends State<HelpPage> {
     },
     {
       'title': 'Khám phá tính năng Đọc Truyện',
-      'description': 'Hỗ trợ PDF, EPUB, ZIP, Tiểu thuyết',
+      'description': 'Hỗ trợ PDF, EPUB, CBZ, ZIP, CBT, TAR & Phím tắt',
       'content':
           '📖 ĐỌC TRUYỆN ĐA ĐỊNH DẠNG\n\n'
-          '1️⃣ TRUYỆN TRANH (ZIP, CBZ, EPUB)\n'
-          '   • Vuốt trái/phải để sang trang\n'
-          '   • Dùng phím Âm lượng để chuyển trang\n'
+          '1️⃣ TRUYỆN TRANH (ZIP, CBZ, CBT, TAR, PDF)\n'
+          '   • Vuốt trái/phải hoặc cuộn dọc mượt mà\n'
+          '   • Dùng phím Âm lượng hoặc Bàn phím để chuyển trang\n'
           '   • Double tap để phóng to nhanh\n\n'
-          '2️⃣ ĐỌC SÁCH PDF\n'
-          '   • Tối ưu hoá cực tốt cho file nặng >50MB\n'
-          '   • Dùng 2 ngón tay (Pinch) để phóng to/thu nhỏ thoải mái\n'
-          '   • Vuốt dọc để cuộn trang mượt mà\n\n'
-          '3️⃣ TIỂU THUYẾT (TXT, NOVEL)\n'
+          '2️⃣ TIỂU THUYẾT (EPUB, NOVEL)\n'
           '   • Chạm giữa màn hình để mở Bảng điều khiển\n'
-          '   • Tuỳ chỉnh Font chữ, Cỡ chữ to/nhỏ\n'
-          '   • Thay đổi Màu nền (Trắng/Đen/Vàng) cho đỡ mỏi mắt\n\n'
+          '   • Tuỳ chỉnh Font chữ, Cỡ chữ, Khoảng cách dòng\n'
+          '   • Thay đổi Màu nền (Trắng/Tối/Sepia/Mắt/AMOLED)\n'
+          '   • Trình đọc AI (TTS) tiếng Việt tự động đọc từng đoạn\n\n'
+          '3️⃣ PHÍM TẮT & BLUETOOTH PAGE TURNER\n'
+          '   • Mũi tên / Space / PageUp / PageDown: Lật trang / cuộn mượt\n'
+          '   • Phím M: Mở thanh điều khiển\n'
+          '   • Phím B: Đánh dấu trang (Bookmark)\n'
+          '   • Phím A: Bật/tắt tự cuộn\n'
+          '   • Phím T: Bật/tắt giọng đọc TTS\n'
+          '   • Phím +/-: Tăng/giảm cỡ chữ EPUB\n'
+          '   • Phím [/]: Chuyển chương trước/sau\n\n'
           '4️⃣ ĐIỀU HƯỚNG & BOOKMARK\n'
           '   • Thanh Slider dưới đáy: Kéo nhanh đến trang mong muốn\n'
           '   • Nút Bookmark: Lưu lại vị trí trang hay\n'
@@ -178,13 +192,35 @@ class _HelpPageState extends State<HelpPage> {
               child: Center(
                 child: Column(
                   children: [
-                    Icon(Icons.search_off_rounded, size: 48, color: Theme.of(context).disabledColor),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Không tìm thấy câu hỏi hoặc hướng dẫn phù hợp',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Theme.of(context).disabledColor,
-                          ),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.blueAccent.withValues(alpha: 0.2),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.search_off_rounded,
+                        size: 42,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Không tìm thấy kết quả phù hợp',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Thử tìm kiếm với từ khóa khác như "tải xuống", "đăng nhập", "TTS"...',
+                      style: TextStyle(color: Colors.white54, fontSize: 13),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -220,6 +256,7 @@ class _HelpPageState extends State<HelpPage> {
     return TextField(
       controller: _searchController,
       style: const TextStyle(color: Colors.white),
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Tìm câu hỏi, hướng dẫn, định dạng...',
         hintStyle: const TextStyle(color: Colors.grey),
@@ -240,7 +277,12 @@ class _HelpPageState extends State<HelpPage> {
               )
             : null,
       ),
-      onChanged: (value) => setState(() => _searchQuery = value.trim()),
+      onChanged: (value) {
+        if (_debounce?.isActive ?? false) _debounce!.cancel();
+        _debounce = Timer(const Duration(milliseconds: 150), () {
+          if (mounted) setState(() => _searchQuery = value);
+        });
+      },
     );
   }
 
@@ -323,7 +365,7 @@ class _HelpPageState extends State<HelpPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             const Icon(Icons.book, color: Colors.orange),
@@ -347,9 +389,15 @@ class _HelpPageState extends State<HelpPage> {
           ),
         ),
         actions: [
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng', style: TextStyle(color: Colors.orange)),
+            child: const Text('Đóng', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),

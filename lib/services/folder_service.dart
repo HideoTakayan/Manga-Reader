@@ -89,7 +89,9 @@ class FolderService {
 
   /// Xóa ký tự không hợp lệ trong tên file/folder trên các hệ điều hành
   static String sanitize(String input) {
-    return input.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final cleaned = input.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final result = cleaned.replaceAll(RegExp(r'^_+|_+$'), '').trim();
+    return result.isEmpty ? 'Untitled' : result;
   }
 
   /// Title-based path — tạo folder nếu chưa tồn tại (mkdir -p)
@@ -103,28 +105,60 @@ class FolderService {
     return path;
   }
 
-  static Future<void> createMangaFolder(String mangaId) async =>
-      Directory(getMangaPath(mangaId)).create(recursive: true);
+  static Future<void> createMangaFolder(String mangaId) async {
+    if (mangaId.trim().isEmpty) return;
+    final path = getMangaPath(mangaId);
+    if (path == downloadPath) return;
+    await Directory(path).create(recursive: true);
+  }
+
   static Future<void> createChapterFolder(
     String mangaId,
     String chapterId,
-  ) async =>
-      Directory(getChapterPath(mangaId, chapterId)).create(recursive: true);
+  ) async {
+    if (mangaId.trim().isEmpty || chapterId.trim().isEmpty) return;
+    final path = getChapterPath(mangaId, chapterId);
+    if (path == downloadPath) return;
+    await Directory(path).create(recursive: true);
+  }
 
   static Future<void> deleteChapterFolder(
     String mangaId,
     String chapterId,
   ) async {
-    final dir = Directory(getChapterPath(mangaId, chapterId));
+    if (mangaId.trim().isEmpty || chapterId.trim().isEmpty) return;
+    final path = getChapterPath(mangaId, chapterId);
+    if (path == downloadPath) return;
+    final dir = Directory(path);
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
   }
 
-  static Future<void> deleteMangaFolder(String mangaId) async {
-    final dir = Directory(getMangaPath(mangaId));
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
+  static Future<void> deleteMangaFolder(
+    String mangaId, {
+    String? mangaTitle,
+  }) async {
+    if (mangaId.trim().isNotEmpty) {
+      final mangaPath = getMangaPath(mangaId);
+      if (mangaPath != downloadPath) {
+        final dirById = Directory(mangaPath);
+        if (await dirById.exists()) {
+          await dirById.delete(recursive: true);
+        }
+      }
+    }
+    if (mangaTitle != null && mangaTitle.trim().isNotEmpty) {
+      final safeTitle = sanitize(mangaTitle);
+      if (safeTitle.isNotEmpty && safeTitle != 'Untitled') {
+        final titlePath = '$downloadPath/$safeTitle';
+        if (titlePath != downloadPath) {
+          final dirByTitle = Directory(titlePath);
+          if (await dirByTitle.exists()) {
+            await dirByTitle.delete(recursive: true);
+          }
+        }
+      }
     }
   }
 
@@ -211,5 +245,70 @@ class FolderService {
     final safeTitle = sanitize(title);
     final finalTitle = safeTitle.isEmpty ? 'Truyen chu' : safeTitle;
     return '${await getNovelsPath()}/$finalTitle.cover.jpg';
+  }
+
+  /// Lưu ảnh trang truyện hiện tại vào Thư mục ảnh công khai (Pictures/MangaReader)
+  /// Trả về đường dẫn file đã lưu hoặc null nếu lỗi
+  static Future<String?> savePageImageToGallery({
+    required String sourceImagePath,
+    required String mangaTitle,
+    required String chapterTitle,
+    required int pageIndex,
+  }) async {
+    try {
+      final sourceFile = File(sourceImagePath);
+      if (!await sourceFile.exists()) {
+        debugPrint('⚠️ Source image file does not exist: $sourceImagePath');
+        return null;
+      }
+
+      // 1. Xác định thư mục Pictures/MangaReader
+      Directory targetDir;
+      if (Platform.isAndroid) {
+        final picturesDir = Directory('/storage/emulated/0/Pictures/MangaReader');
+        if (await picturesDir.exists()) {
+          targetDir = picturesDir;
+        } else {
+          try {
+            await picturesDir.create(recursive: true);
+            targetDir = picturesDir;
+          } catch (_) {
+            // Fallback sang rootPath/SavedImages nếu không truy cập được public Pictures
+            targetDir = Directory('${rootPath ?? "/storage/emulated/0/MangaReader"}/SavedImages');
+            if (!await targetDir.exists()) await targetDir.create(recursive: true);
+          }
+        }
+      } else {
+        final appDocDir = await getApplicationDocumentsDirectory();
+        targetDir = Directory('${appDocDir.path}/MangaReader/SavedImages');
+        if (!await targetDir.exists()) await targetDir.create(recursive: true);
+      }
+
+      // Đảm bảo không có file .nomedia trong thư mục SavedImages / Pictures để Gallery quét được
+      final nomediaFile = File('${targetDir.path}/.nomedia');
+      if (await nomediaFile.exists()) {
+        try {
+          await nomediaFile.delete();
+        } catch (_) {}
+      }
+
+      // 2. Tạo tên file hợp lệ & thời gian
+      final ext = sourceImagePath.contains('.')
+          ? sourceImagePath.split('.').last.toLowerCase()
+          : 'jpg';
+      final safeManga = sanitize(mangaTitle).replaceAll(' ', '_');
+      final safeChapter = sanitize(chapterTitle).replaceAll(' ', '_');
+      final timeStamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = '${safeManga}_${safeChapter}_p${pageIndex + 1}_$timeStamp.$ext';
+      final destFile = File('${targetDir.path}/$fileName');
+
+      // 3. Copy file
+      await sourceFile.copy(destFile.path);
+      debugPrint('🖼️ Saved page image to gallery: ${destFile.path}');
+      return destFile.path;
+    } catch (e) {
+      debugPrint('⚠️ Error saving image to gallery: $e');
+      return null;
+    }
   }
 }

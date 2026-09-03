@@ -29,11 +29,40 @@ class _DriveImageState extends State<DriveImage> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.fileId.startsWith('/') ||
-        widget.fileId.startsWith('\\') ||
-        widget.fileId.contains('/') ||
-        widget.fileId.contains('\\')) {
-      final file = File(widget.fileId);
+    final fileId = widget.fileId.trim();
+    if (fileId.isEmpty) {
+      return _buildErrorWidget();
+    }
+
+    // Nếu là URL trực tuyến (Cloudinary / Imgur / web link...)
+    if (fileId.startsWith('http://') || fileId.startsWith('https://')) {
+      return CachedNetworkImage(
+        key: ValueKey(_retryKey),
+        imageUrl: fileId,
+        width: widget.width,
+        height: widget.height,
+        fit: widget.fit,
+        memCacheWidth: (widget.width != null && widget.width!.isFinite)
+            ? (widget.width! * 2).toInt()
+            : null,
+        placeholder: (context, url) => Container(
+          width: widget.width,
+          height: widget.height,
+          color: Theme.of(context).cardColor,
+        ),
+        errorWidget: (context, url, error) {
+          debugPrint('DriveImage Error [$url]: $error');
+          return _buildErrorWidget();
+        },
+      );
+    }
+
+    // Nếu là đường dẫn file cục bộ trong máy
+    if (fileId.startsWith('/') ||
+        fileId.startsWith('\\') ||
+        fileId.contains('/') ||
+        fileId.contains('\\')) {
+      final file = File(fileId);
       if (file.existsSync()) {
         return Image.file(
           file,
@@ -47,13 +76,9 @@ class _DriveImageState extends State<DriveImage> {
       }
     }
 
-    if (widget.fileId.isEmpty) {
-      return _buildErrorWidget();
-    }
-
     return CachedNetworkImage(
       key: ValueKey(_retryKey),
-      imageUrl: DriveService.instance.mediaUrl(widget.fileId),
+      imageUrl: DriveService.instance.mediaUrl(fileId),
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
@@ -63,10 +88,7 @@ class _DriveImageState extends State<DriveImage> {
       placeholder: (context, url) => Container(
         width: widget.width,
         height: widget.height,
-        color: Colors.grey[800],
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white24),
-        ),
+        color: Theme.of(context).cardColor,
       ),
       errorWidget: (context, url, error) {
         debugPrint('DriveImage Error [$url]: $error');
@@ -79,7 +101,7 @@ class _DriveImageState extends State<DriveImage> {
     return Container(
       width: widget.width,
       height: widget.height,
-      color: Colors.grey[900],
+      color: Theme.of(context).cardColor,
       child: Material(
         color: Colors.transparent,
         child: InkWell(

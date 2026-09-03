@@ -1,13 +1,15 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
 import '../../../data/database_helper.dart';
 import '../../../data/models.dart';
 import '../../../data/drive_service.dart';
+import '../../../services/folder_service.dart';
+import '../../catalog/catalog_cache_service.dart';
 import '../../shared/drive_image.dart';
-import '../../../services/novel_service.dart';
 
 class ContinueReadingSection extends StatefulWidget {
   const ContinueReadingSection({super.key});
@@ -18,6 +20,9 @@ class ContinueReadingSection extends StatefulWidget {
 
 class _ContinueReadingSectionState extends State<ContinueReadingSection> {
   List<ReadingHistory> _recentHistory = [];
+  Map<String, String> _coverMap = {};
+  Map<String, String> _titleMap = {};
+  Map<String, MangaContentType> _typeMap = {};
   bool _loaded = false;
 
   @override
@@ -27,18 +32,70 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
   }
 
   Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) setState(() => _loaded = true);
-      return;
-    }
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
     final all = await DatabaseHelper.instance.getHistory(uid);
+    if (!mounted) return;
+
+    final historyItems = all
+        .where(
+          (h) =>
+              h.chapterId.isNotEmpty &&
+              h.chapterTitle != null &&
+              !h.mangaId.startsWith('LOCAL_NOVEL|') &&
+              !h.mangaId.startsWith('local_'),
+        )
+        .take(3)
+        .toList();
+
+    final coverMap = <String, String>{};
+    final titleMap = <String, String>{};
+    final typeMap = <String, MangaContentType>{};
+
+    for (final item in historyItems) {
+      // 1. Kiểm tra cache DriveService nếu có
+      final cachedManga = DriveService.instance.cachedMangas
+          ?.where((m) => m.id == item.mangaId)
+          .firstOrNull;
+      if (cachedManga != null) {
+        coverMap[item.mangaId] = cachedManga.coverFileId;
+        titleMap[item.mangaId] = cachedManga.title;
+        typeMap[item.mangaId] = cachedManga.contentType;
+        continue;
+      }
+
+      // 2. Kiểm tra SQLite local database
+      final local = await DatabaseHelper.instance.getLocalManga(item.mangaId);
+      if (local != null) {
+        String cover = local.coverUrl;
+        if (!cover.startsWith('/') && !cover.contains('\\')) {
+          if (await FolderService.hasCover(local.title)) {
+            cover = await FolderService.getCoverPath(local.title);
+          }
+        }
+        coverMap[item.mangaId] = cover;
+        titleMap[item.mangaId] = local.title;
+        typeMap[item.mangaId] = local.contentType;
+        continue;
+      }
+
+      // 3. Kiểm tra Catalog Cache Service
+      try {
+        final catalog = await CatalogCacheService.instance.getCachedCatalog();
+        final match = catalog.where((m) => m.id == item.mangaId).firstOrNull;
+        if (match != null) {
+          coverMap[item.mangaId] = match.coverFileId;
+          titleMap[item.mangaId] = match.title;
+          typeMap[item.mangaId] = match.contentType;
+        }
+      } catch (_) {}
+    }
+
     if (mounted) {
       setState(() {
-        _recentHistory = all
-            .where((h) => h.chapterId.isNotEmpty && h.chapterTitle != null)
-            .take(3)
-            .toList();
+        _recentHistory = historyItems;
+        _coverMap = coverMap;
+        _titleMap = titleMap;
+        _typeMap = typeMap;
         _loaded = true;
       });
     }
@@ -51,7 +108,9 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
     }
 
     final topItem = _recentHistory.first;
-    final coverId = _extractCoverFileId(topItem.mangaId);
+    final coverId = _coverMap[topItem.mangaId] ?? _extractCoverFileId(topItem.mangaId);
+    final mangaTitle = _titleMap[topItem.mangaId] ?? 'Đang đọc';
+    final contentType = _typeMap[topItem.mangaId];
 
     return SliverToBoxAdapter(
       child: Column(
@@ -60,26 +119,13 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
           // NETFLIX STYLE HERO BANNER
           GestureDetector(
             onTap: () async {
-              if (topItem.mangaId.startsWith('LOCAL_NOVEL|')) {
-                final novelPath = topItem.mangaId.substring('LOCAL_NOVEL|'.length);
-                final novels = await NovelService.instance.getAll();
-                final localNovel = novels.firstWhere(
-                  (n) => n.path == novelPath,
-                  orElse: () => LocalNovel(
-                    path: novelPath,
-                    title: topItem.chapterTitle ?? 'Truyện',
-                    importedAt: DateTime.now(),
-                  ),
-                );
-                if (context.mounted) {
-                  await context.push('/novel-reader', extra: localNovel);
-                }
-                return;
-              }
-              
-              context.push(
-                '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}',
+              HapticFeedback.selectionClick();
+              await context.push(
+                '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}&page=${topItem.lastPageIndex}',
               );
+              if (mounted) {
+                _load();
+              }
             },
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -129,46 +175,32 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                         // Details
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 20,
-                              horizontal: 8,
-                            ),
+                            padding: const EdgeInsets.fromLTRB(4, 12, 14, 12),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                FutureBuilder<String>(
-                                  future: _getMangaTitle(topItem.mangaId),
-                                  builder: (context, snapshot) => Text(
-                                    snapshot.data ?? '...',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
-                                      color: Colors.white,
-                                    ),
+                                Text(
+                                  mangaTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 17,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 8),
-                                FutureBuilder<MangaContentType?>(
-                                  future: _getMangaContentType(topItem.mangaId),
-                                  builder: (context, snapshot) {
-                                    final type = snapshot.data;
-                                    if (type == null) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: _ContentTypeBadge(type: type),
-                                    );
-                                  },
-                                ),
+                                const SizedBox(height: 4),
+                                if (contentType != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: _ContentTypeBadge(type: contentType),
+                                  ),
                                 Text(
                                   topItem.chapterTitle ?? 'Đang đọc...',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     color: Colors.white70,
                                   ),
                                 ),
@@ -189,10 +221,11 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(4),
                                       child: LinearProgressIndicator(
-                                        value: topItem.totalPages <= 1
-                                            ? 1.0
-                                            : topItem.lastPageIndex /
-                                                  (topItem.totalPages - 1),
+                                        value: (topItem.totalPages <= 1
+                                                ? 1.0
+                                                : topItem.lastPageIndex /
+                                                    (topItem.totalPages - 1))
+                                            .clamp(0.0, 1.0),
                                         backgroundColor: Colors.white24,
                                         valueColor:
                                             const AlwaysStoppedAnimation<Color>(
@@ -257,23 +290,6 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
       if (manga.id == mangaId) return manga.coverFileId;
     }
     return mangaId;
-  }
-
-  Future<String> _getMangaTitle(String mangaId) async {
-    final cached = DriveService.instance.cachedMangas;
-    for (final manga in cached ?? const []) {
-      if (manga.id == mangaId) return manga.title;
-    }
-    return 'Truyện';
-  }
-
-  Future<MangaContentType?> _getMangaContentType(String mangaId) async {
-    final cached = DriveService.instance.cachedMangas;
-    for (final manga in cached ?? const []) {
-      if (manga.id == mangaId) return manga.contentType;
-    }
-    final local = await DatabaseHelper.instance.getLocalManga(mangaId);
-    return local?.contentType;
   }
 }
 

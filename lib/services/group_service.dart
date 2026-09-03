@@ -47,7 +47,7 @@ class GroupService {
     batch.update(groupRef, {'status': 'approved'});
 
     final userRef = _firestore.collection('users').doc(leaderId);
-    batch.update(userRef, {'groupId': groupId});
+    batch.set(userRef, {'groupId': groupId}, SetOptions(merge: true));
 
     await batch.commit();
   }
@@ -104,10 +104,21 @@ class GroupService {
 
   /// 5. Đuổi thành viên ra khỏi nhóm
   Future<void> removeMember(String groupId, String memberUid) async {
-    await _firestore.collection('scanlation_groups').doc(groupId).update({
-      'members': FieldValue.arrayRemove([memberUid])
-    });
+    final groupDoc = await _firestore.collection('scanlation_groups').doc(groupId).get();
+    if (!groupDoc.exists) return;
+    final leaderId = groupDoc.data()?['leaderId'] as String?;
+    if (leaderId == memberUid) {
+      throw Exception('Không thể xóa Trưởng nhóm khỏi nhóm.');
+    }
 
+    final batch = _firestore.batch();
+    batch.update(groupDoc.reference, {
+      'members': FieldValue.arrayRemove([memberUid]),
+    });
+    batch.update(_firestore.collection('users').doc(memberUid), {
+      'groupId': FieldValue.delete(),
+    });
+    await batch.commit();
   }
 
   /// Rời nhóm (Tự nguyện)
@@ -174,4 +185,78 @@ class GroupService {
       return null;
     }
   }
+
+  /// 5. Theo dõi nhóm dịch
+  Stream<bool> isFollowingGroup(String groupId) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value(false);
+
+    return _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('following_groups')
+        .doc(groupId)
+        .snapshots()
+        .map((doc) => doc.exists);
+  }
+
+  Future<void> followGroup(String groupId, String groupName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Vui lòng đăng nhập');
+
+    final batch = _firestore.batch();
+    final followRef = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('following_groups')
+        .doc(groupId);
+
+    batch.set(followRef, {
+      'groupId': groupId,
+      'groupName': groupName,
+      'followedAt': FieldValue.serverTimestamp(),
+    });
+
+    final groupRef = _firestore.collection('scanlation_groups').doc(groupId);
+    batch.update(groupRef, {
+      'followerCount': FieldValue.increment(1),
+    });
+
+    await batch.commit();
+  }
+
+  Future<void> unfollowGroup(String groupId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Vui lòng đăng nhập');
+
+    final batch = _firestore.batch();
+    final followRef = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('following_groups')
+        .doc(groupId);
+
+    batch.delete(followRef);
+
+    final groupRef = _firestore.collection('scanlation_groups').doc(groupId);
+    batch.update(groupRef, {
+      'followerCount': FieldValue.increment(-1),
+    });
+
+    await batch.commit();
+  }
+
+  Stream<int> streamFollowerCount(String groupId) {
+    return _firestore
+        .collection('scanlation_groups')
+        .doc(groupId)
+        .snapshots()
+        .map((doc) {
+      if (!doc.exists) return 0;
+      final data = doc.data() ?? {};
+      final val = data['followerCount'];
+      return val is int ? val : (val is num ? val.toInt() : 0);
+    });
+  }
 }
+

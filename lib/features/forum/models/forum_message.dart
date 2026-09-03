@@ -17,6 +17,9 @@ class ForumMessage {
   final String? replyToAuthorName;
   final String? replyToBody;
 
+  // Reactions: map uid -> emoji (e.g. {'user123': '❤️', 'user456': '👍'})
+  final Map<String, String> reactions;
+
   ForumMessage({
     required this.id,
     required this.authorId,
@@ -31,6 +34,7 @@ class ForumMessage {
     this.replyToMessageId,
     this.replyToAuthorName,
     this.replyToBody,
+    this.reactions = const {},
   });
 
   factory ForumMessage.fromFirestore(DocumentSnapshot doc) {
@@ -39,6 +43,14 @@ class ForumMessage {
   }
 
   factory ForumMessage.fromMap(String id, Map<String, dynamic> data) {
+    Map<String, String> parsedReactions = const {};
+    if (data['reactions'] is Map) {
+      final rawReactions = data['reactions'] as Map;
+      parsedReactions = rawReactions.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    }
+
     return ForumMessage(
       id: id,
       authorId: _readString(data['authorId']),
@@ -55,6 +67,7 @@ class ForumMessage {
       replyToMessageId: _readNullableString(data['replyToMessageId']),
       replyToAuthorName: _readNullableString(data['replyToAuthorName']),
       replyToBody: _readNullableString(data['replyToBody']),
+      reactions: parsedReactions,
     );
   }
 
@@ -84,6 +97,7 @@ class ForumMessage {
       if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       if (replyToAuthorName != null) 'replyToAuthorName': replyToAuthorName,
       if (replyToBody != null) 'replyToBody': replyToBody,
+      if (reactions.isNotEmpty) 'reactions': reactions,
     };
   }
 }

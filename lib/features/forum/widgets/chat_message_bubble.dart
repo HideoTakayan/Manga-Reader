@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/forum_message.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../config/admin_config.dart';
+import '../../../widgets/vip_leaderboard_flair.dart';
+import '../services/leaderboard_service.dart';
 
 class ChatMessageBubble extends StatelessWidget {
   final ForumMessage message;
@@ -13,6 +16,7 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback? onReport;
   final VoidCallback? onReply;
   final VoidCallback? onMention;
+  final void Function(String emoji)? onReact;
   final bool isFirstInSequence;
   final bool isLastInSequence;
 
@@ -25,6 +29,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onReport,
     this.onReply,
     this.onMention,
+    this.onReact,
     this.isFirstInSequence = true,
     this.isLastInSequence = true,
   });
@@ -34,9 +39,10 @@ class ChatMessageBubble extends StatelessWidget {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final isMe = message.authorId == currentUserId;
     final currentUserIsAdmin = AdminConfig.isAdmin(FirebaseAuth.instance.currentUser?.email);
+    final authorRank = LeaderboardService.instance.getCachedRank(message.authorId);
 
     return GestureDetector(
-      onLongPress: !message.isDeleted ? () => _showOptionsMenu(context, currentUserIsAdmin, isMe) : null,
+      onLongPress: !message.isDeleted ? () => _showOptionsMenu(context, currentUserIsAdmin, isMe, currentUserId) : null,
       child: Padding(
         padding: EdgeInsets.only(
           left: 12,
@@ -52,16 +58,20 @@ class ChatMessageBubble extends StatelessWidget {
         children: [
           if (!isMe) ...[
             SizedBox(
-              width: 32,
+              width: 34,
               child: isLastInSequence
-                  ? CircleAvatar(
+                  ? VipAvatarFrame(
+                      rank: authorRank,
                       radius: 16,
-                      backgroundImage: message.authorAvatar.isNotEmpty
-                          ? NetworkImage(message.authorAvatar)
-                          : null,
-                      child: message.authorAvatar.isEmpty
-                          ? const Icon(Icons.person, size: 20)
-                          : null,
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundImage: message.authorAvatar.isNotEmpty
+                            ? CachedNetworkImageProvider(message.authorAvatar)
+                            : null,
+                        child: message.authorAvatar.isEmpty
+                            ? const Icon(Icons.person, size: 20)
+                            : null,
+                      ),
                     )
                   : null,
             ),
@@ -73,7 +83,7 @@ class ChatMessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                if ((!isMe && isFirstInSequence) || message.authorIsAdmin)
+                if ((!isMe && isFirstInSequence) || message.authorIsAdmin || (authorRank > 0 && authorRank <= 10))
                   Padding(
                     padding: EdgeInsets.only(
                       left: isMe ? 0 : 4,
@@ -84,16 +94,24 @@ class ChatMessageBubble extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (!isMe)
-                          Text(
-                            message.authorName,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                          Flexible(
+                            child: Text(
+                              message.authorName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
+                        if (authorRank > 0 && authorRank <= 10) ...[
+                          const SizedBox(width: 4),
+                          VipRankBadge(rank: authorRank, fontSize: 8.5),
+                        ],
                         if (message.authorIsAdmin)
                           Container(
-                            margin: EdgeInsets.only(left: isMe ? 0 : 4),
+                            margin: const EdgeInsets.only(left: 4),
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.amber,
@@ -121,14 +139,18 @@ class ChatMessageBubble extends StatelessWidget {
                           children: [
                             Icon(Icons.reply, size: 12, color: Theme.of(context).textTheme.bodySmall?.color),
                             const SizedBox(width: 4),
-                            Text(
-                              isMe
-                                  ? 'Bạn đã trả lời ${message.replyToAuthorName ?? 'ai đó'}'
-                                  : '${message.authorName} đã trả lời ${message.replyToAuthorName ?? 'ai đó'}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context).textTheme.bodySmall?.color,
+                            Flexible(
+                              child: Text(
+                                isMe
+                                    ? 'Bạn đã trả lời ${message.replyToAuthorName ?? 'ai đó'}'
+                                    : '${message.authorName} đã trả lời ${message.replyToAuthorName ?? 'ai đó'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).textTheme.bodySmall?.color,
+                                ),
                               ),
                             ),
                           ],
@@ -138,7 +160,7 @@ class ChatMessageBubble extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
                             color: isMe 
-                                ? Theme.of(context).primaryColor.withValues(alpha: 0.4) 
+                                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4) 
                                 : Theme.of(context).dividerColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -150,7 +172,7 @@ class ChatMessageBubble extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 12,
                               color: isMe 
-                                  ? Colors.white.withValues(alpha: 0.8) 
+                                   ? Colors.white.withValues(alpha: 0.8) 
                                   : Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey,
                             ),
                           ),
@@ -164,22 +186,50 @@ class ChatMessageBubble extends StatelessWidget {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: isMe
-                        ? Theme.of(context).primaryColor
-                        : Theme.of(context).cardColor,
+                    color: authorRank == 1
+                        ? (isMe ? const Color(0xFF5D4037) : const Color(0xFF2C2216))
+                        : authorRank == 2
+                            ? (isMe ? const Color(0xFF37474F) : const Color(0xFF21282D))
+                            : authorRank == 3
+                                ? (isMe ? const Color(0xFF4E2618) : const Color(0xFF2B1C17))
+                                : (isMe
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).cardColor),
                     borderRadius: BorderRadius.only(
                       topLeft: Radius.circular(message.replyToMessageId != null && !isMe ? 4 : (isMe || isFirstInSequence ? 18 : 4)),
                       topRight: Radius.circular(message.replyToMessageId != null && isMe ? 4 : (!isMe || isFirstInSequence ? 18 : 4)),
                       bottomLeft: Radius.circular(isMe || isLastInSequence ? 18 : 4),
                       bottomRight: Radius.circular(!isMe || isLastInSequence ? 18 : 4),
                     ),
-                    border: isMe
-                        ? null
-                        : Border.all(
-                            color: Theme.of(
-                              context,
-                            ).dividerColor.withValues(alpha: 0.1),
-                          ),
+                    border: authorRank == 1
+                        ? Border.all(color: const Color(0xFFFFD700), width: 1.4)
+                        : authorRank == 2
+                            ? Border.all(color: const Color(0xFFCFD8DC), width: 1.2)
+                            : authorRank == 3
+                                ? Border.all(color: const Color(0xFFFF8A65), width: 1.2)
+                                : (isMe
+                                    ? null
+                                    : Border.all(
+                                        color: Theme.of(
+                                          context,
+                                        ).dividerColor.withValues(alpha: 0.1),
+                                      )),
+                    boxShadow: authorRank == 1
+                        ? [
+                            BoxShadow(
+                              color: Colors.amber.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              spreadRadius: 0.5,
+                            ),
+                          ]
+                        : (authorRank > 1 && authorRank <= 3
+                            ? [
+                                BoxShadow(
+                                  color: (authorRank == 2 ? Colors.blueGrey : Colors.deepOrange).withValues(alpha: 0.2),
+                                  blurRadius: 6,
+                                ),
+                              ]
+                            : null),
                   ),
                   child: Column(
                     crossAxisAlignment: isMe
@@ -241,6 +291,12 @@ class ChatMessageBubble extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Badges hiển thị reaction
+                if (message.reactions.isNotEmpty && !message.isDeleted)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _buildReactionBadges(context, currentUserId),
+                  ),
                 if (isLastInSequence)
                   Padding(
                     padding: const EdgeInsets.only(top: 4, right: 4, left: 4),
@@ -255,10 +311,66 @@ class ChatMessageBubble extends StatelessWidget {
           if (isMe)
             const SizedBox(
               width: 24,
-            ), // Placeholder for avatar if we want to show it for 'me' too, but usually we don't.
+            ),
         ],
       ),
       ),
+    );
+  }
+
+  Widget _buildReactionBadges(BuildContext context, String? currentUserId) {
+    // Gom nhóm reaction theo emoji
+    final counts = <String, int>{};
+    for (final emoji in message.reactions.values) {
+      counts[emoji] = (counts[emoji] ?? 0) + 1;
+    }
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: counts.entries.map((entry) {
+        final emoji = entry.key;
+        final count = entry.value;
+        final hasMyReaction = currentUserId != null &&
+            message.reactions[currentUserId] == emoji;
+
+        return InkWell(
+          onTap: () => onReact?.call(emoji),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: hasMyReaction
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.25)
+                  : Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasMyReaction
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.white.withValues(alpha: 0.12),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(emoji, style: const TextStyle(fontSize: 12)),
+                if (count > 1) ...[
+                  const SizedBox(width: 3),
+                  Text(
+                    count.toString(),
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: hasMyReaction ? Theme.of(context).colorScheme.primary : Colors.white70,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -330,19 +442,102 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  void _showOptionsMenu(BuildContext context, bool isAdmin, bool isMe) {
+  void _showOptionsMenu(BuildContext context, bool isAdmin, bool isMe, String? currentUserId) {
+    const quickEmojis = ['❤️', '👍', '😂', '🔥', '😮', '😢', '🎉'];
+
     showModalBottomSheet(
       context: context,
-      builder: (context) {
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Thanh thả cảm xúc nhanh (Quick reaction bar)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: quickEmojis.map((emoji) {
+                    final isSelected = currentUserId != null &&
+                        message.reactions[currentUserId] == emoji;
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        HapticFeedback.lightImpact();
+                        onReact?.call(emoji);
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: isSelected
+                            ? BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
+                                shape: BoxShape.circle,
+                              )
+                            : null,
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.copy_rounded),
+                title: Text(message.body.isNotEmpty ? 'Sao chép nội dung' : 'Sao chép link ảnh/GIF'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final textToCopy = message.body.isNotEmpty
+                      ? message.body
+                      : (message.imageUrl ?? message.gifUrl ?? '');
+                  if (textToCopy.isNotEmpty) {
+                    Clipboard.setData(ClipboardData(text: textToCopy));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(message.body.isNotEmpty
+                              ? 'Đã sao chép tin nhắn'
+                              : 'Đã sao chép đường dẫn hình ảnh'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.reply),
                 title: const Text('Trả lời tin nhắn này'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(ctx);
                   onReply?.call();
                 },
               ),
@@ -351,7 +546,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.alternate_email, color: Colors.blueAccent),
                   title: Text('Nhắc tên @${message.authorName}'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onMention?.call();
                   },
                 ),
@@ -360,7 +555,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.report, color: Colors.orange),
                   title: const Text('Báo cáo vi phạm'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onReport?.call();
                   },
                 ),
@@ -370,7 +565,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.delete, color: Colors.red),
                   title: const Text('Xóa tin nhắn này', style: TextStyle(color: Colors.red)),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onDelete?.call();
                   },
                 ),
@@ -381,7 +576,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 10 phút'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onMute?.call(const Duration(minutes: 10));
                   },
                 ),
@@ -389,7 +584,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 1 giờ'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onMute?.call(const Duration(hours: 1));
                   },
                 ),
@@ -397,7 +592,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 24 giờ'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onMute?.call(const Duration(hours: 24));
                   },
                 ),
@@ -406,7 +601,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.volume_up),
                   title: const Text('Gỡ cấm ngôn'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(ctx);
                     onUnmute?.call();
                   },
                 ),

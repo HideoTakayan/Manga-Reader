@@ -27,6 +27,7 @@ class PdfReaderViewState extends State<PdfReaderView> {
   PdfControllerPinch? _pdfPinchController;
   PdfController? _pdfController;
   bool _isLoading = true;
+  String? _errorMessage;
   PdfDocument? _document;
 
   @override
@@ -37,12 +38,22 @@ class PdfReaderViewState extends State<PdfReaderView> {
 
   void _initPdf() {
     final activePath = widget.pdfPath;
-    final docFuture = PdfDocument.openFile(activePath);
-    docFuture.then((doc) {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    PdfDocument.openFile(activePath).then((doc) {
       if (mounted && activePath == widget.pdfPath) {
         _document = doc;
         widget.onDocumentLoaded?.call(doc.pagesCount);
         _initControllers(doc);
+      }
+    }).catchError((e) {
+      if (mounted && activePath == widget.pdfPath) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Không thể mở file PDF: $e';
+        });
       }
     });
   }
@@ -70,6 +81,8 @@ class PdfReaderViewState extends State<PdfReaderView> {
     if (oldWidget.pdfPath != widget.pdfPath) {
       _pdfPinchController?.dispose();
       _pdfController?.dispose();
+      _pdfPinchController = null;
+      _pdfController = null;
       _isLoading = true;
       _initPdf();
     } else if (oldWidget.scrollDirection != widget.scrollDirection) {
@@ -144,6 +157,43 @@ class PdfReaderViewState extends State<PdfReaderView> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                size: 64,
+                color: Colors.redAccent,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _initPdf,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white12,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return GestureDetector(

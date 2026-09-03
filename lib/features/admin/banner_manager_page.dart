@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/content_type.dart';
 import '../../data/drive_service.dart';
 import '../../data/models_cloud.dart';
+import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
 
 class BannerManagerPage extends StatefulWidget {
@@ -17,6 +19,8 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
   static const int _maxBannerItems = 20;
 
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _debounce;
   List<CloudManga> _allMangas = [];
   List<String> _bannerMangaIds = [];
   List<String> _bannerNovelIds = [];
@@ -27,12 +31,12 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
     _loadData();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -59,14 +63,15 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
       .toList();
 
   List<CloudManga> get _filteredMangas {
-    final query = _searchController.text.trim().toLowerCase();
+    final query = CatalogCacheService.instance.normalize(_searchQuery.trim());
     final source = _allMangas
         .where((manga) => manga.contentType == _selectedContentType)
         .toList();
     if (query.isEmpty) return source;
     return source.where((manga) {
-      return manga.title.toLowerCase().contains(query) ||
-          manga.author.toLowerCase().contains(query);
+      final normTitle = CatalogCacheService.instance.normalize(manga.title);
+      final normAuthor = CatalogCacheService.instance.normalize(manga.author);
+      return normTitle.contains(query) || normAuthor.contains(query);
     }).toList();
   }
 
@@ -198,6 +203,8 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                         child: Text(
                           'Đã chọn ${_currentBannerIds.length}/$_maxBannerItems',
                           style: Theme.of(context).textTheme.titleMedium,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       SegmentedButton<MangaContentType>(
@@ -232,17 +239,42 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: TextField(
                     controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(fontSize: 13.5),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search),
+                      prefixIcon: const Icon(Icons.search, size: 20),
                       suffixIcon: _searchController.text.isEmpty
                           ? null
                           : IconButton(
-                              onPressed: _searchController.clear,
-                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              icon: const Icon(Icons.close, size: 18),
                             ),
-                      hintText: 'Tìm truyện để thêm vào banner',
-                      border: const OutlineInputBorder(),
+                      hintText: 'Tìm truyện để thêm vào banner...',
+                      hintStyle: const TextStyle(fontSize: 13, color: Colors.white54),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.05),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
+                    onChanged: (val) {
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      _debounce = Timer(const Duration(milliseconds: 150), () {
+                        if (mounted) setState(() => _searchQuery = val);
+                      });
+                    },
                   ),
                 ),
                 Expanded(
@@ -254,7 +286,7 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
 
                       return ListTile(
                         leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(8),
                           child: SizedBox(
                             width: 44,
                             height: 64,
@@ -268,6 +300,7 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                           manga.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
                           manga.author,
@@ -306,12 +339,40 @@ class _SelectedBannerList extends StatelessWidget {
       return Container(
         width: double.infinity,
         margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.white24),
-          borderRadius: BorderRadius.circular(12),
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
-        child: const Text('Chưa chọn truyện nào cho banner.'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.purpleAccent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.view_carousel_outlined,
+                size: 28,
+                color: Colors.purpleAccent,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Chưa chọn truyện nào cho banner',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Chọn các bộ truyện từ danh sách bên dưới để ghim lên đầu trang chủ.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       );
     }
 
@@ -327,22 +388,40 @@ class _SelectedBannerList extends StatelessWidget {
           return Card(
             key: ValueKey(manga.id),
             margin: const EdgeInsets.only(bottom: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            color: Theme.of(context).cardColor,
+            elevation: 1,
             child: ListTile(
               leading: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ReorderableDragStartListener(
                     index: index,
-                    child: const Icon(Icons.drag_handle),
+                    child: const Icon(Icons.drag_handle, color: Colors.white54),
                   ),
                   const SizedBox(width: 8),
-                  Text('#${index + 1}'),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '#${index + 1}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               title: Text(
                 manga.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
                 manga.author,
@@ -352,7 +431,7 @@ class _SelectedBannerList extends StatelessWidget {
               trailing: IconButton(
                 tooltip: 'Bỏ khỏi banner',
                 onPressed: () => onRemove(manga.id),
-                icon: const Icon(Icons.close),
+                icon: const Icon(Icons.close, size: 18),
               ),
             ),
           );

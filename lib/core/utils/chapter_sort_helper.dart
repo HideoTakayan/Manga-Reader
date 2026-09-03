@@ -64,9 +64,10 @@ class ChapterSortHelper {
     caseSensitive: false,
   );
 
-  // Biểu thức tìm chuỗi như "ch. 123"
+  // Biểu thức tìm chuỗi như "ch. 123", "chương 123", "tập 123"...
   static final _basic = RegExp(
-    r'(?:ch\.|chap\.|chapter\.|c\.|ch|chap|chapter|c)\s*' + _numberPattern,
+    r'(?:ch\.|chap\.|chapter\.|c\.|ch|chap|chapter|c|chương|tập|hồi)\s*' +
+        _numberPattern,
     caseSensitive: false,
   );
 
@@ -162,7 +163,7 @@ class ChapterSortHelper {
     int code = char.codeUnitAt(0);
     int aCode = 'a'.codeUnitAt(0);
     int number = code - (aCode - 1);
-    if (number >= 10) return 0.0;
+    if (number < 1 || number >= 10) return 0.0;
     return number / 10.0;
   }
 }
@@ -181,6 +182,9 @@ class _ChapterParseInfo implements Comparable<_ChapterParseInfo> {
   int compareTo(_ChapterParseInfo other) {
     if (value != other.value) {
       return value.compareTo(other.value); // Sắp xếp tăng dần theo số
+    }
+    if (isExtra != other.isExtra) {
+      return isExtra ? 1 : -1;
     }
     return 0; // Bằng nhau thì giữ nguyên vị trí
   }

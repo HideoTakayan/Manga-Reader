@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/models_cloud.dart';
@@ -34,13 +35,82 @@ class _ReportsListPageState extends State<ReportsListPage> {
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã đánh dấu xử lý thành công!')),
+        const SnackBar(
+          content: Text('Đã đánh dấu xử lý thành công!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  Future<void> _reopenReport(String reportId) async {
+    try {
+      await _db.collection('reports').doc(reportId).update({
+        'status': 'pending',
+        'resolvedBy': FieldValue.delete(),
+        'resolvedAt': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã mở lại báo cáo (chờ xử lý)'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  Future<void> _deleteReport(String reportId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Xóa báo cáo này?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text('Báo cáo này sẽ bị xóa vĩnh viễn khỏi hệ thống.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _db.collection('reports').doc(reportId).delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã xóa báo cáo'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
     }
   }
 
@@ -53,18 +123,31 @@ class _ReportsListPageState extends State<ReportsListPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).cardColor,
-        title: const Text('Chi tiết báo lỗi'),
+        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Chi tiết báo lỗi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _DetailRow(label: 'Truyện', value: report.mangaTitle),
+              _DetailRow(
+                label: 'Truyện',
+                value: report.mangaTitle,
+                canCopy: true,
+              ),
               if (report.chapterTitle.isNotEmpty)
-                _DetailRow(label: 'Chương', value: report.chapterTitle),
+                _DetailRow(
+                  label: 'Chương',
+                  value: report.chapterTitle,
+                  canCopy: true,
+                ),
               if (report.chapterId.isNotEmpty)
-                _DetailRow(label: 'ID chương', value: report.chapterId),
+                _DetailRow(
+                  label: 'ID chương',
+                  value: report.chapterId,
+                  canCopy: true,
+                ),
               _DetailRow(label: 'Loại reader', value: report.readerType),
               _DetailRow(
                 label: 'Trang',
@@ -79,25 +162,37 @@ class _ReportsListPageState extends State<ReportsListPage> {
               if (report.resolvedBy.isNotEmpty)
                 _DetailRow(label: 'Người xử lý', value: report.resolvedBy),
               const SizedBox(height: 12),
-              const Text('Mô tả'),
+              const Text('Mô tả', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Theme.of(context).scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 child: Text(
                   report.description.isEmpty
                       ? 'Không có mô tả'
                       : report.description,
+                  style: const TextStyle(fontSize: 13),
                 ),
               ),
             ],
           ),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
+          IconButton(
+            tooltip: 'Xóa báo cáo',
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteReport(report.id);
+            },
+          ),
+          const Spacer(),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Đóng'),
@@ -108,8 +203,17 @@ class _ReportsListPageState extends State<ReportsListPage> {
                 Navigator.pop(ctx);
                 _resolveReport(report.id);
               },
-              icon: const Icon(Icons.check),
+              icon: const Icon(Icons.check, size: 18),
               label: const Text('Đã xử lý'),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _reopenReport(report.id);
+              },
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Mở lại'),
             ),
         ],
       ),
@@ -151,32 +255,94 @@ class _ReportsListPageState extends State<ReportsListPage> {
               stream: _db
                   .collection('reports')
                   .orderBy('createdAt', descending: true)
+                  .limit(100)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text('Lỗi: ${snapshot.error}'));
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.cloud_off_rounded,
+                              size: 44,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Lỗi tải danh sách báo cáo',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12, color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }
 
                 final reports = _filterReports(snapshot.data?.docs ?? []);
                 if (reports.isEmpty) {
                   return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 64,
-                          color: Colors.green.withValues(alpha: 0.5),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Không có báo lỗi phù hợp.',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(32.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.task_alt_rounded,
+                              size: 48,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _statusFilter == 'pending'
+                                ? 'Tuyệt vời! Không có báo lỗi chờ xử lý'
+                                : 'Không có báo cáo lỗi nào trong mục này',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _statusFilter == 'pending'
+                                ? 'Hệ thống đang hoạt động ổn định và không có khiếu nại sự cố'
+                                : 'Danh sách sẽ hiển thị khi người dùng gửi phản hồi lỗi chương truyện',
+                            style: const TextStyle(color: Colors.white38, fontSize: 13),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -246,24 +412,54 @@ class _ReportsListPageState extends State<ReportsListPage> {
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
+  final bool canCopy;
 
-  const _DetailRow({required this.label, required this.value});
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.canCopy = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final displayValue = value.isEmpty ? 'Không rõ' : value;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 96,
             child: Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white70),
             ),
           ),
-          Expanded(child: Text(value.isEmpty ? 'Không rõ' : value)),
+          Expanded(
+            child: Text(
+              displayValue,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          if (canCopy && value.isNotEmpty)
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Đã sao chép $label'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.copy, size: 16, color: Colors.white54),
+              ),
+            ),
         ],
       ),
     );

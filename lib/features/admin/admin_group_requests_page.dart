@@ -65,19 +65,22 @@ class _PendingGroupsTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Lỗi tải yêu cầu nhóm',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     '${snapshot.error}',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: Colors.white54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -107,19 +110,22 @@ class _PendingGroupsTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Không có nhóm nào đang chờ duyệt',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Tất cả yêu cầu thành lập nhóm dịch mới đã được xử lý xong',
-                    style: TextStyle(color: Colors.white38, fontSize: 13),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 13,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -182,8 +188,19 @@ class _PendingGroupsTab extends StatelessWidget {
                               builder: (ctx) => AlertDialog(
                                 backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: const Text('Xác nhận từ chối', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                content: Text('Bạn có chắc muốn từ chối nhóm "${group.name}"?', style: const TextStyle(color: Colors.white70)),
+                                title: Text(
+                                  'Xác nhận từ chối',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                content: Text(
+                                  'Bạn có chắc muốn từ chối nhóm "${group.name}"?',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                                  ),
+                                ),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx, false),
@@ -230,8 +247,19 @@ class _PendingGroupsTab extends StatelessWidget {
                               builder: (ctx) => AlertDialog(
                                 backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: const Text('Xác nhận duyệt nhóm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                content: Text('Bạn có chắc muốn duyệt nhóm "${group.name}" thành nhóm dịch chính thức?', style: const TextStyle(color: Colors.white70)),
+                                title: Text(
+                                  'Xác nhận duyệt nhóm',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                content: Text(
+                                  'Bạn có chắc muốn duyệt nhóm "${group.name}" thành nhóm dịch chính thức?',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                                  ),
+                                ),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx, false),
@@ -316,19 +344,22 @@ class _DriveRequestsTab extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Lỗi tải yêu cầu Drive',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     '${snapshot.error}',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: Colors.white54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -354,29 +385,32 @@ class _DriveRequestsTab extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.cloud_done_outlined,
                       size: 48,
-                      color: Colors.blueAccent,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Không có yêu cầu quyền Drive nào',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Khi các thành viên nhóm dịch yêu cầu quyền cấp OAuth Drive, yêu cầu sẽ hiển thị ở đây',
-                    style: TextStyle(color: Colors.white38, fontSize: 13),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 13,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],

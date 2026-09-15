@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
 import '../../../data/database_helper.dart';
@@ -10,6 +9,7 @@ import '../../../data/drive_service.dart';
 import '../../../services/folder_service.dart';
 import '../../catalog/catalog_cache_service.dart';
 import '../../shared/drive_image.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
 class ContinueReadingSection extends StatefulWidget {
   const ContinueReadingSection({super.key});
@@ -32,7 +32,7 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
   }
 
   Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+    final uid = AuthService.safeUid;
     final all = await DatabaseHelper.instance.getHistory(uid);
     if (!mounted) return;
 
@@ -112,168 +112,189 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
     final mangaTitle = _titleMap[topItem.mangaId] ?? 'Đang đọc';
     final contentType = _typeMap[topItem.mangaId];
 
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
+    final onPrimaryColor = theme.colorScheme.onPrimary;
+
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // NETFLIX STYLE HERO BANNER
-          GestureDetector(
-            onTap: () async {
-              HapticFeedback.selectionClick();
-              await context.push(
-                '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}&page=${topItem.lastPageIndex}',
-              );
-              if (mounted) {
-                _load();
-              }
-            },
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              height: 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            height: 200,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: primaryColor.withValues(alpha: 0.25),
+                width: 1,
               ),
-              child: ClipRRect(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
                 borderRadius: BorderRadius.circular(16),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Blurred Background
-                    DriveImage(fileId: coverId, fit: BoxFit.cover),
-                    BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        color: Colors.black.withValues(alpha: 0.6),
+                onTap: () async {
+                  HapticFeedback.selectionClick();
+                  await context.push(
+                    '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}&page=${topItem.lastPageIndex}',
+                  );
+                  if (mounted) {
+                    _load();
+                  }
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Blurred Background
+                      DriveImage(fileId: coverId, fit: BoxFit.cover),
+                      BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.6),
+                        ),
                       ),
-                    ),
 
-                    // Content
-                    Row(
-                      children: [
-                        // Cover Image
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: SizedBox(
-                              width: 110,
-                              height: 160,
-                              child: DriveImage(
-                                fileId: coverId,
-                                fit: BoxFit.cover,
+                      // Content
+                      Row(
+                        children: [
+                          // Cover Image
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SizedBox(
+                                width: 110,
+                                height: 160,
+                                child: DriveImage(
+                                  fileId: coverId,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        // Details
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 12, 14, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  mangaTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 17,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                if (contentType != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: _ContentTypeBadge(type: contentType),
-                                  ),
-                                Text(
-                                  topItem.chapterTitle ?? 'Đang đọc...',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                                const Spacer(),
-
-                                // Progress Bar
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Tiến độ',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.white54,
-                                      ),
+                          // Details
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 12, 14, 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    mangaTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17,
+                                      color: Colors.white,
                                     ),
-                                    const SizedBox(height: 4),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        value: (topItem.totalPages <= 1
-                                                ? 1.0
-                                                : topItem.lastPageIndex /
-                                                    (topItem.totalPages - 1))
-                                            .clamp(0.0, 1.0),
-                                        backgroundColor: Colors.white24,
-                                        valueColor:
-                                            const AlwaysStoppedAnimation<Color>(
-                                              Colors.redAccent,
-                                            ),
-                                        minHeight: 6,
-                                      ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (contentType != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: _ContentTypeBadge(type: contentType),
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
+                                  Text(
+                                    topItem.chapterTitle ?? 'Đang đọc...',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                  const Spacer(),
 
-                                // Button
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                    horizontal: 16,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
+                                  // Progress Bar
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Icon(
-                                        Icons.play_arrow,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Đọc Tiếp',
+                                      const Text(
+                                        'Tiến độ',
                                         style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10,
+                                          color: Colors.white54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: LinearProgressIndicator(
+                                          value: (topItem.totalPages <= 0
+                                                  ? 0.0
+                                                  : (topItem.totalPages == 1
+                                                      ? 1.0
+                                                      : topItem.lastPageIndex /
+                                                          (topItem.totalPages - 1)))
+                                              .clamp(0.0, 1.0),
+                                          backgroundColor: Colors.white24,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                primaryColor,
+                                              ),
+                                          minHeight: 6,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 12),
+
+                                  // Button
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 16,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: primaryColor,
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: primaryColor.withValues(alpha: 0.4),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.play_arrow,
+                                          color: onPrimaryColor,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Đọc Tiếp',
+                                          style: TextStyle(
+                                            color: onPrimaryColor,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -32,13 +32,9 @@ import 'widgets/bulk_download_sheet.dart';
 import '../forum/widgets/quick_share_sheet.dart';
 import '../shared/custom_tag_widgets.dart';
 import '../../services/recommendation_service.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
-enum ChapterFilterStatus {
-  all,
-  unread,
-  downloaded,
-  bookmarked,
-}
+enum ChapterFilterStatus { all, unread, downloaded, bookmarked }
 
 class MangaDetailPage extends StatefulWidget {
   final String mangaId;
@@ -59,7 +55,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   bool _isLoading = true;
   bool _isSearchingChapters = false;
   String _chapterSearchQuery = '';
-  final TextEditingController _chapterSearchController = TextEditingController();
+  final TextEditingController _chapterSearchController =
+      TextEditingController();
   Timer? _chapterSearchDebounce;
   bool _isSortReversed = false;
   Set<String> _readChapterIds = {};
@@ -92,9 +89,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     _loadSortPref();
     _fetchData();
     _followStream = FollowService.instance.isFollowing(widget.mangaId);
-    _notificationStream = FollowService.instance.isNotificationEnabled(widget.mangaId);
-    _chapterViewsStream = InteractionService.instance.streamChapterViews(widget.mangaId);
-    _mangaCategoriesStream = LibraryService.instance.streamMangaCategories(widget.mangaId);
+    _notificationStream = FollowService.instance.isNotificationEnabled(
+      widget.mangaId,
+    );
+    _chapterViewsStream = InteractionService.instance.streamChapterViews(
+      widget.mangaId,
+    );
+    _mangaCategoriesStream = LibraryService.instance.streamMangaCategories(
+      widget.mangaId,
+    );
   }
 
   @override
@@ -114,9 +117,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       _loadSortPref();
       _fetchData();
       _followStream = FollowService.instance.isFollowing(widget.mangaId);
-      _notificationStream = FollowService.instance.isNotificationEnabled(widget.mangaId);
-      _chapterViewsStream = InteractionService.instance.streamChapterViews(widget.mangaId);
-      _mangaCategoriesStream = LibraryService.instance.streamMangaCategories(widget.mangaId);
+      _notificationStream = FollowService.instance.isNotificationEnabled(
+        widget.mangaId,
+      );
+      _chapterViewsStream = InteractionService.instance.streamChapterViews(
+        widget.mangaId,
+      );
+      _mangaCategoriesStream = LibraryService.instance.streamMangaCategories(
+        widget.mangaId,
+      );
     }
   }
 
@@ -156,8 +165,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       // B. Nếu chưa có trong local_mangas, tìm trong Catalog Cache
       if (dbManga == null) {
         try {
-          final cachedCatalog = await CatalogCacheService.instance.getCachedCatalog();
-          final match = cachedCatalog.where((m) => m.id == widget.mangaId).firstOrNull;
+          final cachedCatalog = await CatalogCacheService.instance
+              .getCachedCatalog();
+          final match = cachedCatalog
+              .where((m) => m.id == widget.mangaId)
+              .firstOrNull;
           if (match != null) {
             dbManga = _cloudToLocal(match);
           }
@@ -241,15 +253,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           final fileType = ext.endsWith('.pdf')
               ? 'pdf'
               : ext.endsWith('.epub')
-                  ? 'epub'
-                  : ext.endsWith('.cbt') || ext.endsWith('.tar')
-                      ? 'cbt'
-                      : ext.endsWith('.cbr')
-                          ? 'cbr'
-                          : ext.endsWith('.zip')
-                              ? 'zip'
-                              : 'cbz';
-          
+              ? 'epub'
+              : ext.endsWith('.cbt') || ext.endsWith('.tar')
+              ? 'cbt'
+              : ext.endsWith('.cbr')
+              ? 'cbr'
+              : ext.endsWith('.zip')
+              ? 'zip'
+              : 'cbz';
+
           return CloudChapter(
             id: chapterId,
             title: chapterTitle.isEmpty ? chapterId : chapterTitle,
@@ -287,20 +299,43 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         }
       }
 
-      // --- 2. ĐỒNG BỘ MẠNG TRỰC TUYẾN (Chạy ngầm, timeout nhanh 4s để không làm nghẽn máy) ---
+      // --- 2. ĐỒNG BỘ MẠNG TRỰC TUYẾN (Chạy ngầm, ưu tiên lấy chapter và dùng cache manga nếu có) ---
       try {
-        final mangasFuture = DriveService.instance.getMangas().timeout(const Duration(seconds: 4));
-        final chaptersFuture = DriveService.instance.getChapters(widget.mangaId).timeout(const Duration(seconds: 4));
+        final existingManga = DriveService.instance.getMangaById(
+          widget.mangaId,
+        );
+        final chaptersFuture = DriveService.instance
+            .getChapters(widget.mangaId)
+            .timeout(const Duration(seconds: 10))
+            .catchError((e) {
+              debugPrint('⚠️ Fetch chapters in detail error: $e');
+              return <CloudChapter>[];
+            });
+
+        final mangasFuture = existingManga != null
+            ? Future.value(<CloudManga>[existingManga])
+            : DriveService.instance
+                  .getMangas()
+                  .timeout(const Duration(seconds: 10))
+                  .catchError((e) {
+                    debugPrint('⚠️ Fetch mangas in detail error: $e');
+                    return <CloudManga>[];
+                  });
 
         final results = await Future.wait([mangasFuture, chaptersFuture]);
         final mangas = results[0] as List<CloudManga>;
         final chapters = results[1] as List<CloudChapter>;
 
-        final finalManga = mangas.where((c) => c.id == widget.mangaId).firstOrNull ?? _manga;
+        final finalManga =
+            mangas.where((c) => c.id == widget.mangaId).firstOrNull ??
+            existingManga ??
+            _manga;
 
         if (finalManga != null) {
           // Lưu thông tin mới vào CSDL cục bộ
-          await DatabaseHelper.instance.saveLocalManga(_cloudToLocal(finalManga));
+          await DatabaseHelper.instance.saveLocalManga(
+            _cloudToLocal(finalManga),
+          );
 
           final merged = await ChapterUtils.mergeChapters(
             chapters,
@@ -316,6 +351,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               _initRecommendations();
             });
             _preloadTargetChapter();
+          }
+        } else if (chapters.isNotEmpty) {
+          final merged = await ChapterUtils.mergeChapters(
+            chapters,
+            localChaptersList,
+            widget.mangaId,
+          );
+          if (mounted) {
+            setState(() {
+              _chapters = merged;
+              _isLoading = false;
+            });
           }
         }
       } catch (e) {
@@ -337,24 +384,29 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (_chapters.isEmpty) return;
     Future.microtask(() async {
       try {
-        final targetChapterId = _readerProgress?.chapterId ??
+        final targetChapterId =
+            _readerProgress?.chapterId ??
             _history?.chapterId ??
             _getNextUnreadChapterId() ??
             _getFirstChapterId();
         if (targetChapterId == null) return;
-        final targetChapter =
-            _chapters.firstWhereOrNull((c) => c.id == targetChapterId);
+        final targetChapter = _chapters.firstWhereOrNull(
+          (c) => c.id == targetChapterId,
+        );
         if (targetChapter == null) return;
 
-        final isDownloaded =
-            await DatabaseHelper.instance.isChapterDownloaded(targetChapterId);
+        final isDownloaded = await DatabaseHelper.instance.isChapterDownloaded(
+          targetChapterId,
+        );
         if (isDownloaded) return;
 
         final tempDir = await getTemporaryDirectory();
         final tempFile = File('${tempDir.path}/temp_online_$targetChapterId');
         if (await tempFile.exists() && await tempFile.length() > 0) return;
 
-        debugPrint('🚀 Smart preloading target chapter: ${targetChapter.title}');
+        debugPrint(
+          '🚀 Smart preloading target chapter: ${targetChapter.title}',
+        );
         final success = await DriveService.instance.downloadFileToFile(
           targetChapterId,
           tempFile,
@@ -376,22 +428,22 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       _recommendationsFuture = CatalogCacheService.instance
           .getCachedCatalog()
           .then((catalog) async {
-        final prefs = await RecommendationService.instance
-            .calculateUserPreferences(catalog: catalog);
-        return RecommendationService.instance.getRelatedMangas(
-          currentManga: _manga!,
-          catalog: catalog,
-          userGenreScores: prefs.genreScores,
-          limit: 10,
-        );
-      });
+            final prefs = await RecommendationService.instance
+                .calculateUserPreferences(catalog: catalog);
+            return RecommendationService.instance.getRelatedMangas(
+              currentManga: _manga!,
+              catalog: catalog,
+              userGenreScores: prefs.genreScores,
+              limit: 10,
+            );
+          });
     }
   }
 
   Future<void> _fetchHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
     ReadingHistory? history;
-    final localUserId = userId ?? 'guest';
+    final localUserId = AuthService.safeUid;
 
     // Ưu tiên local để tiết kiệm Firebase read.
     history = await DatabaseHelper.instance.getHistoryForManga(
@@ -543,7 +595,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                   'Bộ truyện có thể đã bị xóa khỏi hệ thống hoặc kết nối mạng bị gián đoạn.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white60,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     height: 1.4,
                   ),
                 ),
@@ -558,9 +610,14 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       icon: const Icon(Icons.refresh_rounded, size: 18),
                       label: const Text('Thử lại'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                        side: BorderSide(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -569,11 +626,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     ElevatedButton.icon(
                       onPressed: () => context.go('/'),
                       icon: const Icon(Icons.home_rounded, size: 18),
-                      label: const Text('Về trang chủ', style: TextStyle(fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Về trang chủ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        foregroundColor: theme.colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -593,18 +656,26 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
     // Thống kê số lượng chương theo từng bộ lọc
     final totalCount = chapters.length;
-    final unreadCount = chapters.where((c) => !_readChapterIds.contains(c.id)).length;
-    final downloadedCount = chapters.where((c) => _downloadedChapterIds.contains(c.id)).length;
-    final bookmarkedCount = chapters.where((c) => bookmarkedChapterIds.contains(c.id)).length;
+    final unreadCount = chapters
+        .where((c) => !_readChapterIds.contains(c.id))
+        .length;
+    final downloadedCount = chapters
+        .where((c) => _downloadedChapterIds.contains(c.id))
+        .length;
+    final bookmarkedCount = chapters
+        .where((c) => bookmarkedChapterIds.contains(c.id))
+        .length;
 
-    final normalizedQuery =
-        CatalogCacheService.instance.normalize(_chapterSearchQuery);
+    final normalizedQuery = CatalogCacheService.instance.normalize(
+      _chapterSearchQuery,
+    );
     final rawDisplay = chapters.where((c) {
       // 1. Lọc theo từ khóa tìm kiếm
       if (normalizedQuery.isNotEmpty) {
         final normTitle = CatalogCacheService.instance.normalize(c.title);
         final normId = CatalogCacheService.instance.normalize(c.id);
-        if (!normTitle.contains(normalizedQuery) && !normId.contains(normalizedQuery)) {
+        if (!normTitle.contains(normalizedQuery) &&
+            !normId.contains(normalizedQuery)) {
           return false;
         }
       }
@@ -622,8 +693,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       }
     }).toList();
 
-    final displayChapters =
-        _isSortReversed ? rawDisplay.reversed.toList() : rawDisplay;
+    final displayChapters = _isSortReversed
+        ? rawDisplay.reversed.toList()
+        : rawDisplay;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -677,10 +749,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.2),
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
                               ),
                             ),
                             alignment: Alignment.center,
@@ -689,7 +761,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.white.withValues(alpha: 0.9),
+                                color: theme.colorScheme.onSurface,
                               ),
                             ),
                           ),
@@ -728,18 +800,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.swap_vert_rounded,
-                                    color: _isSortReversed
-                                        ? Colors.orangeAccent
-                                        : Colors.white70,
-                                    size: 22,
-                                  ),
-                                  tooltip: _isSortReversed
-                                      ? 'Đang xếp: Mới nhất trước (Bấm để đảo chiều)'
-                                      : 'Đang xếp: Cũ nhất trước (Bấm để đảo chiều)',
-                                  onPressed: () async {
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () async {
+                                    HapticFeedback.selectionClick();
                                     setState(() {
                                       _isSortReversed = !_isSortReversed;
                                     });
@@ -750,15 +814,67 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                       _isSortReversed,
                                     );
                                   },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _isSortReversed
+                                          ? theme.colorScheme.primary.withValues(
+                                              alpha: 0.15,
+                                            )
+                                          : theme.colorScheme.onSurface.withValues(
+                                              alpha: 0.06,
+                                            ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _isSortReversed
+                                            ? theme.colorScheme.primary.withValues(
+                                                alpha: 0.4,
+                                              )
+                                            : theme.colorScheme.onSurface.withValues(alpha: 0.15),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _isSortReversed
+                                              ? Icons.arrow_downward_rounded
+                                              : Icons.arrow_upward_rounded,
+                                          color: _isSortReversed
+                                              ? theme.colorScheme.primary
+                                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _isSortReversed
+                                              ? 'Mới nhất'
+                                              : 'Cũ nhất',
+                                          style: TextStyle(
+                                            color: _isSortReversed
+                                                ? theme.colorScheme.primary
+                                                : theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
+                                const SizedBox(width: 4),
                                 IconButton(
                                   icon: Icon(
                                     _isSearchingChapters
                                         ? Icons.search_off
                                         : Icons.search,
                                     color: _isSearchingChapters
-                                        ? Colors.orangeAccent
-                                        : Colors.white70,
+                                        ? theme.colorScheme.primary
+                                        : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                                     size: 20,
                                   ),
                                   tooltip: 'Tìm số chương',
@@ -777,40 +893,55 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 PopupMenuButton<String>(
                                   icon: const Icon(Icons.more_vert),
                                   color: Theme.of(context).cardColor,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
                                   onSelected: (value) async {
-                                    final messenger = ScaffoldMessenger.of(context);
+                                    final messenger = ScaffoldMessenger.of(
+                                      context,
+                                    );
                                     if (value == 'share_to_forum') {
-                                      QuickShareToForumSheet.show(context, manga);
-                                    } else if (value == 'mark_all_read') {
-                                      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-                                      await DatabaseHelper.instance.markChaptersAsRead(
-                                        mangaId: widget.mangaId,
-                                        chapterIds: chapters.map((c) => c.id).toList(),
-                                        userId: uid,
+                                      QuickShareToForumSheet.show(
+                                        context,
+                                        manga,
                                       );
+                                    } else if (value == 'mark_all_read') {
+                                      final uid = AuthService.safeUid;
+                                      await DatabaseHelper.instance
+                                          .markChaptersAsRead(
+                                            mangaId: widget.mangaId,
+                                            chapterIds: chapters
+                                                .map((c) => c.id)
+                                                .toList(),
+                                            userId: uid,
+                                          );
                                       await _fetchData();
                                       if (mounted) {
                                         messenger.hideCurrentSnackBar();
                                         messenger.showSnackBar(
                                           const SnackBar(
-                                            content: Text('Đã đánh dấu tất cả là đã đọc'),
+                                            content: Text(
+                                              'Đã đánh dấu tất cả là đã đọc',
+                                            ),
                                             behavior: SnackBarBehavior.floating,
                                           ),
                                         );
                                       }
                                     } else if (value == 'mark_all_unread') {
-                                      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-                                      await DatabaseHelper.instance.markAllChaptersAsUnread(
-                                        mangaId: widget.mangaId,
-                                        userId: uid,
-                                      );
+                                      final uid = AuthService.safeUid;
+                                      await DatabaseHelper.instance
+                                          .markAllChaptersAsUnread(
+                                            mangaId: widget.mangaId,
+                                            userId: uid,
+                                          );
                                       await _fetchData();
                                       if (mounted) {
                                         messenger.hideCurrentSnackBar();
                                         messenger.showSnackBar(
                                           const SnackBar(
-                                            content: Text('Đã đánh dấu tất cả là chưa đọc'),
+                                            content: Text(
+                                              'Đã đánh dấu tất cả là chưa đọc',
+                                            ),
                                             behavior: SnackBarBehavior.floating,
                                           ),
                                         );
@@ -820,7 +951,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                         context,
                                         chapters: chapters,
                                         manga: manga,
-                                        currentChapterId: _history?.chapterId ?? _readerProgress?.chapterId,
+                                        currentChapterId:
+                                            _history?.chapterId ??
+                                            _readerProgress?.chapterId,
                                       );
                                       if (mounted) {
                                         _fetchData();
@@ -836,16 +969,16 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                     }
                                   },
                                   itemBuilder: (context) => [
-                                    const PopupMenuItem(
+                                    PopupMenuItem(
                                       value: 'share_to_forum',
                                       child: Row(
                                         children: [
                                           Icon(
                                             Icons.forum_outlined,
-                                            color: Colors.purpleAccent,
+                                            color: Theme.of(context).colorScheme.primary,
                                           ),
-                                          SizedBox(width: 12),
-                                          Text('Chia sẻ lên Diễn đàn'),
+                                          const SizedBox(width: 12),
+                                          const Text('Chia sẻ lên Diễn đàn'),
                                         ],
                                       ),
                                     ),
@@ -905,11 +1038,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                       value: 'download_latest_10',
                                       child: Row(
                                         children: [
-                                          const Icon(
+                                          Icon(
                                             Icons.download_for_offline_outlined,
-                                            color: Colors.orange,
+                                            color: theme.colorScheme.primary,
                                           ),
-                                          SizedBox(width: 12),
+                                          const SizedBox(width: 12),
                                           Text(
                                             'Tải 10 ${manga.contentType.unitLabel.toLowerCase()} mới nhất',
                                           ),
@@ -942,27 +1075,27 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               controller: _chapterSearchController,
                               autofocus: true,
                               textInputAction: TextInputAction.search,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface,
                                 fontSize: 13,
                               ),
                               decoration: InputDecoration(
                                 hintText:
                                     'Tìm nhanh số chương (ví dụ: 12, Chapter 50)...',
-                                hintStyle: const TextStyle(
-                                  color: Colors.white38,
+                                hintStyle: TextStyle(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                                   fontSize: 12,
                                 ),
-                                prefixIcon: const Icon(
+                                prefixIcon: Icon(
                                   Icons.search,
-                                  color: Colors.orangeAccent,
+                                  color: theme.colorScheme.primary,
                                   size: 18,
                                 ),
                                 suffixIcon: _chapterSearchQuery.isNotEmpty
                                     ? IconButton(
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.clear,
-                                          color: Colors.white54,
+                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                           size: 16,
                                         ),
                                         onPressed: () {
@@ -973,7 +1106,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                         },
                                       )
                                     : null,
-                                fillColor: Colors.white.withValues(alpha: 0.08),
+                                fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
                                 filled: true,
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
@@ -1010,8 +1143,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 count: totalCount,
                                 icon: Icons.all_inclusive_rounded,
                                 status: ChapterFilterStatus.all,
-                                isSelected: _selectedChapterFilter == ChapterFilterStatus.all,
-                                activeColor: Colors.blueAccent,
+                                isSelected:
+                                    _selectedChapterFilter ==
+                                    ChapterFilterStatus.all,
+                                activeColor: Theme.of(context).colorScheme.primary,
                               ),
                               const SizedBox(width: 8),
                               _buildChapterFilterChip(
@@ -1019,8 +1154,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 count: unreadCount,
                                 icon: Icons.mark_chat_unread_outlined,
                                 status: ChapterFilterStatus.unread,
-                                isSelected: _selectedChapterFilter == ChapterFilterStatus.unread,
-                                activeColor: Colors.orangeAccent,
+                                isSelected:
+                                    _selectedChapterFilter ==
+                                    ChapterFilterStatus.unread,
+                                activeColor: theme.colorScheme.primary,
                               ),
                               const SizedBox(width: 8),
                               _buildChapterFilterChip(
@@ -1028,7 +1165,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 count: downloadedCount,
                                 icon: Icons.download_done_rounded,
                                 status: ChapterFilterStatus.downloaded,
-                                isSelected: _selectedChapterFilter == ChapterFilterStatus.downloaded,
+                                isSelected:
+                                    _selectedChapterFilter ==
+                                    ChapterFilterStatus.downloaded,
                                 activeColor: Colors.greenAccent,
                               ),
                               const SizedBox(width: 8),
@@ -1037,7 +1176,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 count: bookmarkedCount,
                                 icon: Icons.bookmark_rounded,
                                 status: ChapterFilterStatus.bookmarked,
-                                isSelected: _selectedChapterFilter == ChapterFilterStatus.bookmarked,
+                                isSelected:
+                                    _selectedChapterFilter ==
+                                    ChapterFilterStatus.bookmarked,
                                 activeColor: Colors.amberAccent,
                               ),
                             ],
@@ -1081,32 +1222,51 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 _buildRecommendations(manga),
 
                 // Khoảng trống dưới cùng để không bị che bởi Bottom Dock
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 100 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                ),
               ],
             ),
 
             // Nút Back và Nút Like nổi trên Header
             Positioned(
-              top: 40,
-              left: 10,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => context.pop(),
+              top: MediaQuery.paddingOf(context).top + 8,
+              left: 12,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                  onPressed: () => context.pop(),
+                ),
               ),
             ),
             Positioned(
-              top: 40,
-              right: 10,
-              child: Row(
-                children: [
-                  // Nút Chia Sẻ Lên Diễn Đàn
-                  IconButton(
-                    icon: const Icon(Icons.share_rounded, color: Colors.white),
-                    tooltip: 'Chia sẻ lên Diễn đàn',
-                    onPressed: () => QuickShareToForumSheet.show(context, manga),
-                  ),
-                  // Nút Tải Chương Hàng Loạt (Bulk Download)
-                  IconButton(
+              top: MediaQuery.paddingOf(context).top + 8,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Row(
+                  children: [
+                    // Nút Chia Sẻ Lên Diễn Đàn
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.share_rounded, color: Colors.white, size: 20),
+                      tooltip: 'Chia sẻ lên Diễn đàn',
+                      onPressed: () =>
+                          QuickShareToForumSheet.show(context, manga),
+                    ),
+                    // Nút Tải Chương Hàng Loạt (Bulk Download)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.download, color: Colors.white),
                     tooltip: 'Tải chương hàng loạt',
                     onPressed: () async {
@@ -1114,7 +1274,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         context,
                         chapters: chapters,
                         manga: manga,
-                        currentChapterId: _history?.chapterId ?? _readerProgress?.chapterId,
+                        currentChapterId:
+                            _history?.chapterId ?? _readerProgress?.chapterId,
                       );
                       if (mounted) {
                         _fetchData();
@@ -1133,7 +1294,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               ? Icons.folder_special
                               : Icons.create_new_folder_outlined,
                           color: isInLibrary
-                              ? Colors.orangeAccent
+                              ? Theme.of(context).colorScheme.primary
                               : Colors.white,
                         ),
                         onPressed: () =>
@@ -1172,30 +1333,40 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             final confirm = await showDialog<bool>(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? theme.cardColor,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: const Text(
-                                  'Hủy Theo Dõi?',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                backgroundColor:
+                                    Theme.of(ctx).dialogTheme.backgroundColor ??
+                                    theme.cardColor,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                                content: const Text(
+                                title: Text(
+                                  'Hủy Theo Dõi?',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                content: Text(
                                   'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
-                                  style: TextStyle(color: Colors.white70),
+                                  style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
                                 ),
                                 actions: [
                                   TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(ctx, false),
-                                    child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text(
+                                      'Hủy',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
                                   ),
                                   ElevatedButton(
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.redAccent,
                                       foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
                                     ),
-                                    onPressed: () =>
-                                        Navigator.pop(ctx, true),
+                                    onPressed: () => Navigator.pop(ctx, true),
                                     child: const Text('Đồng ý'),
                                   ),
                                 ],
@@ -1204,7 +1375,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
                             if (confirm == true) {
                               try {
-                                await FollowService.instance.unfollowManga(widget.mangaId);
+                                await FollowService.instance.unfollowManga(
+                                  widget.mangaId,
+                                );
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -1215,7 +1388,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Lỗi hủy theo dõi: $e')),
+                                    SnackBar(
+                                      content: Text('Lỗi hủy theo dõi: $e'),
+                                    ),
                                   );
                                 }
                               }
@@ -1223,7 +1398,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           } else {
                             // Theo dõi
                             try {
-                              final cover = (manga.coverFileId.startsWith('/') ||
+                              final cover =
+                                  (manga.coverFileId.startsWith('/') ||
                                       manga.coverFileId.contains('\\'))
                                   ? manga.coverFileId
                                   : DriveService.instance.getThumbnailLink(
@@ -1245,7 +1421,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             } catch (e) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Lỗi theo dõi truyện: $e')),
+                                  SnackBar(
+                                    content: Text('Lỗi theo dõi truyện: $e'),
+                                  ),
                                 );
                               }
                             }
@@ -1280,9 +1458,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             onPressed: () async {
                               HapticFeedback.selectionClick();
                               try {
-                                final newState = await FollowService.instance.toggleNotification(widget.mangaId);
+                                final newState = await FollowService.instance
+                                    .toggleNotification(widget.mangaId);
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -1297,7 +1478,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               } catch (e) {
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Lỗi cập nhật thông báo: $e')),
+                                    SnackBar(
+                                      content: Text(
+                                        'Lỗi cập nhật thông báo: $e',
+                                      ),
+                                    ),
                                   );
                                 }
                               }
@@ -1310,6 +1495,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 ],
               ),
             ),
+          ),
 
             // Thanh công cụ dưới cùng (Bottom Dock) - Trạng thái đọc & Nút hành động
             Positioned(
@@ -1317,7 +1503,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               left: 0,
               right: 0,
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  10,
+                  16,
+                  10 + MediaQuery.paddingOf(context).bottom,
+                ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -1326,7 +1517,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       theme.scaffoldBackgroundColor, // Mờ dần theo nền
                       theme.scaffoldBackgroundColor.withValues(alpha: 0.0),
                     ],
-                    stops: const [0.6, 1.0],
+                    stops: const [0.7, 1.0],
                   ),
                 ),
                 child: Container(
@@ -1342,7 +1533,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: theme.dividerColor.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     children: [
@@ -1357,11 +1548,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                   ? '${_chapterTitleFor(_readerProgress!.chapterId)} • ${_formatDate(_readerProgress!.updatedAt)}'
                                   : _history != null
                                   ? '${_history!.chapterTitle ?? "Chương ${_history!.chapterId}"} • ${_formatDate(_history!.updatedAt)}'
-                                  : (_libraryStatus?.status == MangaReadingStatus.completed
-                                      ? 'Đã đọc xong toàn bộ'
-                                      : (chapters.isNotEmpty
-                                            ? 'Chưa đọc'
-                                            : 'Chưa có chương')),
+                                  : (_libraryStatus?.status ==
+                                            MangaReadingStatus.completed
+                                        ? 'Đã đọc xong toàn bộ'
+                                        : (chapters.isNotEmpty
+                                              ? 'Chưa đọc'
+                                              : 'Chưa có chương')),
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
@@ -1372,7 +1564,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           ],
                         ),
                       ),
-                      if ((_readerProgress != null || _history != null) && chapters.isNotEmpty) ...[
+                      if ((_readerProgress != null || _history != null) &&
+                          chapters.isNotEmpty) ...[
                         OutlinedButton(
                           onPressed: () async {
                             final firstId = _getFirstChapterId();
@@ -1386,21 +1579,26 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             }
                           },
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                            foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                            side: BorderSide(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
+                              horizontal: 10,
                               vertical: 8,
                             ),
                           ),
-                          child: const Text('Đọc từ đầu', style: TextStyle(fontSize: 12)),
+                          child: const Text(
+                            'Đọc từ đầu',
+                            style: TextStyle(fontSize: 11),
+                          ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                       ],
-                      ElevatedButton(
+                      ElevatedButton.icon(
                         onPressed: () async {
                           String? chapterIdToOpen;
                           int? targetPage;
@@ -1413,7 +1611,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             targetPage = _history!.lastPageIndex;
                           } else {
                             // Nếu chưa có lịch sử đọc cụ thể, ưu tiên mở chương chưa đọc đầu tiên
-                            chapterIdToOpen = _getNextUnreadChapterId() ?? _getFirstChapterId();
+                            chapterIdToOpen =
+                                _getNextUnreadChapterId() ??
+                                _getFirstChapterId();
                             targetPage = 0;
                           }
 
@@ -1430,28 +1630,36 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           }
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFF9800),
-                          foregroundColor: Colors.white,
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
                           ),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
+                            horizontal: 14,
                             vertical: 10,
                           ),
+                          elevation: 3,
                         ),
-                        child: Text(
+                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                        label: Text(
                           _readerProgress != null || _history != null
                               ? 'Đọc Tiếp'
                               : 'Bắt Đầu Đọc',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 4),
                       Stack(
                         clipBehavior: Clip.none,
                         children: [
                           IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
                             tooltip: 'Bookmark',
                             icon: Icon(
                               _bookmarks.isEmpty
@@ -1467,15 +1675,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           ),
                           if (_bookmarks.isNotEmpty)
                             Positioned(
-                              top: 3,
-                              right: 3,
+                              top: 2,
+                              right: 2,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 5,
                                   vertical: 1,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.orange,
+                                  color: theme.colorScheme.primary,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
@@ -1491,6 +1699,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         ],
                       ),
                       IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
                         tooltip: 'Trạng thái đọc',
                         icon: Icon(
                           _statusIcon(_libraryStatus?.status),
@@ -1525,6 +1739,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     required bool isSelected,
     required Color activeColor,
   }) {
+    final theme = Theme.of(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1541,12 +1756,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           decoration: BoxDecoration(
             color: isSelected
                 ? activeColor.withValues(alpha: 0.18)
-                : Colors.white.withValues(alpha: 0.05),
+                : theme.colorScheme.onSurface.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isSelected
                   ? activeColor
-                  : Colors.white.withValues(alpha: 0.12),
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.12),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -1556,13 +1771,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               Icon(
                 icon,
                 size: 14,
-                color: isSelected ? activeColor : Colors.white60,
+                color: isSelected ? activeColor : theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? activeColor : Colors.white70,
+                  color: isSelected ? activeColor : theme.colorScheme.onSurface.withValues(alpha: 0.8),
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
@@ -1573,13 +1788,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 decoration: BoxDecoration(
                   color: isSelected
                       ? activeColor.withValues(alpha: 0.35)
-                      : Colors.white.withValues(alpha: 0.1),
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$count',
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.white54,
+                    color: isSelected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1614,27 +1829,30 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.bookmark_outline_rounded,
                           size: 40,
-                          color: Colors.white38,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'Chưa có bookmark nào',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Nhấn bookmark trong lúc đọc để lưu trang yêu thích',
-                        style: TextStyle(fontSize: 12, color: Colors.white54),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                     ],
                   ),
@@ -1656,23 +1874,29 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           'Danh sách Bookmark (${_bookmarks.length})',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1, color: Colors.white12),
+                  Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.2)),
                   Flexible(
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: _bookmarks.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.1)),
                       itemBuilder: (context, index) {
                         final bookmark = _bookmarks[index];
-                        final hasNote = bookmark.note != null && bookmark.note!.trim().isNotEmpty;
+                        final hasNote =
+                            bookmark.note != null &&
+                            bookmark.note!.trim().isNotEmpty;
                         return ListTile(
-                          leading: const Icon(Icons.bookmark, color: Colors.amber),
+                          leading: const Icon(
+                            Icons.bookmark,
+                            color: Colors.amber,
+                          ),
                           title: Text(
                             _chapterTitleFor(bookmark.chapterId),
                             maxLines: 1,
@@ -1684,21 +1908,35 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             children: [
                               Text(
                                 'Trang ${bookmark.pageIndex + 1} • ${_formatDate(bookmark.updatedAt)}',
-                                style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontSize: 12,
+                                ),
                               ),
                               if (hasNote) ...[
                                 const SizedBox(height: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.amber.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                                    border: Border.all(
+                                      color: Colors.amber.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                    ),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Icon(Icons.sticky_note_2_outlined, color: Colors.amberAccent, size: 13),
+                                      const Icon(
+                                        Icons.sticky_note_2_outlined,
+                                        color: Colors.amberAccent,
+                                        size: 13,
+                                      ),
                                       const SizedBox(width: 4),
                                       Flexible(
                                         child: Text(
@@ -1722,20 +1960,33 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                tooltip: hasNote ? 'Sửa ghi chú' : 'Thêm ghi chú',
+                                tooltip: hasNote
+                                    ? 'Sửa ghi chú'
+                                    : 'Thêm ghi chú',
                                 icon: Icon(
-                                  hasNote ? Icons.edit_note : Icons.add_comment_outlined,
-                                  color: hasNote ? Colors.amberAccent : Colors.white60,
+                                  hasNote
+                                      ? Icons.edit_note
+                                      : Icons.add_comment_outlined,
+                                  color: hasNote
+                                      ? Colors.amberAccent
+                                      : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                   size: 22,
                                 ),
-                                onPressed: () => _editBookmarkNote(bookmark, setModalState),
+                                onPressed: () =>
+                                    _editBookmarkNote(bookmark, setModalState),
                               ),
                               IconButton(
                                 tooltip: 'Xóa bookmark',
-                                icon: const Icon(Icons.delete_outline, color: Colors.white60, size: 20),
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                  size: 20,
+                                ),
                                 onPressed: () async {
                                   HapticFeedback.lightImpact();
-                                  await DatabaseHelper.instance.deleteBookmark(bookmark.id);
+                                  await DatabaseHelper.instance.deleteBookmark(
+                                    bookmark.id,
+                                  );
                                   await _fetchBookmarks();
                                   setModalState(() {});
                                   if (mounted) setState(() {});
@@ -1774,7 +2025,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
+        backgroundColor:
+            Theme.of(dialogCtx).dialogTheme.backgroundColor ??
+            Theme.of(dialogCtx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -1782,7 +2035,11 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             const SizedBox(width: 8),
             Text(
               'Ghi chú (Trang ${bookmark.pageIndex + 1})',
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Theme.of(dialogCtx).colorScheme.onSurface,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -1792,19 +2049,29 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           children: [
             Text(
               _chapterTitleFor(bookmark.chapterId),
-              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: textController,
               autofocus: true,
               maxLines: 3,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(
+                color: Theme.of(dialogCtx).colorScheme.onSurface,
+                fontSize: 14,
+              ),
               decoration: InputDecoration(
                 hintText: 'Nhập ghi chú cho trang đánh dấu này...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                hintStyle: TextStyle(
+                  color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.4),
+                  fontSize: 12,
+                ),
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.08),
+                fillColor: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.06),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -1825,16 +2092,24 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 textController.clear();
                 Navigator.pop(dialogCtx, true);
               },
-              child: const Text('Xóa ghi chú', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'Xóa ghi chú',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber,
               foregroundColor: Colors.black87,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Lưu',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -1869,17 +2144,24 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             children: [
               ...MangaReadingStatus.values.map((status) {
                 final isSelected = _libraryStatus?.status == status;
-                final (label, icon, color) = LibraryStatusService.getStatusDisplay(status);
+                final (label, icon, color) =
+                    LibraryStatusService.getStatusDisplay(status);
                 return ListTile(
                   leading: Icon(
                     icon,
-                    color: isSelected ? color : Colors.white70,
+                    color: isSelected
+                        ? color
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                   title: Text(
                     label,
                     style: TextStyle(
-                      color: isSelected ? color : Colors.white,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? color
+                          : theme.colorScheme.onSurface,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                   trailing: isSelected ? Icon(Icons.check, color: color) : null,
@@ -1888,7 +2170,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               }),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.sell_outlined, color: Colors.purpleAccent),
+                leading: Icon(
+                  Icons.sell_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 title: const Text('Nhãn tùy chỉnh (Tags)'),
                 subtitle: Text(
                   (_libraryStatus?.tags.isNotEmpty ?? false)
@@ -1917,8 +2202,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
     // Nếu chọn Đã hoàn thành và có các chương chưa đọc, hỏi người dùng có muốn đánh dấu tất cả chương là đã đọc không
     if (selected == MangaReadingStatus.completed && _chapters.isNotEmpty) {
-      final unreadChapters =
-          _chapters.where((c) => !_readChapterIds.contains(c.id)).toList();
+      final unreadChapters = _chapters
+          .where((c) => !_readChapterIds.contains(c.id))
+          .toList();
       if (unreadChapters.isNotEmpty && mounted) {
         final markAll = await showDialog<bool>(
           context: context,
@@ -1929,15 +2215,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.done_all_rounded, color: Colors.greenAccent),
-                SizedBox(width: 8),
+                const Icon(Icons.done_all_rounded, color: Colors.greenAccent),
+                const SizedBox(width: 8),
                 Text(
                   'Đánh dấu toàn bộ chương?',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Theme.of(ctx).colorScheme.onSurface,
                     fontSize: 16,
                   ),
                 ),
@@ -1945,12 +2231,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             ),
             content: Text(
               'Bạn đã chọn "Đã xong". Bạn có muốn đánh dấu toàn bộ ${unreadChapters.length} chương chưa đọc là đã đọc không?',
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Không cần', style: TextStyle(color: Colors.grey)),
+                child: const Text(
+                  'Không cần',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
@@ -1971,7 +2260,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         );
 
         if (markAll == true && mounted) {
-          final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+          final uid = AuthService.safeUid;
           await DatabaseHelper.instance.markChaptersAsRead(
             mangaId: widget.mangaId,
             chapterIds: _chapters.map((c) => c.id).toList(),
@@ -2022,7 +2311,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (_manga == null) return;
 
     final isDownloadedList = await Future.wait(
-      chapters.map((c) => DownloadService.instance.isDownloaded(c.id, mangaId: widget.mangaId)),
+      chapters.map(
+        (c) => DownloadService.instance.isDownloaded(
+          c.id,
+          mangaId: widget.mangaId,
+        ),
+      ),
     );
 
     // Lưu metadata truyện 1 lần duy nhất trước vòng lặp để tránh ghi SQLite N lần
@@ -2085,12 +2379,20 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+        backgroundColor:
+            Theme.of(ctx).dialogTheme.backgroundColor ??
+            Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa tải xuống?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text(
+        title: Text(
+          'Xóa tải xuống?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
           'Bạn có chắc muốn xóa tất cả tải xuống của truyện này?',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
         ),
         actions: [
           TextButton(
@@ -2101,10 +2403,15 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Xóa',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -2113,7 +2420,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (confirm != true) return;
 
     final isDownloadedList = await Future.wait(
-      chapters.map((c) => DownloadService.instance.isDownloaded(c.id, mangaId: widget.mangaId)),
+      chapters.map(
+        (c) => DownloadService.instance.isDownloaded(
+          c.id,
+          mangaId: widget.mangaId,
+        ),
+      ),
     );
 
     final chaptersToDelete = [
@@ -2123,7 +2435,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
     if (chaptersToDelete.isNotEmpty) {
       await Future.wait(
-        chaptersToDelete.map((c) => DownloadService.instance.deleteDownload(c.id)),
+        chaptersToDelete.map(
+          (c) => DownloadService.instance.deleteDownload(c.id),
+        ),
       );
       await FolderService.deleteMangaFolder(
         widget.mangaId,
@@ -2135,7 +2449,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (mounted) {
       if (chaptersToDelete.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã xóa ${chaptersToDelete.length} chương tải xuống')),
+          SnackBar(
+            content: Text('Đã xóa ${chaptersToDelete.length} chương tải xuống'),
+          ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2174,14 +2490,14 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
                 child: Text(
                   'Có thể bạn sẽ thích',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -2227,9 +2543,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.75),
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.5), width: 0.8),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.75,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.orangeAccent
+                                                .withValues(alpha: 0.5),
+                                            width: 0.8,
+                                          ),
                                         ),
                                         child: const Text(
                                           'Chữ',
@@ -2249,9 +2573,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               rm.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.w500,
                                 height: 1.2,
                               ),
@@ -2285,7 +2609,10 @@ class _ReadingProgressBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = (totalCount > 0 ? readCount / totalCount : 0.0).clamp(0.0, 1.0);
+    final progress = (totalCount > 0 ? readCount / totalCount : 0.0).clamp(
+      0.0,
+      1.0,
+    );
     final percent = (progress * 100).round();
     final isCompleted = readCount >= totalCount;
 
@@ -2298,7 +2625,7 @@ class _ReadingProgressBanner extends StatelessWidget {
         border: Border.all(
           color: isCompleted
               ? Colors.greenAccent.withValues(alpha: 0.3)
-              : Colors.white.withValues(alpha: 0.07),
+              : theme.dividerColor.withValues(alpha: 0.15),
         ),
       ),
       child: Column(
@@ -2313,14 +2640,16 @@ class _ReadingProgressBanner extends StatelessWidget {
                     isCompleted
                         ? Icons.check_circle_rounded
                         : Icons.auto_stories_rounded,
-                    color: isCompleted ? Colors.greenAccent : Colors.blueAccent,
+                    color: isCompleted ? Colors.greenAccent : theme.colorScheme.primary,
                     size: 16,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     isCompleted ? 'Đã đọc xong' : 'Tiến độ đọc',
                     style: TextStyle(
-                      color: isCompleted ? Colors.greenAccent : Colors.white70,
+                      color: isCompleted
+                          ? Colors.greenAccent
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2330,7 +2659,7 @@ class _ReadingProgressBanner extends StatelessWidget {
               Text(
                 '$readCount/$totalCount chương • $percent%',
                 style: TextStyle(
-                  color: isCompleted ? Colors.greenAccent : Colors.white,
+                  color: isCompleted ? Colors.greenAccent : theme.colorScheme.onSurface,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -2343,9 +2672,9 @@ class _ReadingProgressBanner extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 5,
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
               valueColor: AlwaysStoppedAnimation<Color>(
-                isCompleted ? Colors.greenAccent : Colors.blueAccent,
+                isCompleted ? Colors.greenAccent : theme.colorScheme.primary,
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 
 import 'dart:collection';
+import 'package:flutter/foundation.dart';
 
 import 'epub_models.dart';
 import 'epub_parser.dart';
@@ -22,8 +23,9 @@ class EpubLazyChapterLoader {
   }) : assert(maxCachedChapters > 0) {
     _parser = parser ??
         ((chapter) async {
-          // Decode directly using the file path on demand.
-          return EpubParser.parseChapter(
+          // Decode directly using the file path on demand in a background isolate
+          return compute(
+            EpubParser.parseChapter,
             EpubChapterParseArgs(path: path, chapter: chapter),
           );
         });

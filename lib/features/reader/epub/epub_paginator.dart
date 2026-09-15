@@ -167,6 +167,94 @@ class EpubPaginator {
     return _buildSpanTree(block.spans ?? const [], baseStyle);
   }
 
+  static TextSpan buildHighlightedTextSpan(
+    EpubBlock block,
+    TextStyle baseStyle, {
+    int? sentenceStart,
+    int? sentenceEnd,
+    int? wordStart,
+    int? wordEnd,
+    Color sentenceHighlightColor = const Color(0x333B82F6),
+    Color wordHighlightColor = const Color(0x993B82F6),
+  }) {
+    final spans = block.spans;
+    if (spans == null || spans.isEmpty) {
+      if (block.text != null && block.text!.isNotEmpty) {
+        return buildHighlightedTextSpan(
+          EpubBlock(type: block.type, spans: [EpubSpan(text: block.text!)]),
+          baseStyle,
+          sentenceStart: sentenceStart,
+          sentenceEnd: sentenceEnd,
+          wordStart: wordStart,
+          wordEnd: wordEnd,
+          sentenceHighlightColor: sentenceHighlightColor,
+          wordHighlightColor: wordHighlightColor,
+        );
+      }
+      return TextSpan(style: baseStyle);
+    }
+
+    if (sentenceStart == null || sentenceEnd == null) {
+      return buildTextSpan(block, baseStyle);
+    }
+
+    final children = <TextSpan>[];
+    int currOffset = 0;
+
+    for (final span in spans) {
+      final spanStart = currOffset;
+      final spanEnd = currOffset + span.text.length;
+      currOffset = spanEnd;
+
+      final points = <int>{0, span.text.length};
+      for (final p in [sentenceStart, sentenceEnd, wordStart, wordEnd]) {
+        if (p != null && p >= spanStart && p <= spanEnd) {
+          points.add(p - spanStart);
+        }
+      }
+      final sortedPoints = points.toList()..sort();
+
+      for (var i = 0; i < sortedPoints.length - 1; i++) {
+        final p0 = sortedPoints[i];
+        final p1 = sortedPoints[i + 1];
+        if (p0 == p1) continue;
+
+        final subText = span.text.substring(p0, p1);
+        final absStart = spanStart + p0;
+        final absEnd = spanStart + p1;
+
+        final isWord = wordStart != null &&
+            wordEnd != null &&
+            absStart >= wordStart &&
+            absEnd <= wordEnd;
+        final isSentence = absStart >= sentenceStart && absEnd <= sentenceEnd;
+
+        var pieceStyle = baseStyle.copyWith(
+          fontWeight: span.bold ? FontWeight.bold : baseStyle.fontWeight,
+          fontStyle: span.italic ? FontStyle.italic : baseStyle.fontStyle,
+          decoration: span.underline
+              ? TextDecoration.underline
+              : baseStyle.decoration,
+        );
+
+        if (isWord) {
+          pieceStyle = pieceStyle.copyWith(
+            backgroundColor: wordHighlightColor,
+            fontWeight: FontWeight.bold,
+          );
+        } else if (isSentence) {
+          pieceStyle = pieceStyle.copyWith(
+            backgroundColor: sentenceHighlightColor,
+          );
+        }
+
+        children.add(TextSpan(text: subText, style: pieceStyle));
+      }
+    }
+
+    return TextSpan(style: baseStyle, children: children);
+  }
+
   static TextPainter _createTextPainter(
     List<EpubSpan> spans,
     TextStyle baseStyle,

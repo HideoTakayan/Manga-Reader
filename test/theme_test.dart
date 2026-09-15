@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_reader/core/theme.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('AppTheme & Theme Engine Tests', () {
     test('AppThemeState defaults to Dark Charcoal with no custom accent and pure black false', () {
       const state = AppThemeState();

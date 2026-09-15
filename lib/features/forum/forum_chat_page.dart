@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/firebase_forum_repository.dart';
@@ -32,7 +33,6 @@ class _ForumChatPageState extends State<ForumChatPage> {
   bool _isSending = false;
   bool _isInitialLoading = true;
   bool _showEmojiPicker = false;
-  String? _gifUrl;
   File? _imageFile;
   ForumMessage? _replyingTo;
   Timer? _muteTimer;
@@ -55,7 +55,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
     _initUserStream();
     _scrollController.addListener(_onScroll);
     _focusNode.addListener(() {
-      if (_focusNode.hasFocus) {
+      if (_focusNode.hasFocus && mounted) {
         setState(() {
           _showEmojiPicker = false;
         });
@@ -186,6 +186,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     // ListView is reversed, so scrolling to bottom of screen means scrolling to maxScrollExtent
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -195,7 +196,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty && _gifUrl == null && _imageFile == null) return;
+    if (text.isEmpty && _imageFile == null) return;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -205,6 +206,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() => _isSending = true);
 
     final authorName = user.displayName?.trim().isNotEmpty == true
@@ -217,14 +219,13 @@ class _ForumChatPageState extends State<ForumChatPage> {
         authorName: authorName,
         authorAvatar: user.photoURL ?? '',
         body: text,
-        gifUrl: _gifUrl,
         imageFile: _imageFile,
         replyToMessageId: _replyingTo?.id,
         replyToUserId: _replyingTo?.authorId,
         replyToAuthorName: _replyingTo?.authorName,
         replyToBody: _replyingTo?.body.isNotEmpty == true
             ? _replyingTo!.body
-            : (_replyingTo?.gifUrl != null || _replyingTo?.imageUrl != null
+            : (_replyingTo?.imageUrl != null
                 ? 'Hình ảnh/GIF'
                 : null),
       );
@@ -232,15 +233,16 @@ class _ForumChatPageState extends State<ForumChatPage> {
       if (mounted) {
         _messageController.clear();
         setState(() {
-          _gifUrl = null;
           _imageFile = null;
           _replyingTo = null;
         });
-        _scrollController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0.0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -313,11 +315,10 @@ class _ForumChatPageState extends State<ForumChatPage> {
         }
 
         if (isMuted || isBanned) {
-          if (_showEmojiPicker || _gifUrl != null) {
+          if (_showEmojiPicker) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
-              if (_gifUrl != null) setState(() => _gifUrl = null);
             });
           }
         }
@@ -331,7 +332,14 @@ class _ForumChatPageState extends State<ForumChatPage> {
   }
 
   Widget _buildChatLayout(User? user, bool isMuted, DateTime? mutedUntil, bool isBanned) {
-    return Column(
+    return PopScope(
+      canPop: !_showEmojiPicker,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _showEmojiPicker) {
+          setState(() => _showEmojiPicker = false);
+        }
+      },
+      child: Column(
       children: [
         Expanded(
           child: _isInitialLoading
@@ -344,13 +352,13 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       Container(
                         padding: const EdgeInsets.all(18),
                         decoration: BoxDecoration(
-                          color: Colors.blueAccent.withValues(alpha: 0.12),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.forum_outlined,
                           size: 44,
-                          color: Colors.blueAccent,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -626,29 +634,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       ),
                     ],
                   ),
-                if (_gifUrl != null)
-                  Stack(
-                    children: [
-                      Container(
-                        height: 100,
-                        width: double.infinity,
-                        margin: const EdgeInsets.all(8),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(_gifUrl!, fit: BoxFit.contain),
-                        ),
-                      ),
-                      Positioned(
-                        top: 12,
-                        right: 12,
-                        child: IconButton(
-                          icon: const Icon(Icons.cancel),
-                          color: Colors.red,
-                          onPressed: () => setState(() => _gifUrl = null),
-                        ),
-                      ),
-                    ],
-                  ),
+
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -668,11 +654,6 @@ class _ForumChatPageState extends State<ForumChatPage> {
                             } else {
                               _focusNode.requestFocus();
                             }
-                          });
-                        },
-                        onGifSelected: (url) {
-                          setState(() {
-                            _gifUrl = url;
                           });
                         },
                         onImageSelected: (file) {
@@ -725,7 +706,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                                 ),
                               )
                             : const Icon(Icons.send_rounded),
-                        color: const Color(0xFFFF5252),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ],
                   ),
@@ -740,6 +721,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
           ),
         ),
       ],
+    ),
     );
   }
 }

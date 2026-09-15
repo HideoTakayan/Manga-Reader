@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Hằng số thiết kế chuẩn (Design Tokens) của ứng dụng
@@ -20,7 +21,6 @@ class AppStyle {
 enum AppThemeMode {
   darkCharcoal,    // Mặc định (Than tối / Charcoal Dark)
   warmAmber,       // Hoàng Hôn (Giấy ấm - Lọc ánh sáng xanh bảo vệ mắt)
-  amoledBlack,     // Đen Tuyệt Đối (AMOLED / Siêu tiết kiệm pin)
   midnightForest,  // Rừng Đêm (Xanh rêu dịu thị giác / Forest Pine)
   midnightNavy,    // Đại Dương (Xanh biển sâu dịu mắt / Deep Navy)
 }
@@ -29,25 +29,36 @@ extension AppThemeModeX on AppThemeMode {
   String get id => name;
 
   String get title => switch (this) {
-    AppThemeMode.darkCharcoal => 'Mặc định (Than tối)',
-    AppThemeMode.warmAmber => 'Hoàng Hôn (Giấy ấm)',
-    AppThemeMode.amoledBlack => 'Đen Tuyệt Đối (AMOLED)',
-    AppThemeMode.midnightForest => 'Rừng Đêm (Xanh rêu)',
-    AppThemeMode.midnightNavy => 'Đại Dương (Biển đêm)',
+    AppThemeMode.darkCharcoal => 'Charcoal',
+    AppThemeMode.warmAmber => 'Amber Dusk',
+    AppThemeMode.midnightForest => 'Forest Night',
+    AppThemeMode.midnightNavy => 'Deep Ocean',
+  };
+
+  String get subtitle => switch (this) {
+    AppThemeMode.darkCharcoal => 'Tối chuẩn',
+    AppThemeMode.warmAmber => 'Hoàng hôn',
+    AppThemeMode.midnightForest => 'Rừng xanh',
+    AppThemeMode.midnightNavy => 'Biển đêm',
   };
 
   String get description => switch (this) {
-    AppThemeMode.darkCharcoal => 'Tối tiêu chuẩn, độ tương phản sắc nét, cân bằng thị giác',
-    AppThemeMode.warmAmber => 'Tone ấm vàng nâu lọc ánh sáng xanh, cực êm dịu khi đọc đêm',
-    AppThemeMode.amoledBlack => 'Đen 100% tắt điểm ảnh màn hình OLED, siêu tiết kiệm pin',
-    AppThemeMode.midnightForest => 'Tone xanh rêu tự nhiên, làm dịu căng thẳng thần kinh mắt',
-    AppThemeMode.midnightNavy => 'Tone xanh biển đêm sâu lắng, hiện đại và sang trọng',
+    AppThemeMode.darkCharcoal => 'Nền than tối tiêu chuẩn · Độ tương phản sắc nét · Phù hợp mọi điều kiện ánh sáng',
+    AppThemeMode.warmAmber => 'Lọc ánh sáng xanh · Tone vàng nâu dịu mắt · Lý tưởng để đọc ban đêm',
+    AppThemeMode.midnightForest => 'Xanh rêu tự nhiên · Giảm mỏi mắt hiệu quả · Thư giãn thần kinh thị giác',
+    AppThemeMode.midnightNavy => 'Xanh dương đêm sâu · Cực kỳ hiện đại · Sang trọng và tinh tế',
+  };
+
+  List<String> get tags => switch (this) {
+    AppThemeMode.darkCharcoal => ['Mặc định'],
+    AppThemeMode.warmAmber => ['Bảo vệ mắt', 'Ban đêm'],
+    AppThemeMode.midnightForest => ['Bảo vệ mắt'],
+    AppThemeMode.midnightNavy => ['Cao cấp'],
   };
 
   IconData get icon => switch (this) {
     AppThemeMode.darkCharcoal => Icons.nightlight_round,
     AppThemeMode.warmAmber => Icons.wb_twilight_rounded,
-    AppThemeMode.amoledBlack => Icons.contrast_rounded,
     AppThemeMode.midnightForest => Icons.forest_rounded,
     AppThemeMode.midnightNavy => Icons.water_drop_rounded,
   };
@@ -55,7 +66,6 @@ extension AppThemeModeX on AppThemeMode {
   Color get primaryColor => switch (this) {
     AppThemeMode.darkCharcoal => const Color(0xFFFF5252),
     AppThemeMode.warmAmber => const Color(0xFFFF9800),
-    AppThemeMode.amoledBlack => const Color(0xFFFF3D00),
     AppThemeMode.midnightForest => const Color(0xFF10B981),
     AppThemeMode.midnightNavy => const Color(0xFF38BDF8),
   };
@@ -63,7 +73,6 @@ extension AppThemeModeX on AppThemeMode {
   Color get backgroundColor => switch (this) {
     AppThemeMode.darkCharcoal => const Color(0xFF121212),
     AppThemeMode.warmAmber => const Color(0xFF181310),
-    AppThemeMode.amoledBlack => const Color(0xFF000000),
     AppThemeMode.midnightForest => const Color(0xFF0B1412),
     AppThemeMode.midnightNavy => const Color(0xFF0A111C),
   };
@@ -71,7 +80,6 @@ extension AppThemeModeX on AppThemeMode {
   Color get cardColor => switch (this) {
     AppThemeMode.darkCharcoal => const Color(0xFF1E1E1E),
     AppThemeMode.warmAmber => const Color(0xFF241D17),
-    AppThemeMode.amoledBlack => const Color(0xFF121212),
     AppThemeMode.midnightForest => const Color(0xFF12201D),
     AppThemeMode.midnightNavy => const Color(0xFF101C2E),
   };
@@ -79,7 +87,6 @@ extension AppThemeModeX on AppThemeMode {
   Color get surfaceHighlight => switch (this) {
     AppThemeMode.darkCharcoal => const Color(0xFF2C2C2E),
     AppThemeMode.warmAmber => const Color(0xFF332920),
-    AppThemeMode.amoledBlack => const Color(0xFF1E1E1E),
     AppThemeMode.midnightForest => const Color(0xFF1B2E2A),
     AppThemeMode.midnightNavy => const Color(0xFF1A2A42),
   };
@@ -98,14 +105,14 @@ class AppAccentColor {
   });
 
   static const List<AppAccentColor> presets = [
-    AppAccentColor(id: 'crimson', label: 'Đỏ Anime', color: Color(0xFFFF334B)),
-    AppAccentColor(id: 'cyberpunk', label: 'Tím Cyberpunk', color: Color(0xFFA855F7)),
-    AppAccentColor(id: 'cyan', label: 'Băng Tuyết (Cyan)', color: Color(0xFF00E5FF)),
-    AppAccentColor(id: 'emerald', label: 'Ngọc Lục Bảo', color: Color(0xFF10B981)),
-    AppAccentColor(id: 'sakura', label: 'Hồng Sakura', color: Color(0xFFEC4899)),
-    AppAccentColor(id: 'amber', label: 'Hoàng Kim (Gold)', color: Color(0xFFF59E0B)),
-    AppAccentColor(id: 'coral', label: 'Cam San Hô', color: Color(0xFFFF6D00)),
-    AppAccentColor(id: 'azure', label: 'Xanh Lam Sâu', color: Color(0xFF38BDF8)),
+    AppAccentColor(id: 'crimson',   label: 'Crimson',   color: Color(0xFFFF334B)),
+    AppAccentColor(id: 'violet',    label: 'Violet',    color: Color(0xFFA855F7)),
+    AppAccentColor(id: 'cyan',      label: 'Cyan',      color: Color(0xFF00E5FF)),
+    AppAccentColor(id: 'emerald',   label: 'Emerald',   color: Color(0xFF10B981)),
+    AppAccentColor(id: 'sakura',    label: 'Sakura',    color: Color(0xFFEC4899)),
+    AppAccentColor(id: 'amber',     label: 'Amber',     color: Color(0xFFF59E0B)),
+    AppAccentColor(id: 'coral',     label: 'Coral',     color: Color(0xFFFF6D00)),
+    AppAccentColor(id: 'azure',     label: 'Azure',     color: Color(0xFF38BDF8)),
   ];
 }
 
@@ -241,29 +248,49 @@ final themeProvider = StateNotifierProvider<ThemeNotifier, AppThemeState>((ref) 
 // Cấu hình giao diện (Theme) chung cho ứng dụng
 class AppTheme {
   /// Sinh ThemeData tương ứng với AppThemeState được chọn
+  
+  static TextStyle _getTextStyle(String? fontFamily, {Color? color, double? fontSize, FontWeight? fontWeight}) {
+    if (fontFamily == null || fontFamily == 'Default') {
+      return GoogleFonts.nunito(
+        color: color,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+      );
+    }
+    return TextStyle(
+      fontFamily: fontFamily,
+      color: color,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+    );
+  }
+
   static ThemeData getTheme(AppThemeState themeState) {
     final bg = themeState.backgroundColor;
     final card = themeState.cardColor;
     final primary = themeState.primaryColor;
     final highlight = themeState.surfaceHighlight;
 
+    final onPrimary = primary.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+
     return ThemeData(
       brightness: Brightness.dark,
       useMaterial3: true,
-      fontFamily: themeState.fontFamily == 'Default' ? null : themeState.fontFamily,
+      fontFamily: themeState.fontFamily == 'Default' ? GoogleFonts.nunito().fontFamily : themeState.fontFamily,
       scaffoldBackgroundColor: bg,
       colorScheme: ColorScheme.dark(
         primary: primary,
         secondary: primary,
         surface: card,
-        onPrimary: Colors.white,
+        onPrimary: onPrimary,
+        onSecondary: onPrimary,
         onSurface: Colors.white,
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: bg,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: const TextStyle(
+        titleTextStyle: _getTextStyle(themeState.fontFamily, 
           color: Colors.white,
           fontSize: 20,
           fontWeight: FontWeight.bold,
@@ -280,7 +307,7 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: highlight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        titleTextStyle: const TextStyle(
+        titleTextStyle: _getTextStyle(themeState.fontFamily, 
           color: Colors.white,
           fontSize: 18,
           fontWeight: FontWeight.bold,
@@ -289,6 +316,7 @@ class AppTheme {
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: card,
         surfaceTintColor: Colors.transparent,
+        constraints: const BoxConstraints(maxWidth: 600),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -296,19 +324,19 @@ class AppTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(color: Colors.white, fontSize: 14),
+        textStyle: _getTextStyle(themeState.fontFamily, color: Colors.white, fontSize: 14),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: highlight,
-        contentTextStyle: const TextStyle(color: Colors.white, fontSize: 14),
+        contentTextStyle: _getTextStyle(themeState.fontFamily, color: Colors.white, fontSize: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.05),
-        hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-        labelStyle: const TextStyle(color: Colors.white70),
+        hintStyle: _getTextStyle(themeState.fontFamily, color: Colors.white38, fontSize: 14),
+        labelStyle: _getTextStyle(themeState.fontFamily, color: Colors.white70),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppStyle.radiusMedium),
@@ -376,18 +404,20 @@ class AppTheme {
           ),
         ),
       ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-        displayMedium: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-        displaySmall: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-        headlineMedium: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
-        titleLarge: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-        titleMedium: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
-        titleSmall: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-        bodyLarge: TextStyle(color: Colors.white, fontSize: 16),
-        bodyMedium: TextStyle(color: Colors.white70, fontSize: 14),
-        bodySmall: TextStyle(color: Colors.white54, fontSize: 12),
-        labelLarge: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+      textTheme: GoogleFonts.nunitoTextTheme(
+        const TextTheme(
+          displayLarge: TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.bold),
+          displayMedium: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold),
+          displaySmall: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+          headlineMedium: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+          titleLarge: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+          titleMedium: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+          titleSmall: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+          bodyLarge: TextStyle(color: Colors.white, fontSize: 16),
+          bodyMedium: TextStyle(color: Colors.white70, fontSize: 14),
+          bodySmall: TextStyle(color: Colors.white54, fontSize: 12),
+          labelLarge: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: card,

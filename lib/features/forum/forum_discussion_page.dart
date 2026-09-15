@@ -61,6 +61,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     _searchDebounce?.cancel();
@@ -134,6 +135,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     if (_searchQuery.isNotEmpty) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -227,7 +229,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                 }
 
                 return Container(
-                  height: 42,
+                  height: 44,
                   color: Theme.of(context).cardColor.withValues(alpha: 0.6),
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: ListView(
@@ -238,6 +240,8 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: ChoiceChip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           label: const Text('Tất cả'),
                           selected: _selectedTag == null,
                           selectedColor: primary.withValues(alpha: 0.22),
@@ -258,6 +262,8 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             label: Text('#$_selectedTag'),
                             selected: true,
                             selectedColor: primary.withValues(alpha: 0.22),
@@ -277,6 +283,8 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             label: Text('#$tag'),
                             selected: isSelected,
                             selectedColor: primary.withValues(alpha: 0.22),
@@ -359,10 +367,10 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                 Container(
                                   padding: const EdgeInsets.all(18),
                                   decoration: BoxDecoration(
-                                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                                    color: primary.withValues(alpha: 0.12),
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                                      color: primary.withValues(alpha: 0.25),
                                       width: 1.5,
                                     ),
                                   ),
@@ -371,7 +379,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                         ? Icons.forum_outlined
                                         : Icons.search_off_rounded,
                                     size: 44,
-                                    color: Colors.blueAccent,
+                                    color: primary,
                                   ),
                                 ),
                                 const SizedBox(height: 16),
@@ -412,7 +420,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                     icon: const Icon(Icons.edit_rounded, size: 18),
                                     label: const Text('Tạo bài viết đầu tiên', style: TextStyle(fontWeight: FontWeight.bold)),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.orange,
+                                      backgroundColor: primary,
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

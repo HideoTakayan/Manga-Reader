@@ -113,8 +113,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
             onPressed: () => context.pop(),
           ),
         ),
-        body: const Center(
-          child: CircularProgressIndicator(color: Colors.blueAccent),
+        body: Center(
+          child: CircularProgressIndicator(color: theme.colorScheme.primary),
         ),
       );
     }
@@ -139,33 +139,36 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.25),
                       width: 1.5,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.group_off_rounded,
                     size: 52,
-                    color: Colors.blueAccent,
+                    color: theme.colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Không tìm thấy thông tin nhóm dịch',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: theme.colorScheme.onSurface,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 13,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -174,8 +177,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Thử lại'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    foregroundColor: Colors.white,
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -199,7 +202,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
       backgroundColor: theme.scaffoldBackgroundColor,
       body: RefreshIndicator(
         onRefresh: _loadGroupData,
-        color: Colors.blueAccent,
+        color: theme.colorScheme.primary,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
           slivers: [
@@ -209,7 +212,10 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
               pinned: true,
               backgroundColor: theme.cardColor,
               leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                icon: Icon(
+                  Icons.arrow_back_ios_new_rounded,
+                  color: theme.colorScheme.onSurface,
+                ),
                 onPressed: () => context.pop(),
               ),
               flexibleSpace: FlexibleSpaceBar(
@@ -223,7 +229,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.blueAccent.withValues(alpha: 0.3),
+                            theme.colorScheme.primary.withValues(alpha: 0.3),
                             theme.scaffoldBackgroundColor,
                           ],
                         ),
@@ -237,11 +243,11 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                         children: [
                           CircleAvatar(
                             radius: 36,
-                            backgroundColor: Colors.blueAccent.withValues(alpha: 0.2),
-                            child: const Icon(
+                            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.2),
+                            child: Icon(
                               Icons.groups_2_rounded,
                               size: 40,
-                              color: Colors.blueAccent,
+                              color: theme.colorScheme.primary,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -252,8 +258,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                               children: [
                                 Text(
                                   _group!.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface,
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -268,11 +274,18 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.people_outline, size: 14, color: Colors.white60),
+                                        Icon(
+                                          Icons.people_outline,
+                                          size: 14,
+                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           '${_group!.members.length} thành viên',
-                                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                          style: TextStyle(
+                                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -287,7 +300,10 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                             const SizedBox(width: 4),
                                             Text(
                                               '$count theo dõi',
-                                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                              style: TextStyle(
+                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                                fontSize: 12,
+                                              ),
                                             ),
                                           ],
                                         );
@@ -305,8 +321,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                       child: isFollowing
                                           ? OutlinedButton.icon(
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: Colors.blueAccent,
-                                                side: const BorderSide(color: Colors.blueAccent),
+                                                foregroundColor: theme.colorScheme.primary,
+                                                side: BorderSide(color: theme.colorScheme.primary),
                                                 padding: const EdgeInsets.symmetric(horizontal: 12),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius: BorderRadius.circular(20),
@@ -332,8 +348,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                             )
                                           : ElevatedButton.icon(
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.blueAccent,
-                                                foregroundColor: Colors.white,
+                                                backgroundColor: theme.colorScheme.primary,
+                                                foregroundColor: theme.colorScheme.onPrimary,
                                                 padding: const EdgeInsets.symmetric(horizontal: 12),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius: BorderRadius.circular(20),
@@ -389,19 +405,19 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                         decoration: BoxDecoration(
                           color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
-                                Icon(Icons.info_outline, size: 16, color: Colors.blueAccent),
-                                SizedBox(width: 6),
+                                Icon(Icons.info_outline, size: 16, color: theme.colorScheme.primary),
+                                const SizedBox(width: 6),
                                 Text(
                                   'Giới thiệu nhóm',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: theme.colorScheme.onSurface,
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -411,8 +427,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                             const SizedBox(height: 8),
                             Text(
                               _group!.description,
-                              style: const TextStyle(
-                                color: Colors.white70,
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                                 fontSize: 13,
                                 height: 1.4,
                               ),
@@ -426,7 +442,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                     // Stats Ribbon
                     Row(
                       children: [
-                        _buildStatPill('Đầu truyện', '${_allMangas.length}', Icons.auto_stories, Colors.blueAccent),
+                        _buildStatPill('Đầu truyện', '${_allMangas.length}', Icons.auto_stories, theme.colorScheme.primary),
                         const SizedBox(width: 10),
                         _buildStatPill('Lượt xem', _formatCount(totalViews), Icons.remove_red_eye_outlined, Colors.orangeAccent),
                         const SizedBox(width: 10),
@@ -442,31 +458,31 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                         color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(19),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.1),
+                          color: theme.dividerColor.withValues(alpha: 0.15),
                         ),
                       ),
                       child: TextField(
                         controller: _searchController,
                         style:
-                            const TextStyle(fontSize: 13, color: Colors.white),
+                            TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
                           hintText: 'Tìm truyện của nhóm...',
-                          hintStyle: const TextStyle(
-                            color: Colors.white38,
+                          hintStyle: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                             fontSize: 13,
                           ),
-                          prefixIcon: const Icon(
+                          prefixIcon: Icon(
                             Icons.search,
                             size: 16,
-                            color: Colors.white54,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                           ),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.clear,
                                     size: 14,
-                                    color: Colors.white54,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                                   ),
                                   onPressed: () {
                                     _searchController.clear();
@@ -502,8 +518,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                       children: [
                         Text(
                           'Truyện Đã Dịch (${_filteredMangas.length})',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -537,17 +553,17 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                         Container(
                           padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
-                            color: Colors.blueAccent.withValues(alpha: 0.1),
+                            color: theme.colorScheme.primary.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: Colors.blueAccent.withValues(alpha: 0.2),
+                              color: theme.colorScheme.primary.withValues(alpha: 0.2),
                               width: 1.5,
                             ),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.auto_stories_outlined,
                             size: 42,
-                            color: Colors.blueAccent,
+                            color: theme.colorScheme.primary,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -555,8 +571,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                           _searchQuery.isNotEmpty
                               ? 'Không tìm thấy bộ truyện phù hợp'
                               : 'Chưa có truyện nào trong mục này',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
                           ),
@@ -567,7 +583,10 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                           _searchQuery.isNotEmpty
                               ? 'Hãy thử tìm kiếm với từ khóa khác.'
                               : 'Nhóm dịch chưa đăng tải bộ truyện nào theo danh mục đã chọn.',
-                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 13,
+                          ),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -601,13 +620,14 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
   }
 
   Widget _buildStatPill(String label, String value, IconData icon, Color color) {
+    final theme = Theme.of(context);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
         ),
         child: Column(
           children: [
@@ -615,15 +635,18 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
             const SizedBox(height: 4),
             Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: theme.colorScheme.onSurface,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),
             ),
             Text(
               label,
-              style: const TextStyle(color: Colors.white54, fontSize: 10),
+              style: TextStyle(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: 10,
+              ),
             ),
           ],
         ),
@@ -632,6 +655,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
   }
 
   Widget _buildFilterChip(String label, MangaContentType? type) {
+    final theme = Theme.of(context);
     final isSelected = _selectedTypeFilter == type;
     return GestureDetector(
       onTap: () {
@@ -643,16 +667,16 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blueAccent : Colors.white.withValues(alpha: 0.08),
+          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.blueAccent : Colors.white.withValues(alpha: 0.12),
+            color: isSelected ? theme.colorScheme.primary : theme.dividerColor.withValues(alpha: 0.15),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
+            color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
@@ -668,15 +692,16 @@ class _GroupMangaItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () {
         context.push('/detail/${manga.id}', extra: manga);
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.2),
@@ -726,8 +751,8 @@ class _GroupMangaItemCard extends StatelessWidget {
                 children: [
                   Text(
                     manga.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
@@ -737,7 +762,10 @@ class _GroupMangaItemCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     manga.author.isNotEmpty ? manga.author : 'Không rõ tác giả',
-                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 11,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

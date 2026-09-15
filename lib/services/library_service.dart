@@ -8,7 +8,17 @@ class _ValueStreamController<T> {
 
   _ValueStreamController(this.value);
 
-  Stream<T> get stream => _controller.stream;
+  Stream<T> get stream {
+    return Stream<T>.multi((multiController) {
+      multiController.add(value);
+      final sub = _controller.stream.listen(
+        multiController.add,
+        onError: multiController.addError,
+        onDone: multiController.close,
+      );
+      multiController.onCancel = sub.cancel;
+    });
+  }
 
   void add(T newValue) {
     value = newValue;
@@ -65,18 +75,24 @@ class LibraryService {
   List<String> get currentCategories => _categoriesController.value;
 
   Future<void> _refreshCategories() async {
-    final db = await _dbHelper.database;
-    final maps = await db.query('lib_categories', orderBy: 'sortIndex ASC');
-    final cats = maps
-        .map((m) => _readString(m, 'name'))
-        .where((name) => name.isNotEmpty)
-        .toList();
-    if (cats.isEmpty) {
-      // Auto-tạo category "Mặc định" nếu user xóa hết — đảm bảo có ít nhất 1 category
-      await addCategory('Mặc định');
-      return _refreshCategories(); // Gọi lại để emit category mới
+    try {
+      final db = await _dbHelper.database;
+      final maps = await db.query('lib_categories', orderBy: 'sortIndex ASC');
+      final cats = maps
+          .map((m) => _readString(m, 'name'))
+          .where((name) => name.isNotEmpty)
+          .toList();
+      if (cats.isEmpty) {
+        // Auto-tạo category "Mặc định" nếu user xóa hết — đảm bảo có ít nhất 1 category
+        await addCategory('Mặc định');
+        return _refreshCategories(); // Gọi lại để emit category mới
+      }
+      _categoriesController.add(cats);
+    } catch (_) {
+      if (_categoriesController.value.isEmpty) {
+        _categoriesController.add(['Mặc định']);
+      }
     }
-    _categoriesController.add(cats);
   }
 
   Future<void> addCategory(String name) async {
@@ -143,6 +159,9 @@ class LibraryService {
       );
       await txn.delete('lib_categories', where: 'name = ?', whereArgs: [name]);
     });
+    // Hủy subscription và xóa controller của category đã xóa để tránh leak
+    await _catMappingSubs.remove(name)?.cancel();
+    _mangasInCatControllers.remove(name)?.close();
     _refreshCategories();
     _mappingController.add(null);
   }
@@ -194,6 +213,8 @@ class LibraryService {
 
   final Map<String, _ValueStreamController<List<String>>> _mangasInCatControllers = {};
 
+  final Map<String, StreamSubscription> _catMappingSubs = {};
+
   Stream<List<String>> streamMangasInCategory(String category) {
     if (!_mangasInCatControllers.containsKey(category)) {
       final controller = _ValueStreamController<List<String>>([]);
@@ -208,16 +229,58 @@ class LibraryService {
             where: 'categoryName = ?',
             whereArgs: [category],
           );
-          final list = maps.map((m) => m['mangaId'] as String).toList();
+          final list = maps
+              .map((m) => _readString(m, 'mangaId'))
+              .where((id) => id.isNotEmpty)
+              .toList();
           controller.add(list);
         } catch (_) {}
       }
 
       fetch();
-      _mappingController.stream.listen((_) => fetch());
+      // Lưu subscription để cancel khi category bị xóa
+      _catMappingSubs[category] = _mappingController.stream.listen((_) => fetch());
     }
 
     return _mangasInCatControllers[category]!.stream;
+  }
+
+  Future<int> getMangaCountInCategory(String category) async {
+    try {
+      final db = await _dbHelper.database;
+      final result = await db.rawQuery(
+        'SELECT count(*) as count FROM lib_mapping WHERE categoryName = ?',
+        [category],
+      );
+      if (result.isEmpty) return 0;
+      return _readInt(result.first, 'count');
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Stream<int> streamMangaCountInCategory(String category) {
+    late StreamController<int> sc;
+    StreamSubscription? sub;
+
+    Future<void> fetch() async {
+      if (sc.isClosed) return;
+      final count = await getMangaCountInCategory(category);
+      if (!sc.isClosed) sc.add(count);
+    }
+
+    sc = StreamController<int>.broadcast(
+      onListen: () {
+        fetch();
+        sub = _mappingController.stream.listen((_) => fetch());
+      },
+      onCancel: () {
+        sub?.cancel();
+        sc.close();
+      },
+    );
+
+    return sc.stream;
   }
 
   Future<void> setMangaCategories(

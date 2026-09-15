@@ -250,10 +250,6 @@ class VipPostRibbon extends StatelessWidget {
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          topRight: Radius.circular(16),
-        ),
         boxShadow: [
           BoxShadow(
             color: glowColor.withValues(alpha: 0.3),

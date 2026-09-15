@@ -77,8 +77,14 @@ class _ReportsListPageState extends State<ReportsListPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa báo cáo này?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Báo cáo này sẽ bị xóa vĩnh viễn khỏi hệ thống.', style: TextStyle(color: Colors.white70)),
+        title: Text(
+          'Xóa báo cáo này?',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Báo cáo này sẽ bị xóa vĩnh viễn khỏi hệ thống.',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -125,7 +131,10 @@ class _ReportsListPageState extends State<ReportsListPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Chi tiết báo lỗi', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text(
+          'Chi tiết báo lỗi',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(ctx).colorScheme.onSurface),
+        ),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -170,7 +179,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
                 decoration: BoxDecoration(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(color: Theme.of(context).dividerColor),
                 ),
                 child: Text(
                   report.description.isEmpty
@@ -184,37 +193,42 @@ class _ReportsListPageState extends State<ReportsListPage> {
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
-          IconButton(
-            tooltip: 'Xóa báo cáo',
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _deleteReport(report.id);
-            },
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Xóa báo cáo',
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _deleteReport(report.id);
+                },
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Đóng'),
+              ),
+              const SizedBox(width: 8),
+              if (report.status == 'pending')
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _resolveReport(report.id);
+                  },
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Đã xử lý'),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _reopenReport(report.id);
+                  },
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Mở lại'),
+                ),
+            ],
           ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
-          if (report.status == 'pending')
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _resolveReport(report.id);
-              },
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Đã xử lý'),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _reopenReport(report.id);
-              },
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Mở lại'),
-            ),
         ],
       ),
     );
@@ -281,19 +295,22 @@ class _ReportsListPageState extends State<ReportsListPage> {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Lỗi tải danh sách báo cáo',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             '${snapshot.error}',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12, color: Colors.white54),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
                           ),
                         ],
                       ),
@@ -326,8 +343,8 @@ class _ReportsListPageState extends State<ReportsListPage> {
                             _statusFilter == 'pending'
                                 ? 'Tuyệt vời! Không có báo lỗi chờ xử lý'
                                 : 'Không có báo cáo lỗi nào trong mục này',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -338,7 +355,10 @@ class _ReportsListPageState extends State<ReportsListPage> {
                             _statusFilter == 'pending'
                                 ? 'Hệ thống đang hoạt động ổn định và không có khiếu nại sự cố'
                                 : 'Danh sách sẽ hiển thị khi người dùng gửi phản hồi lỗi chương truyện',
-                            style: const TextStyle(color: Colors.white38, fontSize: 13),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                              fontSize: 13,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -433,7 +453,10 @@ class _DetailRow extends StatelessWidget {
             width: 96,
             child: Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white70),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
             ),
           ),
           Expanded(
@@ -455,9 +478,13 @@ class _DetailRow extends StatelessWidget {
                   ),
                 );
               },
-              child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Icon(Icons.copy, size: 16, color: Colors.white54),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.copy,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                ),
               ),
             ),
         ],

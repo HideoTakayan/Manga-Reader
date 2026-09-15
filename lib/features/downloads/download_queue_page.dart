@@ -104,6 +104,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
               // Nút "Thử lại tất cả lỗi" — chỉ hiện khi có ít nhất 1 task bị lỗi
               if (hasFailed)
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.refresh),
                   tooltip: 'Thử lại tất cả lỗi',
                   onPressed: () {
@@ -120,6 +121,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
               // Nút "Tiếp tục tất cả" — chỉ hiện khi có ít nhất 1 task đang paused
               if (hasPaused)
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.play_arrow),
                   tooltip: 'Tiếp tục tất cả',
                   onPressed: () {
@@ -134,6 +136,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
               // Nút "Tạm dừng tất cả"
               if (hasActive)
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.pause),
                   tooltip: 'Tạm dừng tất cả',
                   onPressed: () {
@@ -147,6 +150,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                 ),
               // Nút "Xóa tất cả" — xóa toàn bộ hàng đợi sau khi xác nhận
               IconButton(
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.clear_all),
                 tooltip: 'Xóa tất cả',
                 onPressed: () async {
@@ -164,13 +168,18 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                     builder: (dialogCtx) => AlertDialog(
                       backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      title: const Text(
+                      title: Text(
                         'Xóa hàng đợi?',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Theme.of(dialogCtx).colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      content: const Text(
+                      content: Text(
                         'Bạn có chắc muốn xóa tất cả khỏi hàng đợi?',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(
+                          color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
                       ),
                       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       actions: [
@@ -200,6 +209,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                   }
                 },
               ),
+              const SizedBox(width: 4),
             ],
           ),
           body: Builder(
@@ -225,7 +235,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                     color: theme.cardColor,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08),
+                      color: theme.dividerColor.withValues(alpha: 0.15),
                     ),
                   ),
                   child: Column(
@@ -250,10 +260,10 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
+                                Text(
                                   'Cấu hình Tải đa luồng',
                                   style: TextStyle(
-                                    color: Colors.white,
+                                    color: theme.colorScheme.onSurface,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
@@ -263,7 +273,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                       ? 'Đang tải: $activeCount/$currentConcurrency luồng đồng thời'
                                       : 'Tối đa $currentConcurrency chương tải song song',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                     fontSize: 11,
                                   ),
                                 ),
@@ -317,19 +327,21 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                   decoration: BoxDecoration(
                                     color: isSelected
                                         ? theme.colorScheme.primary
-                                        : Colors.white.withValues(alpha: 0.05),
+                                        : theme.colorScheme.onSurface.withValues(alpha: 0.05),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
                                       color: isSelected
                                           ? theme.colorScheme.primary
-                                          : Colors.white.withValues(alpha: 0.1),
+                                          : theme.colorScheme.onSurface.withValues(alpha: 0.1),
                                     ),
                                   ),
                                   child: Center(
                                     child: Text(
                                       '$threads luồng',
                                       style: TextStyle(
-                                        color: isSelected ? Colors.white : Colors.white70,
+                                        color: isSelected
+                                            ? theme.colorScheme.onPrimary
+                                            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                                         fontSize: 11,
                                         fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
                                       ),
@@ -343,7 +355,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                       ),
                       // Divider + Stats dung lượng cache
                       const SizedBox(height: 10),
-                      Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+                      Divider(color: theme.dividerColor.withValues(alpha: 0.15), height: 1),
                       const SizedBox(height: 10),
                       Row(
                         children: [
@@ -382,7 +394,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                               Container(
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.05),
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -404,7 +416,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                 'Bạn có thể tải các chương truyện yêu thích để đọc ngoại tuyến bất cứ khi nào.',
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: Colors.white54,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                   height: 1.4,
                                 ),
                               ),
@@ -419,8 +431,8 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                     icon: const Icon(Icons.pie_chart_outline_rounded, size: 16),
                                     label: const Text('Quản lý dung lượng'),
                                     style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white70,
-                                      side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                                      foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                                      side: BorderSide(color: theme.colorScheme.onSurface.withValues(alpha: 0.2)),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -432,7 +444,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                     icon: const Icon(Icons.explore_rounded, size: 16),
                                     label: const Text('Khám phá truyện', style: TextStyle(fontWeight: FontWeight.bold)),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.orange,
+                                      backgroundColor: theme.colorScheme.primary,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -482,10 +494,10 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              const Text(
+                              Text(
                                 'Đã tải xong tất cả chương',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: theme.colorScheme.onSurface,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -495,7 +507,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                 'Toàn bộ các chương trong hàng đợi đã được tải về máy thành công.',
                                 textAlign: TextAlign.center,
                                 style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white54,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                 ),
                               ),
                               const SizedBox(height: 24),
@@ -511,8 +523,8 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                     icon: const Icon(Icons.cleaning_services_rounded, size: 18),
                                     label: const Text('Dọn dẹp danh sách'),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.white12,
-                                      foregroundColor: Colors.white,
+                                      backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                                      foregroundColor: theme.colorScheme.onSurface,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -527,7 +539,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                     icon: const Icon(Icons.folder_outlined, size: 18),
                                     label: const Text('Xem trong máy'),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.blueAccent,
+                                      backgroundColor: theme.colorScheme.primary,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
@@ -597,6 +609,7 @@ class _CacheStatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -619,12 +632,15 @@ class _CacheStatChip extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontSize: 9,
+                      ),
                     ),
                     Text(
                       value,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -704,13 +720,18 @@ class _MangaDownloadGroup extends StatelessWidget {
                         builder: (dialogCtx) => AlertDialog(
                           backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          title: const Text(
+                          title: Text(
                             'Xóa tất cả?',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: Theme.of(dialogCtx).colorScheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           content: Text(
                             'Xóa tất cả chương của "$mangaTitle" khỏi hàng đợi?',
-                            style: const TextStyle(color: Colors.white70),
+                            style: TextStyle(
+                              color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
                           ),
                           actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           actions: [
@@ -736,7 +757,40 @@ class _MangaDownloadGroup extends StatelessWidget {
                         showDialog(
                           context: context,
                           barrierDismissible: false,
-                          builder: (_) => const Center(child: CircularProgressIndicator()),
+                          builder: (loadingCtx) => PopScope(
+                            canPop: false,
+                            child: Dialog(
+                              backgroundColor: Theme.of(loadingCtx).cardColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 20,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(
+                                      color: Theme.of(loadingCtx).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 18),
+                                    Expanded(
+                                      child: Text(
+                                        'Đang hủy tải các chương...',
+                                        style: TextStyle(
+                                          color: Theme.of(loadingCtx).colorScheme.onSurface,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         );
                         try {
                           for (final task in tasks) {

@@ -25,17 +25,25 @@ class GroupService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw Exception('Vui lòng đăng nhập');
 
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) throw Exception('Tên nhóm không được để trống');
+    if (trimmedName.length > 50) throw Exception('Tên nhóm tối đa 50 ký tự');
+    final trimmedDesc = description.trim();
+    if (trimmedDesc.length > 500) throw Exception('Mô tả nhóm tối đa 500 ký tự');
+
     final code = _generateInviteCode();
 
     await _firestore.collection('scanlation_groups').add({
-      'name': name,
-      'description': description,
+      'name': trimmedName,
+      'description': trimmedDesc,
       'leaderId': user.uid,
       'leaderEmail': user.email ?? '', // Email Google để Admin thêm vào Cloud Console test users
       'members': [user.uid],
       'inviteCode': code,
       'status': 'pending', // Cần Admin duyệt
+      'followerCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -44,10 +52,16 @@ class GroupService {
     final batch = _firestore.batch();
     
     final groupRef = _firestore.collection('scanlation_groups').doc(groupId);
-    batch.update(groupRef, {'status': 'approved'});
+    batch.update(groupRef, {
+      'status': 'approved',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
 
     final userRef = _firestore.collection('users').doc(leaderId);
-    batch.set(userRef, {'groupId': groupId}, SetOptions(merge: true));
+    batch.set(userRef, {
+      'groupId': groupId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     await batch.commit();
   }
@@ -56,6 +70,7 @@ class GroupService {
   Future<void> rejectGroup(String groupId) async {
     await _firestore.collection('scanlation_groups').doc(groupId).update({
       'status': 'rejected',
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -78,18 +93,18 @@ class GroupService {
     final groupDoc = snapshot.docs.first;
     final groupId = groupDoc.id;
 
-    final batch = _firestore.batch();
-
-    // Thêm UID vào mảng members
-    batch.update(groupDoc.reference, {
+    // 1. Thêm UID vào mảng members trước (thỏa mãn rule isSelfJoin)
+    await groupDoc.reference.update({
       'members': FieldValue.arrayUnion([user.uid])
     });
 
-    // Cập nhật groupId vào User doc
+    // 2. Cập nhật groupId vào User doc sau khi đã nằm trong members
+    // (thỏa mãn rule isValidGroupId: request.auth.uid in get(group).data.members)
     final userRef = _firestore.collection('users').doc(user.uid);
-    batch.set(userRef, {'groupId': groupId}, SetOptions(merge: true));
-
-    await batch.commit();
+    await userRef.set({
+      'groupId': groupId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// 4. Làm mới (Reset) Invite Code (Dành cho Trưởng nhóm)
@@ -98,7 +113,10 @@ class GroupService {
     await _firestore
         .collection('scanlation_groups')
         .doc(groupId)
-        .update({'inviteCode': code});
+        .update({
+          'inviteCode': code,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
     return code;
   }
 
@@ -114,9 +132,11 @@ class GroupService {
     final batch = _firestore.batch();
     batch.update(groupDoc.reference, {
       'members': FieldValue.arrayRemove([memberUid]),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
     batch.update(_firestore.collection('users').doc(memberUid), {
       'groupId': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
     await batch.commit();
   }
@@ -125,14 +145,18 @@ class GroupService {
   Future<void> leaveGroup(String groupId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    final batch = _firestore.batch();
-    batch.update(_firestore.collection('scanlation_groups').doc(groupId), {
+    
+    // 1. Xóa groupId ở User doc trước
+    final userRef = _firestore.collection('users').doc(user.uid);
+    await userRef.update({
+      'groupId': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // 2. Sau đó xóa khỏi members của nhóm (thỏa mãn rule isSelfLeave)
+    await _firestore.collection('scanlation_groups').doc(groupId).update({
       'members': FieldValue.arrayRemove([user.uid])
     });
-    batch.update(_firestore.collection('users').doc(user.uid), {
-      'groupId': FieldValue.delete()
-    });
-    await batch.commit();
   }
 
   /// Lấy thông tin nhóm hiện tại

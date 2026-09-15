@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import '../../data/drive_service.dart';
+import '../../config/drive_config.dart';
 
 // Widget hiển thị ảnh từ Google Drive (ảnh bìa truyện).
 // Tự động phân biệt: nếu fileId là đường dẫn file cục bộ thì đọc từ máy,
@@ -26,6 +27,7 @@ class DriveImage extends StatefulWidget {
 
 class _DriveImageState extends State<DriveImage> {
   int _retryKey = 0; // Thay đổi key để ép CachedNetworkImage render lại
+  bool _useDirectFallback = false;
 
   @override
   Widget build(BuildContext context) {
@@ -76,9 +78,13 @@ class _DriveImageState extends State<DriveImage> {
       }
     }
 
+    final imageUrl = _useDirectFallback
+        ? DriveConfig.getDirectThumbnailUrl(fileId)
+        : DriveService.instance.mediaUrl(fileId);
+
     return CachedNetworkImage(
-      key: ValueKey(_retryKey),
-      imageUrl: DriveService.instance.mediaUrl(fileId),
+      key: ValueKey('${_retryKey}_$_useDirectFallback'),
+      imageUrl: imageUrl,
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
@@ -92,6 +98,12 @@ class _DriveImageState extends State<DriveImage> {
       ),
       errorWidget: (context, url, error) {
         debugPrint('DriveImage Error [$url]: $error');
+        // Tự động chuyển fallback sang Google Drive Thumbnail nếu CDN thất bại
+        if (!_useDirectFallback && DriveConfig.cdnProxyUrl.trim().isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _useDirectFallback = true);
+          });
+        }
         return _buildErrorWidget();
       },
     );
@@ -105,7 +117,13 @@ class _DriveImageState extends State<DriveImage> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => setState(() => _retryKey++),
+          onTap: () {
+            setState(() {
+              _retryKey++;
+              // Đảo chiều thử giữa CDN và Google Drive trực tiếp
+              _useDirectFallback = !_useDirectFallback;
+            });
+          },
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Column(

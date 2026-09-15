@@ -187,5 +187,32 @@ void main() {
       expect(imported, 2);
       expect(service.getRulesForManga('novel_export').length, 2);
     });
+
+    test('normalizeMangaId seamlessly bridges storageKey and realMangaId variants', () async {
+      final service = GlossaryService.instance;
+      await service.clearRules();
+
+      await service.addRule(
+        from: 'Tiêu Viêm',
+        to: 'Tieu Viem',
+        mangaId: 'LOCAL_NOVEL|/sdcard/Download/btth.epub',
+      );
+
+      // Should match when queried with plain path
+      final rulesPlain = service.getRulesForManga('/sdcard/Download/btth.epub');
+      expect(rulesPlain.length, 1);
+      expect(rulesPlain.first.to, 'Tieu Viem');
+
+      // Should match when queried with epub_ prefix
+      final rulesEpub = service.getRulesForManga('epub_/sdcard/Download/btth.epub');
+      expect(rulesEpub.length, 1);
+
+      // Should apply replacements across different representations
+      final result = service.applyReplacements(
+        'Tiêu Viêm tiến vào sơn động.',
+        mangaId: '/sdcard/Download/btth.epub',
+      );
+      expect(result, 'Tieu Viem tiến vào sơn động.');
+    });
   });
 }

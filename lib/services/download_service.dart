@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import '../data/database_helper.dart';
 import '../data/drive_service.dart';
+import '../config/drive_config.dart';
 import '../data/models.dart';
 import 'folder_service.dart';
 import 'download_cache.dart';
@@ -300,20 +302,7 @@ class DownloadService {
           if (manga != null) {
             await FolderService.saveMangaDetails(manga);
 
-            if (!await FolderService.hasCover(task.mangaTitle) &&
-                manga.coverUrl.isNotEmpty) {
-              final coverBytes = await DriveService.instance
-                  .downloadFileWithProgress(
-                    manga.coverUrl,
-                    onProgress: (_, __) {},
-                  );
-              if (coverBytes != null) {
-                final coverPath = await FolderService.getCoverPath(
-                  task.mangaTitle,
-                );
-                await File(coverPath).writeAsBytes(coverBytes);
-              }
-            }
+            await _saveCoverSafely(task.mangaTitle, manga.coverUrl);
           }
         } catch (e) {
           debugPrint('⚠️ Local Metadata Background Error: $e');
@@ -461,14 +450,17 @@ class DownloadService {
       const maxAutoRetries = 3;
       if (task.retryCount < maxAutoRetries) {
         task.retryCount++;
-        task.status = DownloadStatus.queued;
-        task.errorMessage = null;
+        task.status = DownloadStatus.failed;
         final delaySeconds = [2, 5, 10][task.retryCount - 1];
+        task.errorMessage = 'Lỗi mạng. Tự động thử lại (${task.retryCount}/$maxAutoRetries) sau ${delaySeconds}s...';
         debugPrint('🔄 Auto-retry ${task.retryCount}/$maxAutoRetries cho "${task.chapterTitle}" sau ${delaySeconds}s...');
         _notifyListeners();
         Future.delayed(Duration(seconds: delaySeconds), () {
           if (_downloadQueue.containsKey(task.chapterId) &&
-              task.status == DownloadStatus.queued) {
+              task.status == DownloadStatus.failed) {
+            task.status = DownloadStatus.queued;
+            task.errorMessage = null;
+            _notifyListeners();
             _processQueue();
           }
         });
@@ -569,6 +561,14 @@ class DownloadService {
     if (!_downloadQueue.containsKey(chapterId)) return;
 
     final task = _downloadQueue[chapterId]!;
+
+    if (task.status == DownloadStatus.completed) {
+      // Đã tải xong rồi, chỉ cần xóa khỏi queue, không được xóa file đích!
+      _downloadQueue.remove(chapterId);
+      _notifyListeners();
+      return;
+    }
+
     task.status = DownloadStatus.cancelled;
 
     _downloadQueue.remove(chapterId);
@@ -794,12 +794,16 @@ class DownloadService {
 
   /// Cập nhật tiến độ tải cho UI (không ghi đĩa SharedPreferences liên tục)
   void _notifyProgressOnly() {
-    _downloadController.add(Map.from(_downloadQueue));
+    if (!_downloadController.isClosed) {
+      _downloadController.add(Map.from(_downloadQueue));
+    }
   }
 
   /// Thông báo cho các trình lắng nghe & Lưu trữ hàng đợi
   void _notifyListeners() {
-    _downloadController.add(Map.from(_downloadQueue));
+    if (!_downloadController.isClosed) {
+      _downloadController.add(Map.from(_downloadQueue));
+    }
     _saveQueue();
   }
 
@@ -967,13 +971,7 @@ class DownloadService {
       // 2. Lưu manga info
       if (mangaInfo != null) {
         await DatabaseHelper.instance.saveLocalManga(mangaInfo);
-        if (!await FolderService.hasCover(mangaTitle) && mangaInfo.coverUrl.isNotEmpty) {
-          final coverBytes = await DriveService.instance.downloadFileWithProgress(mangaInfo.coverUrl, onProgress: (_, __) {});
-          if (coverBytes != null) {
-            final coverPath = await FolderService.getCoverPath(mangaTitle);
-            await File(coverPath).writeAsBytes(coverBytes);
-          }
-        }
+        await _saveCoverSafely(mangaTitle, mangaInfo.coverUrl);
       }
 
       // 3. Chuẩn bị file đích
@@ -1006,6 +1004,53 @@ class DownloadService {
     } catch (e) {
       debugPrint('❌ Lỗi tự động lưu offline: $e');
       return false;
+    }
+  }
+
+  /// Tải và lưu ảnh bìa an toàn (hỗ trợ file local, link web và Google Drive)
+  Future<void> _saveCoverSafely(String mangaTitle, String coverUrl) async {
+    if (coverUrl.trim().isEmpty) return;
+    try {
+      if (await FolderService.hasCover(mangaTitle)) return;
+      final coverPath = await FolderService.getCoverPath(mangaTitle);
+
+      // Nếu là đường dẫn cục bộ đã có trên máy
+      if (coverUrl.startsWith('/') || coverUrl.contains('\\')) {
+        final src = File(coverUrl);
+        if (await src.exists()) {
+          await src.copy(coverPath);
+          return;
+        }
+      }
+
+      // Nếu là link mạng http/https
+      if (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')) {
+        final res = await http.get(Uri.parse(coverUrl)).timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+          await File(coverPath).writeAsBytes(res.bodyBytes);
+          return;
+        }
+      }
+
+      // Là Drive fileId
+      var coverBytes = await DriveService.instance.downloadFileWithProgress(
+        coverUrl,
+        onProgress: (_, __) {},
+      );
+      if (coverBytes == null || coverBytes.isEmpty) {
+        try {
+          final thumbUrl = DriveConfig.getDirectThumbnailUrl(coverUrl, size: 800);
+          final res = await http.get(Uri.parse(thumbUrl)).timeout(const Duration(seconds: 8));
+          if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+            coverBytes = res.bodyBytes;
+          }
+        } catch (_) {}
+      }
+      if (coverBytes != null && coverBytes.isNotEmpty) {
+        await File(coverPath).writeAsBytes(coverBytes);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error saving cover safely: $e');
     }
   }
 

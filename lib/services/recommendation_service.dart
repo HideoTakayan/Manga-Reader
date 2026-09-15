@@ -17,7 +17,7 @@ class RecommendationService {
       calculateUserPreferences({List<CloudManga>? catalog}) async {
     try {
       final authUid = FirebaseAuth.instance.currentUser?.uid;
-      final userIds = authUid == null ? ['guest'] : ['guest', authUid];
+      final userIds = authUid == null ? [] : [authUid];
 
       final readMangaIds = <String>{};
       final genreWeights = <String, double>{};

@@ -37,7 +37,7 @@ class _MangaDescriptionSectionState extends State<MangaDescriptionSection> {
               'Chưa có phần giới thiệu cho bộ truyện này.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 height: 1.4,
-                color: Colors.white38,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                 fontStyle: FontStyle.italic,
               ),
             )
@@ -60,7 +60,7 @@ class _MangaDescriptionSectionState extends State<MangaDescriptionSection> {
                       text,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         height: 1.4,
-                        color: Colors.white70,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                       ),
                       maxLines: _isDescriptionExpanded ? null : 4,
                       overflow: _isDescriptionExpanded

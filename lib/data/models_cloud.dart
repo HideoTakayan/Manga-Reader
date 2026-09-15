@@ -101,6 +101,26 @@ class CloudChapter {
     this.viewCount = 0,
   });
 
+  CloudChapter copyWith({
+    String? id,
+    String? title,
+    String? fileId,
+    String? fileType,
+    int? sizeBytes,
+    DateTime? uploadedAt,
+    int? viewCount,
+  }) {
+    return CloudChapter(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      fileId: fileId ?? this.fileId,
+      fileType: fileType ?? this.fileType,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      uploadedAt: uploadedAt ?? this.uploadedAt,
+      viewCount: viewCount ?? this.viewCount,
+    );
+  }
+
   /// Chuyển đối tượng sang Map để lưu hoặc truyền đi.
   Map<String, dynamic> toMap() {
     return {

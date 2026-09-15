@@ -36,17 +36,10 @@ class ChapterSortHelper {
       return filename.split('.').first;
     }
 
-    // Định dạng số không chứa số 0 dư thừa ở phần thập phân
-    // Ví dụ: 10.0 -> "10", 10.5 -> "10.5"
-    String numberStr = info.value % 1 == 0
-        ? info.value.toInt().toString()
-        : info.value.toString();
-
-    String display = "Chương $numberStr";
-    // Các phần phụ (extra) được xử lý trong `info.value` (ví dụ: .99), nhưng hiển thị thì duy trì dạng "Extra".
-    // Ở đây chuẩn hóa thành "Chương X Extra".
-    // Nếu chương là Extra thì `info.isExtra` sẽ là true.
-    if (info.isExtra && !display.contains("Extra")) {
+    String display = "Chương ${info.displayValue}";
+    if (info.extraLabel != null) {
+      display += " ${info.extraLabel}";
+    } else if (info.isExtra && !display.contains("Extra")) {
       display += " Extra";
     }
     return display;
@@ -102,23 +95,23 @@ class ChapterSortHelper {
     // 4. Thử khớp cơ bản (có tiền tố) trên chuỗi đã lọc
     var match = _basic.firstMatch(nameWithoutVolume);
     if (match != null) {
-      return _getChapterNumberFromMatch(match, isExtra);
+      return _getChapterNumberFromMatch(match, isExtra, cleanName);
     }
 
     // 5. Nếu không thấy, tìm XEM CÓ BẤT CỨ SỐ NÀO trong chuỗi không
     match = _number.firstMatch(nameWithoutVolume);
     if (match != null) {
-      return _getChapterNumberFromMatch(match, isExtra);
+      return _getChapterNumberFromMatch(match, isExtra, cleanName);
     }
 
     // 6. Trường hợp an toàn (Fail-safe): Thử lại trên chuỗi ban đầu (đề phòng số duy nhất bị xóa lầm như "Vol. 1")
     match = _basic.firstMatch(cleanName);
-    if (match != null) return _getChapterNumberFromMatch(match, isExtra);
+    if (match != null) return _getChapterNumberFromMatch(match, isExtra, cleanName);
 
     match = _number.firstMatch(cleanName);
-    if (match != null) return _getChapterNumberFromMatch(match, isExtra);
+    if (match != null) return _getChapterNumberFromMatch(match, isExtra, cleanName);
 
-    return _ChapterParseInfo(value: double.infinity, isExtra: isExtra);
+    return _ChapterParseInfo(value: double.infinity, isExtra: isExtra, displayValue: '');
   }
 
   /// Trích xuất số chương từ kết quả khớp Regex và trả về _ChapterParseInfo.
@@ -126,14 +119,40 @@ class ChapterSortHelper {
   static _ChapterParseInfo _getChapterNumberFromMatch(
     RegExpMatch match,
     bool extra,
+    String cleanName,
   ) {
     double initial = double.parse(match.group(1)!);
     String? subDecimal = match.group(2);
     String? subAlpha = match.group(3);
 
+    String? extraLabel;
+    if (cleanName.contains("extra")) {
+      extraLabel = "Extra";
+    } else if (cleanName.contains("omake")) {
+      extraLabel = "Omake";
+    } else if (cleanName.contains("special")) {
+      extraLabel = "Special";
+    }
+
     double addition = _checkForDecimal(subDecimal, subAlpha);
 
-    return _ChapterParseInfo(value: initial + addition, isExtra: extra);
+    String displayNum;
+    if (subDecimal != null && subDecimal.isNotEmpty) {
+      // 10.5 -> "10.5"
+      final fullNum = initial + double.parse(subDecimal);
+      displayNum = fullNum % 1 == 0 ? fullNum.toInt().toString() : fullNum.toString();
+    } else if (subAlpha != null && subAlpha.replaceAll('.', '').length == 1 && RegExp(r'[a-zA-Z]').hasMatch(subAlpha)) {
+      displayNum = "${initial.toInt()}${subAlpha.replaceAll('.', '')}";
+    } else {
+      displayNum = initial.toInt().toString();
+    }
+
+    return _ChapterParseInfo(
+      value: initial + addition,
+      isExtra: extra,
+      displayValue: displayNum,
+      extraLabel: extraLabel,
+    );
   }
 
   /// Chuyển đổi phần phụ (thập phân hoặc hậu tố chữ cái) thành giá trị số nhỏ để cộng vào số chương.
@@ -171,11 +190,20 @@ class ChapterSortHelper {
 /// Class nội bộ lưu kết quả phân tích tên chương.
 /// [value]: Số chương dưới dạng số thực (VD: 10.5, 10.99 cho Extra).
 /// [isExtra]: Có phải chương đặc biệt (Extra/Omake/Special) không.
+/// [displayValue]: Chuỗi số định dạng chuẩn để hiển thị UI (VD: "10", "10.5", "10a").
+/// [extraLabel]: Hậu tố đặc biệt nếu có ("Extra", "Omake", "Special").
 class _ChapterParseInfo implements Comparable<_ChapterParseInfo> {
   final double value;
   final bool isExtra;
+  final String displayValue;
+  final String? extraLabel;
 
-  _ChapterParseInfo({required this.value, required this.isExtra});
+  _ChapterParseInfo({
+    required this.value,
+    required this.isExtra,
+    required this.displayValue,
+    this.extraLabel,
+  });
 
   /// So sánh 2 chương theo số thực để phục vụ việc sắp xếp.
   @override

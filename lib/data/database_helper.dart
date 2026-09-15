@@ -3,19 +3,41 @@ import 'package:flutter/foundation.dart';
 import 'package:manga_reader/data/models.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
 // Quản lý toàn bộ dữ liệu cục bộ của app: lịch sử đọc, file đã tải, thư viện cá nhân.
 // Dùng pattern Singleton — cả app chỉ có 1 instance, tránh mở DB nhiều lần.
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database; // Giữ kết nối DB, null = chưa mở lần nào
+  static Completer<Database>? _dbCompleter; // Khóa async chống race condition
   DatabaseHelper._init(); // Constructor private — không cho tạo instance mới từ bên ngoài
 
+  @visibleForTesting
+  static void setMockDatabase(Database? db) {
+    _database = db;
+  }
+
   // Lazy init: lần đầu gọi thì mở DB, các lần sau trả về kết nối cũ luôn.
+  // Dùng Completer để tránh race condition khi nhiều caller cùng gọi đồng thời lúc startup.
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('comics.db');
-    return _database!;
+    if (_dbCompleter != null) return _dbCompleter!.future;
+    final completer = Completer<Database>();
+    _dbCompleter = completer;
+    try {
+      _database = await _initDB('comics.db');
+      completer.complete(_database!);
+      _dbCompleter = null;
+      return _database!;
+    } catch (e) {
+      _dbCompleter = null; // Cho phép retry sau khi lỗi
+      if (!completer.isCompleted) {
+        completer.future.ignore();
+        completer.completeError(e);
+      }
+      rethrow;
+    }
   }
 
   // Tìm thư mục lưu trữ của thiết bị và mở file DB.
@@ -199,7 +221,7 @@ class DatabaseHelper {
         isSynced
       )
       SELECT
-        ${hasUserId ? "COALESCE(userId, 'guest')" : "'guest'"},
+        ${hasUserId ? "COALESCE(userId, '${AuthService.safeUid}')" : "''"},
         COALESCE($mangaIdExpr, ''),
         ${hasChapterId ? "COALESCE(chapterId, '')" : "''"},
         ${hasChapterTitle ? 'chapterTitle' : 'NULL'},
@@ -536,6 +558,29 @@ class DatabaseHelper {
     );
   }
 
+  /// Chuyển giao toàn bộ lịch sử đọc và hoạt động khi chưa đăng nhập (userId = '')
+  /// sang tài khoản người dùng mới đăng nhập (userId = newUserId), đồng thời đánh dấu isSynced = 0 để SyncService đẩy lên Cloud.
+  Future<void> migrateGuestHistory(String newUserId) async {
+    final trimmedId = newUserId.trim();
+    if (trimmedId.isEmpty) return;
+    try {
+      final db = await instance.database;
+      await db.rawUpdate('''
+        UPDATE OR REPLACE history
+        SET userId = ?, isSynced = 0
+        WHERE userId = '' OR userId IS NULL
+      ''', [trimmedId]);
+      await db.rawUpdate('''
+        UPDATE OR REPLACE reading_activity
+        SET userId = ?
+        WHERE userId = '' OR userId IS NULL
+      ''', [trimmedId]);
+      debugPrint('🔄 Đã chuyển giao lịch sử khách sang tài khoản: $trimmedId');
+    } catch (e) {
+      debugPrint('Lỗi chuyển giao lịch sử khách: $e');
+    }
+  }
+
   // Lấy toàn bộ lịch sử đọc của user, mới nhất lên đầu.
   Future<List<ReadingHistory>> getHistory(String userId) async {
     final db = await instance.database;
@@ -633,7 +678,7 @@ class DatabaseHelper {
   Future<Set<String>> getReadChapterIds(String mangaId, {String? userId}) async {
     final db = await instance.database;
     final readIds = <String>{};
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
 
     // 1. Từ bảng reading_activity
     try {
@@ -674,7 +719,7 @@ class DatabaseHelper {
     required String chapterId,
     String? userId,
   }) async {
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
     final now = DateTime.now();
     final activity = ReadingActivity(
       id: '$uId|$mangaId|$chapterId|${ReadingActivity.dateKeyFor(now)}',
@@ -697,7 +742,7 @@ class DatabaseHelper {
     String? userId,
   }) async {
     final db = await instance.database;
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
     await db.delete(
       'reading_activity',
       where: 'mangaId = ? AND chapterId = ?',
@@ -705,8 +750,8 @@ class DatabaseHelper {
     );
     await db.delete(
       'history',
-      where: 'comicId = ? AND chapterId = ? AND (userId = ? OR userId = ?)',
-      whereArgs: [mangaId, chapterId, uId, 'guest'],
+      where: 'comicId = ? AND chapterId = ? AND userId = ?',
+      whereArgs: [mangaId, chapterId, uId],
     );
     await db.delete(
       'reader_progress',
@@ -722,7 +767,7 @@ class DatabaseHelper {
     String? userId,
   }) async {
     final db = await instance.database;
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
     final now = DateTime.now();
     final dateKey = ReadingActivity.dateKeyFor(now);
     final batch = db.batch();
@@ -755,7 +800,7 @@ class DatabaseHelper {
   }) async {
     if (chapterIds.isEmpty) return;
     final db = await instance.database;
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
     final placeholders = List.filled(chapterIds.length, '?').join(',');
     final batch = db.batch();
     batch.delete(
@@ -766,8 +811,8 @@ class DatabaseHelper {
     batch.delete(
       'history',
       where:
-          'comicId = ? AND chapterId IN ($placeholders) AND (userId = ? OR userId = ?)',
-      whereArgs: [mangaId, ...chapterIds, uId, 'guest'],
+          'comicId = ? AND chapterId IN ($placeholders) AND userId = ?',
+      whereArgs: [mangaId, ...chapterIds, uId],
     );
     batch.delete(
       'reader_progress',
@@ -783,7 +828,7 @@ class DatabaseHelper {
     String? userId,
   }) async {
     final db = await instance.database;
-    final uId = userId ?? 'guest';
+    final uId = (userId != null && userId.isNotEmpty) ? userId : AuthService.safeUid;
     final batch = db.batch();
     batch.delete(
       'reading_activity',
@@ -792,8 +837,8 @@ class DatabaseHelper {
     );
     batch.delete(
       'history',
-      where: 'comicId = ? AND (userId = ? OR userId = ?)',
-      whereArgs: [mangaId, uId, 'guest'],
+      where: 'comicId = ? AND userId = ?',
+      whereArgs: [mangaId, uId],
     );
     batch.delete(
       'reader_progress',

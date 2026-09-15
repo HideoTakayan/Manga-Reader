@@ -54,7 +54,11 @@ class GoRouterRefreshStream extends ChangeNotifier {
 }
 
 // Cấu hình GoRouter chính của ứng dụng
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'rootNavigator');
+
 final GoRouter appRouter = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation:
       '/', // Mặc định vào thẳng Home, redirect sẽ tự chặn nếu chưa đăng nhập
   refreshListenable: GoRouterRefreshStream(
@@ -82,6 +86,7 @@ final GoRouter appRouter = GoRouter(
     GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
 
     StatefulShellRoute.indexedStack(
+      parentNavigatorKey: rootNavigatorKey,
       builder: (context, state, navigationShell) {
         return MainScaffold(navigationShell: navigationShell);
       },
@@ -134,11 +139,6 @@ final GoRouter appRouter = GoRouter(
                       builder: (_, __) => const EditProfilePage(),
                     ),
                   ],
-                ),
-                GoRoute(path: 'help', builder: (_, __) => const HelpPage()),
-                GoRoute(
-                  path: 'categories',
-                  builder: (_, __) => const EditCategoriesPage(),
                 ),
               ],
             ),
@@ -239,6 +239,24 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/backup',
       builder: (context, state) => const BackupRestorePage(),
+    ),
+    // Route trang quản lý danh mục (Category)
+    // Cung cấp cả /settings/categories và /categories để hỗ trợ mọi nơi gọi trong app
+    GoRoute(
+      path: '/settings/categories',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const EditCategoriesPage(),
+    ),
+    GoRoute(
+      path: '/categories',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const EditCategoriesPage(),
+    ),
+    // Route trang trợ giúp FAQs & Hướng dẫn
+    GoRoute(
+      path: '/settings/help',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const HelpPage(),
     ),
     // Route màn hình đọc truyện chữ (EPUB) cục bộ — nhận LocalNovel qua state.extra
     GoRoute(

@@ -1,6 +1,5 @@
 import 'dart:convert';
-
-import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../data/database_helper.dart';
 import '../../data/models_cloud.dart';
@@ -13,33 +12,45 @@ class CatalogCacheService {
   Future<void> saveCatalog(List<CloudManga> mangas) async {
     final db = await DatabaseHelper.instance.database;
     final now = DateTime.now().millisecondsSinceEpoch;
-    final batch = db.batch();
-
-    for (final manga in mangas) {
-      batch.insert('catalog_cache', {
-        'mangaId': manga.id,
-        'title': manga.title,
-        'normalizedTitle': normalize(manga.title),
-        'aliasesJson': jsonEncode(_aliasesFor(manga)),
-        'genresJson': jsonEncode(manga.genres),
-        'author': manga.author,
-        'status': manga.status,
-        'coverFileId': manga.coverFileId,
-        'updatedAt': manga.updatedAt.millisecondsSinceEpoch,
-        'viewCount': manga.viewCount,
-        'likeCount': manga.likeCount,
-        'rawJson': jsonEncode(manga.toMap()),
-        'cachedAt': now,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-
-    await batch.commit(noResult: true);
+    
+    await db.transaction((txn) async {
+      // Clear old cache so deleted mangas on Drive are also removed locally
+      await txn.delete('catalog_cache');
+      
+      final batch = txn.batch();
+      for (final manga in mangas) {
+        batch.insert('catalog_cache', {
+          'mangaId': manga.id,
+          'title': manga.title,
+          'normalizedTitle': normalize(manga.title),
+          'aliasesJson': jsonEncode(_aliasesFor(manga)),
+          'genresJson': jsonEncode(manga.genres),
+          'author': manga.author,
+          'status': manga.status,
+          'coverFileId': manga.coverFileId,
+          'updatedAt': manga.updatedAt.millisecondsSinceEpoch,
+          'viewCount': manga.viewCount,
+          'likeCount': manga.likeCount,
+          'rawJson': jsonEncode(manga.toMap()),
+          'cachedAt': now,
+        });
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<CloudManga>> getCachedCatalog() async {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.query('catalog_cache', orderBy: 'updatedAt DESC');
-    return rows.map(_fromCacheRow).whereType<CloudManga>().toList();
+    if (rows.isEmpty) return [];
+    
+    // Parse JSON in background isolate to prevent UI jank
+    return await compute(_parseCacheRows, rows);
+  }
+
+  // Top-level or static function for compute
+  static List<CloudManga> _parseCacheRows(List<Map<String, dynamic>> rows) {
+    return rows.map(_fromCacheRowStatic).whereType<CloudManga>().toList();
   }
 
   Future<List<CloudManga>> search({
@@ -58,12 +69,12 @@ class CatalogCacheService {
       final matchesQuery =
           normalizedQuery.isEmpty || searchText.contains(normalizedQuery);
 
-      final matchesIncluded = includedGenres.keys.every(
-        (genre) => manga.genres.contains(genre),
-      );
-      final matchesExcluded = excludedGenres.keys.every(
-        (genre) => !manga.genres.contains(genre),
-      );
+      final matchesIncluded = includedGenres.entries
+          .where((e) => e.value)
+          .every((e) => manga.genres.contains(e.key));
+      final matchesExcluded = excludedGenres.entries
+          .where((e) => e.value)
+          .every((e) => !manga.genres.contains(e.key));
       final matchesStatus = status == null || manga.status == status;
 
       return matchesQuery &&
@@ -102,7 +113,7 @@ class CatalogCacheService {
     return value.replaceAll(RegExp(r'\s+'), ' ');
   }
 
-  CloudManga? _fromCacheRow(Map<String, dynamic> row) {
+  static CloudManga? _fromCacheRowStatic(Map<String, dynamic> row) {
     try {
       final raw = row['rawJson']?.toString();
       if (raw != null && raw.isNotEmpty) {
@@ -116,11 +127,11 @@ class CatalogCacheService {
         author: row['author']?.toString() ?? '',
         description: '',
         coverFileId: row['coverFileId']?.toString() ?? '',
-        updatedAt: DateTime.fromMillisecondsSinceEpoch(_readInt(row['updatedAt'])),
-        genres: _readStringList(row['genresJson']),
+        updatedAt: DateTime.fromMillisecondsSinceEpoch(_readIntStatic(row['updatedAt'])),
+        genres: _readStringListStatic(row['genresJson']),
         status: row['status']?.toString() ?? 'Đang Cập Nhật',
-        viewCount: _readInt(row['viewCount']),
-        likeCount: _readInt(row['likeCount']),
+        viewCount: _readIntStatic(row['viewCount']),
+        likeCount: _readIntStatic(row['likeCount']),
       );
     } catch (_) {
       return null;
@@ -132,7 +143,7 @@ class CatalogCacheService {
     return aliases.where((alias) => alias.isNotEmpty).toList();
   }
 
-  List<String> _readStringList(dynamic value) {
+  static List<String> _readStringListStatic(dynamic value) {
     if (value is List) return value.map((e) => e.toString()).toList();
     if (value is String && value.isNotEmpty) {
       final decoded = jsonDecode(value);
@@ -141,7 +152,7 @@ class CatalogCacheService {
     return const [];
   }
 
-  int _readInt(dynamic value) {
+  static int _readIntStatic(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;

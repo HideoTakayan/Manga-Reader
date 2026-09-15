@@ -22,6 +22,21 @@ enum ChapterCountFilter {
   long,   // Truyện dài (> 100 chap)
 }
 
+extension ChapterCountFilterX on ChapterCountFilter {
+  String get label {
+    switch (this) {
+      case ChapterCountFilter.all:
+        return 'Tất cả';
+      case ChapterCountFilter.short:
+        return '< 20 chương';
+      case ChapterCountFilter.medium:
+        return '20 - 100 chương';
+      case ChapterCountFilter.long:
+        return '> 100 chương';
+    }
+  }
+}
+
 /// Chế độ kết hợp các thể loại được chọn
 enum GenreMatchMode {
   and, // Khớp tất cả (AND) - Phải có đủ các thể loại đã chọn
@@ -188,22 +203,7 @@ class _SearchPageState extends State<SearchPage> {
           }
         }
       }
-
-      // 2. Lọc theo độ dài số chương
-      if (selectedChapterCount != ChapterCountFilter.all) {
-        final count = item.manga.chapterOrder.length;
-        if (selectedChapterCount == ChapterCountFilter.short && count >= 20) {
-          continue;
-        } else if (selectedChapterCount == ChapterCountFilter.medium &&
-            (count < 20 || count > 100)) {
-          continue;
-        } else if (selectedChapterCount == ChapterCountFilter.long &&
-            count <= 100) {
-          continue;
-        }
-      }
-
-      // 3. Lọc theo trạng thái
+      // Lọc theo trạng thái
       if (selectedStatus != null) {
         final statusLower = item.statusLower;
         bool matchesStatus = true;
@@ -225,6 +225,18 @@ class _SearchPageState extends State<SearchPage> {
           matchesStatus = item.manga.status == selectedStatus;
         }
         if (!matchesStatus) continue;
+      }
+
+      // Lọc theo quy mô số chương
+      if (selectedChapterCount != ChapterCountFilter.all) {
+        final count = item.manga.chapterOrder.length;
+        if (selectedChapterCount == ChapterCountFilter.short && (count == 0 || count >= 20)) {
+          continue;
+        } else if (selectedChapterCount == ChapterCountFilter.medium && (count < 20 || count > 100)) {
+          continue;
+        } else if (selectedChapterCount == ChapterCountFilter.long && count <= 100) {
+          continue;
+        }
       }
 
       result.add(item.manga);
@@ -256,10 +268,13 @@ class _SearchPageState extends State<SearchPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa lịch sử tìm kiếm?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text(
+        title: Text(
+          'Xóa lịch sử tìm kiếm?',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
           'Toàn bộ từ khóa tìm kiếm gần đây sẽ bị xóa khỏi máy của bạn.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
         ),
         actions: [
           TextButton(
@@ -451,18 +466,21 @@ class _SearchPageState extends State<SearchPage> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Colors.purpleAccent, Colors.deepOrangeAccent],
+                              gradient: LinearGradient(
+                                colors: [
+                                  Theme.of(context).colorScheme.primary,
+                                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                                ],
                               ),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(Icons.casino_rounded, color: Colors.white, size: 20),
+                            child: Icon(Icons.casino_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 20),
                           ),
                           const SizedBox(width: 10),
-                          const Text(
+                          Text(
                             'Khám Phá Ngẫu Nhiên',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -470,103 +488,135 @@ class _SearchPageState extends State<SearchPage> {
                         ],
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: currentManga.coverFileId.isNotEmpty
-                              ? DriveImage(
-                                  fileId: currentManga.coverFileId,
-                                  width: 80,
-                                  height: 110,
-                                  fit: BoxFit.cover,
-                                )
-                              : Container(
-                                  width: 80,
-                                  height: 110,
-                                  color: Colors.white12,
-                                  child: const Icon(Icons.menu_book, color: Colors.white38),
-                                ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                currentManga.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                currentManga.author.isNotEmpty ? currentManga.author : 'Chưa rõ tác giả',
-                                style: const TextStyle(color: Colors.white60, fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: currentManga.status == 'Hoàn Thành'
-                                          ? Colors.green.withValues(alpha: 0.2)
-                                          : Colors.orange.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      currentManga.status.isNotEmpty ? currentManga.status : 'Đang cập nhật',
-                                      style: TextStyle(
-                                        color: currentManga.status == 'Hoàn Thành' ? Colors.greenAccent : Colors.orangeAccent,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      context.push('/detail/${currentManga.id}');
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Theme.of(context).dividerColor),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: currentManga.coverFileId.isNotEmpty
+                                ? DriveImage(
+                                    fileId: currentManga.coverFileId,
+                                    width: 80,
+                                    height: 110,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    width: 80,
+                                    height: 110,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                                    child: Icon(
+                                      Icons.menu_book,
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  if (currentManga.genres.isNotEmpty)
-                                    Expanded(
-                                      child: Text(
-                                        currentManga.genres.take(2).join(', '),
-                                        style: const TextStyle(color: Colors.white38, fontSize: 11),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  currentManga.title,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  currentManga.author.isNotEmpty ? currentManga.author : 'Chưa rõ tác giả',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Builder(
+                                      builder: (context) {
+                                        final isCompleted = currentManga.status.toLowerCase() == 'hoàn thành';
+                                        final statusColor = isCompleted
+                                            ? Colors.greenAccent
+                                            : Theme.of(context).colorScheme.primary;
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: statusColor.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: statusColor.withValues(alpha: 0.4),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            currentManga.status.isNotEmpty ? currentManga.status : 'Đang cập nhật',
+                                            style: TextStyle(
+                                              color: statusColor,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 6),
+                                    if (currentManga.genres.isNotEmpty)
+                                      Expanded(
+                                        child: Text(
+                                          currentManga.genres.take(2).join(', '),
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                                            fontSize: 11,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   if (currentManga.description.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
                       currentManga.description,
-                      style: const TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.35),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -579,14 +629,16 @@ class _SearchPageState extends State<SearchPage> {
                           onPressed: () {
                             HapticFeedback.lightImpact();
                             setModalState(() {
-                              currentManga = pool[random.nextInt(pool.length)];
+                              final subPool = pool.where((m) => m.id != currentManga.id).toList();
+                              final targetPool = subPool.isNotEmpty ? subPool : pool;
+                              currentManga = targetPool[random.nextInt(targetPool.length)];
                             });
                           },
                           icon: const Icon(Icons.refresh_rounded, size: 18),
                           label: const Text('Đổi truyện khác'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.orangeAccent,
-                            side: const BorderSide(color: Colors.orangeAccent),
+                            foregroundColor: Theme.of(context).colorScheme.primary,
+                            side: BorderSide(color: Theme.of(context).colorScheme.primary),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -602,8 +654,8 @@ class _SearchPageState extends State<SearchPage> {
                           icon: const Icon(Icons.menu_book_rounded, size: 18),
                           label: const Text('Xem ngay', style: TextStyle(fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orangeAccent,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -631,7 +683,7 @@ class _SearchPageState extends State<SearchPage> {
           _presetChip(
             icon: Icons.casino_rounded,
             label: 'Khám phá ngẫu nhiên',
-            iconColor: Colors.purpleAccent,
+            iconColor: Theme.of(context).colorScheme.primary,
             onTap: _showRandomMangaSheet,
           ),
           const SizedBox(width: 8),
@@ -653,21 +705,7 @@ class _SearchPageState extends State<SearchPage> {
               });
             },
           ),
-          const SizedBox(width: 8),
-          _presetChip(
-            icon: Icons.bolt_rounded,
-            label: 'Đọc nhanh (<20 chap)',
-            iconColor: Colors.cyanAccent,
-            isSelected: selectedChapterCount == ChapterCountFilter.short,
-            onTap: () {
-              setState(() {
-                selectedChapterCount = selectedChapterCount == ChapterCountFilter.short
-                    ? ChapterCountFilter.all
-                    : ChapterCountFilter.short;
-                _updateFilteredMangas();
-              });
-            },
-          ),
+
           const SizedBox(width: 8),
           _presetChip(
             icon: Icons.favorite_rounded,
@@ -704,10 +742,10 @@ class _SearchPageState extends State<SearchPage> {
         decoration: BoxDecoration(
           color: isSelected
               ? iconColor.withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.06),
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: isSelected ? iconColor : Colors.white12,
+            color: isSelected ? iconColor : Theme.of(context).dividerColor,
             width: isSelected ? 1.2 : 1,
           ),
         ),
@@ -721,7 +759,9 @@ class _SearchPageState extends State<SearchPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.white : Colors.white70,
+                color: isSelected
+                    ? (iconColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white)
+                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -780,6 +820,7 @@ class _SearchPageState extends State<SearchPage> {
                               genreMatchMode != GenreMatchMode.and)
                             TextButton.icon(
                               onPressed: () {
+                                HapticFeedback.selectionClick();
                                 setStateModal(() {
                                   genreFilters.clear();
                                   selectedStatus = null;
@@ -790,54 +831,13 @@ class _SearchPageState extends State<SearchPage> {
                                   _updateFilteredMangas();
                                 });
                               },
-                              icon: const Icon(Icons.refresh, size: 16, color: Colors.orangeAccent),
-                              label: const Text(
+                              icon: Icon(Icons.refresh, size: 16, color: Theme.of(context).colorScheme.primary),
+                              label: Text(
                                 'Đặt lại',
-                                style: TextStyle(color: Colors.orangeAccent, fontSize: 13),
+                                style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13),
                               ),
                             ),
                         ],
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Quy mô số chương',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          ChapterCountFilter.all,
-                          ChapterCountFilter.short,
-                          ChapterCountFilter.medium,
-                          ChapterCountFilter.long,
-                        ].map((f) {
-                          final isSelected = selectedChapterCount == f;
-                          final label = f == ChapterCountFilter.all
-                              ? 'Tất cả'
-                              : f == ChapterCountFilter.short
-                                  ? 'Ngắn (< 20 chap)'
-                                  : f == ChapterCountFilter.medium
-                                      ? 'Vừa (20 - 100 chap)'
-                                      : 'Dài (> 100 chap)';
-                          return ChoiceChip(
-                            label: Text(label),
-                            selected: isSelected,
-                            selectedColor: Theme.of(context).colorScheme.primary,
-                            backgroundColor: Theme.of(context).cardColor,
-                            labelStyle: TextStyle(
-                              color: isSelected
-                                  ? Colors.white
-                                  : Theme.of(context).textTheme.bodyLarge?.color,
-                            ),
-                            onSelected: (selected) {
-                              setStateModal(() => selectedChapterCount = selected ? f : ChapterCountFilter.all);
-                              setState(() => _updateFilteredMangas());
-                            },
-                          );
-                        }).toList(),
                       ),
                       const SizedBox(height: 20),
                       Row(
@@ -862,7 +862,7 @@ class _SearchPageState extends State<SearchPage> {
                                   ChoiceChip(
                                     label: const Text('AND (Đủ)', style: TextStyle(fontSize: 11)),
                                     selected: genreMatchMode == GenreMatchMode.and,
-                                    selectedColor: Colors.orangeAccent.shade700,
+                                    selectedColor: Theme.of(context).colorScheme.primary,
                                     visualDensity: VisualDensity.compact,
                                     onSelected: (val) {
                                       if (val) {
@@ -875,7 +875,7 @@ class _SearchPageState extends State<SearchPage> {
                                   ChoiceChip(
                                     label: const Text('OR (1 trong các)', style: TextStyle(fontSize: 11)),
                                     selected: genreMatchMode == GenreMatchMode.or,
-                                    selectedColor: Colors.orangeAccent.shade700,
+                                    selectedColor: Theme.of(context).colorScheme.primary,
                                     visualDensity: VisualDensity.compact,
                                     onSelected: (val) {
                                       if (val) {
@@ -945,6 +945,7 @@ class _SearchPageState extends State<SearchPage> {
                               ),
                             ),
                             onPressed: () {
+                              HapticFeedback.selectionClick();
                               // Vòng toggle: none → included → excluded → xóa khỏi map (none)
                               setStateModal(() {
                                 if (filterState == GenreFilterState.none) {
@@ -993,6 +994,7 @@ class _SearchPageState extends State<SearchPage> {
                             ),
                             // ChoiceChip: tap khi đang selected → deselect (null)
                             onSelected: (selected) {
+                              HapticFeedback.selectionClick();
                               setStateModal(
                                 () => selectedStatus = selected ? status : null,
                               );
@@ -1004,13 +1006,49 @@ class _SearchPageState extends State<SearchPage> {
                         }).toList(),
                       ),
                       const SizedBox(height: 20),
+                      Text(
+                        'Số lượng chương',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        children: ChapterCountFilter.values.map((filter) {
+                          final isSelected = selectedChapterCount == filter;
+                          return ChoiceChip(
+                            label: Text(filter.label),
+                            selected: isSelected,
+                            selectedColor: Theme.of(context).colorScheme.primary,
+                            backgroundColor: Theme.of(context).cardColor,
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge?.color,
+                            ),
+                            onSelected: (selected) {
+                              HapticFeedback.selectionClick();
+                              setStateModal(
+                                () => selectedChapterCount = selected ? filter : ChapterCountFilter.all,
+                              );
+                              setState(() {
+                                _updateFilteredMangas();
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
@@ -1062,7 +1100,8 @@ class _SearchPageState extends State<SearchPage> {
               } else {
                 if (_debounce?.isActive ?? false) _debounce!.cancel();
                 _debounce = Timer(const Duration(milliseconds: 150), () {
-                  query = val;
+      if (!mounted) return;
+      query = val;
                   setState(() {
                     _updateFilteredMangas();
                   });
@@ -1075,7 +1114,8 @@ class _SearchPageState extends State<SearchPage> {
               }
               if (val.trim().length >= 2) {
                 _recentSearchDebounce = Timer(const Duration(milliseconds: 1500), () {
-                  if (mounted && query.trim().length >= 2) {
+      if (!mounted) return;
+      if (mounted && query.trim().length >= 2) {
                     _saveRecentSearch(query);
                   }
                 });
@@ -1110,11 +1150,7 @@ class _SearchPageState extends State<SearchPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.casino_rounded, color: Colors.orangeAccent),
-            tooltip: 'Khám phá ngẫu nhiên',
-            onPressed: _showRandomMangaSheet,
-          ),
-          IconButton(
+            visualDensity: VisualDensity.compact,
             icon: Icon(
               genreFilters.isNotEmpty ||
                       selectedStatus != null ||
@@ -1124,9 +1160,10 @@ class _SearchPageState extends State<SearchPage> {
               color: genreFilters.isNotEmpty ||
                       selectedStatus != null ||
                       selectedChapterCount != ChapterCountFilter.all
-                  ? Colors.orangeAccent
+                  ? Theme.of(context).colorScheme.primary
                   : Theme.of(context).iconTheme.color,
             ),
+            tooltip: 'Bộ lọc',
             onPressed: _showFilterDialog,
           ),
           PopupMenuButton<SearchSortMode>(
@@ -1215,13 +1252,13 @@ class _SearchPageState extends State<SearchPage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: sug.type == _SuggestionType.genre
-                                      ? Colors.orangeAccent.withValues(alpha: 0.2)
-                                      : Colors.white.withValues(alpha: 0.08),
+                                      ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
                                     color: sug.type == _SuggestionType.genre
-                                        ? Colors.orangeAccent.withValues(alpha: 0.6)
-                                        : Colors.white12,
+                                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.6)
+                                        : Theme.of(context).dividerColor,
                                   ),
                                 ),
                                 child: Row(
@@ -1235,8 +1272,8 @@ class _SearchPageState extends State<SearchPage> {
                                               : Icons.auto_stories_rounded,
                                       size: 13,
                                       color: sug.type == _SuggestionType.genre
-                                          ? Colors.orangeAccent
-                                          : Colors.white70,
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                     ),
                                     const SizedBox(width: 5),
                                     Text(
@@ -1247,8 +1284,8 @@ class _SearchPageState extends State<SearchPage> {
                                             ? FontWeight.bold
                                             : FontWeight.normal,
                                         color: sug.type == _SuggestionType.genre
-                                            ? Colors.orangeAccent
-                                            : Colors.white,
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context).colorScheme.onSurface,
                                       ),
                                     ),
                                   ],
@@ -1274,12 +1311,12 @@ class _SearchPageState extends State<SearchPage> {
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.history_rounded, size: 18, color: Colors.orangeAccent.withValues(alpha: 0.9)),
+                                Icon(Icons.history_rounded, size: 18, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.9)),
                                 const SizedBox(width: 6),
-                                const Text(
+                                Text(
                                   'Tìm kiếm gần đây',
                                   style: TextStyle(
-                                    color: Colors.white70,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -1288,9 +1325,15 @@ class _SearchPageState extends State<SearchPage> {
                             ),
                             InkWell(
                               onTap: _clearRecentSearches,
-                              child: const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                child: Text('Xóa tất cả', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Text(
+                                  'Xóa tất cả',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -1302,9 +1345,9 @@ class _SearchPageState extends State<SearchPage> {
                           children: _recentSearches.map((term) {
                             return Container(
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                border: Border.all(color: Theme.of(context).dividerColor),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -1328,11 +1371,18 @@ class _SearchPageState extends State<SearchPage> {
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.history, size: 14, color: Colors.white54),
+                                          Icon(
+                                            Icons.history,
+                                            size: 14,
+                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                          ),
                                           const SizedBox(width: 6),
                                           Text(
                                             term,
-                                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                                            style: TextStyle(
+                                              color: Theme.of(context).colorScheme.onSurface,
+                                              fontSize: 12,
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -1341,9 +1391,13 @@ class _SearchPageState extends State<SearchPage> {
                                   InkWell(
                                     borderRadius: const BorderRadius.horizontal(right: Radius.circular(16)),
                                     onTap: () => _removeRecentSearch(term),
-                                    child: const Padding(
-                                      padding: EdgeInsets.fromLTRB(4, 6, 8, 6),
-                                      child: Icon(Icons.close, size: 13, color: Colors.white38),
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
+                                      child: Icon(
+                                        Icons.close,
+                                        size: 13,
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1352,7 +1406,7 @@ class _SearchPageState extends State<SearchPage> {
                           }).toList(),
                         ),
                         const SizedBox(height: 8),
-                        const Divider(color: Colors.white10, height: 1),
+                        Divider(color: Theme.of(context).dividerColor, height: 1),
                       ],
                     ),
                   ),
@@ -1365,13 +1419,13 @@ class _SearchPageState extends State<SearchPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          children: const [
-                            Icon(Icons.local_fire_department_rounded, size: 18, color: Colors.deepOrangeAccent),
-                            SizedBox(width: 6),
+                          children: [
+                            const Icon(Icons.local_fire_department_rounded, size: 18, color: Colors.deepOrangeAccent),
+                            const SizedBox(width: 6),
                             Text(
                               'Thể loại thịnh hành',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1402,17 +1456,19 @@ class _SearchPageState extends State<SearchPage> {
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? Colors.deepOrangeAccent.withValues(alpha: 0.25)
-                                      : Colors.white.withValues(alpha: 0.06),
+                                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
-                                    color: isSelected ? Colors.deepOrangeAccent : Colors.white12,
+                                    color: isSelected ? Colors.deepOrangeAccent : Theme.of(context).dividerColor,
                                     width: 1,
                                   ),
                                 ),
                                 child: Text(
                                   genre,
                                   style: TextStyle(
-                                    color: isSelected ? Colors.deepOrangeAccent : Colors.white70,
+                                    color: isSelected
+                                        ? Colors.deepOrangeAccent
+                                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                     fontSize: 12,
                                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   ),
@@ -1434,8 +1490,7 @@ class _SearchPageState extends State<SearchPage> {
                 if (mangas.isEmpty) {
                   final hasActiveFilter = query.isNotEmpty ||
                       genreFilters.isNotEmpty ||
-                      selectedStatus != null ||
-                      selectedChapterCount != ChapterCountFilter.all;
+                      selectedStatus != null;
 
                   return RefreshIndicator(
                     onRefresh: () => _loadMangas(forceRefresh: true),
@@ -1447,17 +1502,17 @@ class _SearchPageState extends State<SearchPage> {
                           child: Container(
                             padding: const EdgeInsets.all(22),
                             decoration: BoxDecoration(
-                              color: Colors.orangeAccent.withValues(alpha: 0.12),
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: Colors.orangeAccent.withValues(alpha: 0.25),
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
                                 width: 1.5,
                               ),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.search_off_rounded,
                               size: 48,
-                              color: Colors.orangeAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                         ),
@@ -1500,7 +1555,6 @@ class _SearchPageState extends State<SearchPage> {
                                 query = '';
                                 genreFilters.clear();
                                 selectedStatus = null;
-                                selectedChapterCount = ChapterCountFilter.all;
                                 genreMatchMode = GenreMatchMode.and;
                                 setState(() {
                                   _updateFilteredMangas();
@@ -1509,9 +1563,9 @@ class _SearchPageState extends State<SearchPage> {
                               icon: const Icon(Icons.refresh_rounded, size: 16),
                               label: const Text('Xóa bộ lọc & tìm lại'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.orangeAccent,
+                                foregroundColor: Theme.of(context).colorScheme.primary,
                                 side: BorderSide(
-                                  color: Colors.orangeAccent.withValues(alpha: 0.6),
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
                                 ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(20),
@@ -1585,26 +1639,33 @@ class _SearchPageState extends State<SearchPage> {
                                       const SizedBox(height: 6),
                                       Text(
                                         manga.author,
-                                        style: const TextStyle(color: Colors.orangeAccent, fontSize: 13, fontWeight: FontWeight.w600),
+                                        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13, fontWeight: FontWeight.w600),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 6),
                                       if (manga.genres.isNotEmpty)
-                                        Wrap(
-                                          spacing: 6,
-                                          runSpacing: 6,
-                                          children: manga.genres.take(3).map((genre) => Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withValues(alpha: 0.1),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              genre,
-                                              style: const TextStyle(fontSize: 10, color: Colors.white70),
-                                            ),
-                                          )).toList(),
+                                        SingleChildScrollView(
+                                          scrollDirection: Axis.horizontal,
+                                          child: Row(
+                                            children: manga.genres.take(3).map((genre) => Padding(
+                                              padding: const EdgeInsets.only(right: 6),
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  genre,
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                                  ),
+                                                ),
+                                              ),
+                                            )).toList(),
+                                          ),
                                         ),
                                       const Spacer(),
                                       Row(

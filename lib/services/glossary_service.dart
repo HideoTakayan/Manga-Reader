@@ -55,8 +55,21 @@ class GlossaryService extends ChangeNotifier {
 
   List<GlossaryRule> get rules => List.unmodifiable(_rules);
 
+  static String? normalizeMangaId(String? id) {
+    if (id == null) return null;
+    var clean = id.trim();
+    if (clean.startsWith('LOCAL_NOVEL|')) {
+      clean = clean.substring('LOCAL_NOVEL|'.length);
+    }
+    if (clean.startsWith('epub_')) {
+      clean = clean.substring('epub_'.length);
+    }
+    return clean.isEmpty ? null : clean;
+  }
+
   List<GlossaryRule> getRulesForManga(String? mangaId) {
-    return _rules.where((r) => r.mangaId == null || r.mangaId == mangaId).toList();
+    final norm = normalizeMangaId(mangaId);
+    return _rules.where((r) => r.mangaId == null || normalizeMangaId(r.mangaId) == norm).toList();
   }
 
   Future<void> _loadRules() async {
@@ -70,6 +83,7 @@ class GlossaryService extends ChangeNotifier {
           _rules.add(GlossaryRule.fromMap(map));
         } catch (_) {}
       }
+      _invalidateCache();
       notifyListeners();
     } catch (_) {}
   }
@@ -82,12 +96,13 @@ class GlossaryService extends ChangeNotifier {
     final cleanFrom = from.trim();
     final cleanTo = to.trim();
     if (cleanFrom.isEmpty) return;
+    final normalizedMangaId = normalizeMangaId(mangaId);
 
     // Xóa quy tắc trùng 'from' và 'mangaId' nếu có từ trước
     _rules.removeWhere(
       (r) =>
           r.from.toLowerCase() == cleanFrom.toLowerCase() &&
-          r.mangaId == mangaId,
+          normalizeMangaId(r.mangaId) == normalizedMangaId,
     );
 
     _rules.insert(
@@ -96,7 +111,7 @@ class GlossaryService extends ChangeNotifier {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         from: cleanFrom,
         to: cleanTo,
-        mangaId: mangaId,
+        mangaId: normalizedMangaId,
         isEnabled: true,
         createdAt: DateTime.now(),
       ),
@@ -113,6 +128,7 @@ class GlossaryService extends ChangeNotifier {
     if (pairs.isEmpty) return 0;
     int count = 0;
     final now = DateTime.now();
+    final normalizedMangaId = normalizeMangaId(mangaId);
 
     for (int i = 0; i < pairs.length; i++) {
       final cleanFrom = pairs[i]['from']?.trim() ?? '';
@@ -122,7 +138,7 @@ class GlossaryService extends ChangeNotifier {
       _rules.removeWhere(
         (r) =>
             r.from.toLowerCase() == cleanFrom.toLowerCase() &&
-            r.mangaId == mangaId,
+            normalizeMangaId(r.mangaId) == normalizedMangaId,
       );
 
       _rules.insert(
@@ -131,7 +147,7 @@ class GlossaryService extends ChangeNotifier {
           id: '${now.millisecondsSinceEpoch}_$i',
           from: cleanFrom,
           to: cleanTo,
-          mangaId: mangaId,
+          mangaId: normalizedMangaId,
           isEnabled: true,
           createdAt: now,
         ),
@@ -179,7 +195,8 @@ class GlossaryService extends ChangeNotifier {
     if (globalOnly) {
       _rules.removeWhere((r) => r.mangaId == null);
     } else if (mangaId != null) {
-      _rules.removeWhere((r) => r.mangaId == mangaId);
+      final normalizedMangaId = normalizeMangaId(mangaId);
+      _rules.removeWhere((r) => normalizeMangaId(r.mangaId) == normalizedMangaId);
     } else {
       _rules.clear();
     }
@@ -215,6 +232,7 @@ class GlossaryService extends ChangeNotifier {
   }
 
   Future<void> _save() async {
+    _invalidateCache();
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -223,24 +241,55 @@ class GlossaryService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  // Cache variables to prevent heavy RegExp compilations on every build
+  final Map<String, List<GlossaryRule>> _activeRulesCache = {};
+  final Map<String, RegExp> _regexCache = {};
+
+  void _invalidateCache() {
+    _activeRulesCache.clear();
+    _regexCache.clear();
+  }
+
   /// Áp dụng các quy tắc thay thế từ ngữ vào văn bản
   String applyReplacements(String text, {String? mangaId}) {
     if (text.isEmpty) return text;
-    final activeRules = _rules.where((r) {
-      if (!r.isEnabled || r.from.isEmpty) return false;
-      return r.mangaId == null || r.mangaId == mangaId;
-    }).toList()
-      ..sort((a, b) => b.from.length.compareTo(a.from.length));
-
-    if (activeRules.isEmpty) return text;
-
-    var result = text;
-    for (final rule in activeRules) {
-      try {
-        final regex = RegExp(RegExp.escape(rule.from), caseSensitive: false);
-        result = result.replaceAllMapped(regex, (_) => rule.to);
-      } catch (_) {}
+    
+    final normalizedMangaId = normalizeMangaId(mangaId);
+    final cacheKey = normalizedMangaId ?? 'global';
+    
+    List<GlossaryRule>? activeRules = _activeRulesCache[cacheKey];
+    RegExp? combinedRegex = _regexCache[cacheKey];
+    
+    if (activeRules == null) {
+      activeRules = _rules.where((r) {
+        if (!r.isEnabled || r.from.isEmpty) return false;
+        return r.mangaId == null || normalizeMangaId(r.mangaId) == normalizedMangaId;
+      }).toList()
+        ..sort((a, b) => b.from.length.compareTo(a.from.length));
+        
+      _activeRulesCache[cacheKey] = activeRules;
+      
+      if (activeRules.isNotEmpty) {
+        try {
+          final pattern = activeRules.map((r) => RegExp.escape(r.from)).join('|');
+          combinedRegex = RegExp(pattern, caseSensitive: false);
+          _regexCache[cacheKey] = combinedRegex;
+        } catch (_) {}
+      }
     }
-    return result;
+
+    if (activeRules.isEmpty || combinedRegex == null) return text;
+
+    return text.replaceAllMapped(combinedRegex, (match) {
+      final matchedString = match.group(0)?.toLowerCase();
+      if (matchedString == null) return match.group(0) ?? '';
+      
+      for (final rule in activeRules!) {
+        if (rule.from.toLowerCase() == matchedString) {
+          return rule.to;
+        }
+      }
+      return match.group(0) ?? '';
+    });
   }
 }

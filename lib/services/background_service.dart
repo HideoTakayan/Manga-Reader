@@ -57,13 +57,16 @@ class BackgroundService {
     // DownloadService chạy trong main Isolate, BackgroundService ngăn Android kill nó.
     DartPluginRegistrant.ensureInitialized();
 
+    Timer? notificationTimer;
+
     // Lắng nghe signal 'stopService' từ BackgroundService.stop()
     service.on('stopService').listen((event) {
+      notificationTimer?.cancel();
       service.stopSelf();
     });
 
     // Cập nhật notification mỗi 30s để hệ thống biết service còn sống
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
+    notificationTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       if (service is AndroidServiceInstance) {
         if (await service.isForegroundService()) {
           service.setForegroundNotificationInfo(

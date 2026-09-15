@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../data/content_type.dart';
 import '../data/database_helper.dart';
 import '../data/models.dart';
+import 'download_cache.dart';
 import 'folder_service.dart';
 import 'library_service.dart';
 import 'novel_service.dart';
@@ -35,26 +36,26 @@ class LocalScanService {
       }
 
       // Quét thư mục _novels để khôi phục truyện chữ EPUB
-      if (FolderService.rootPath != null) {
-        final novelsDir = Directory('${FolderService.rootPath}/_novels');
-        if (await novelsDir.exists()) {
-          debugPrint('📖 Scanning Local Novels: ${novelsDir.path}');
-          final novelEntities = novelsDir.listSync();
-          for (var entity in novelEntities) {
-            if (entity is File && p.extension(entity.path).toLowerCase() == '.epub') {
-              final novelTitle = p.basenameWithoutExtension(entity.path);
-              final novel = LocalNovel(
-                path: entity.path,
-                title: novelTitle,
-                importedAt: entity.lastModifiedSync(),
-              );
-              final added = await NovelService.instance.add(novel);
-              if (added) importedCount++;
-            }
+      final novelsPath = await FolderService.getNovelsPath();
+      final novelsDir = Directory(novelsPath);
+      if (await novelsDir.exists()) {
+        debugPrint('📖 Scanning Local Novels: ${novelsDir.path}');
+        final novelEntities = novelsDir.listSync();
+        for (var entity in novelEntities) {
+          if (entity is File && p.extension(entity.path).toLowerCase() == '.epub') {
+            final novelTitle = p.basenameWithoutExtension(entity.path);
+            final novel = LocalNovel(
+              path: entity.path,
+              title: novelTitle,
+              importedAt: entity.lastModifiedSync(),
+            );
+            final added = await NovelService.instance.add(novel);
+            if (added) importedCount++;
           }
         }
       }
 
+      await DownloadCache.instance.invalidateCache();
       LibraryService.instance.notifyMappingChanged();
       debugPrint('✅ Scan Hoàn Tất. Đã nhập $importedCount mục.');
     } catch (e) {
@@ -65,7 +66,11 @@ class LocalScanService {
 
   Future<void> _importMangaFromFolder(Directory folder) async {
     final folderName = p.basename(folder.path);
-    if (folderName == 'temp_cache' || folderName.startsWith('.')) return;
+    if (folderName == 'temp_cache' ||
+        folderName == '_novels' ||
+        folderName.startsWith('.')) {
+      return;
+    }
     final files = folder.listSync();
 
     // 1. Đọc details.json nếu có — FolderService.saveMangaDetails() đã ghi khi tải

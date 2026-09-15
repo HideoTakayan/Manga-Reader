@@ -42,10 +42,8 @@ class EpubParser {
     // 2. Read container.xml to find OPF
     final container = _readArchiveText(files, 'META-INF/container.xml');
       final containerXml = XmlDocument.parse(container);
-      final opfPath = containerXml
-          .findAllElements('rootfile')
-          .first
-          .getAttribute('full-path');
+      final rootfile = containerXml.findAllElements('rootfile').firstOrNull;
+      final opfPath = rootfile?.getAttribute('full-path');
       if (opfPath == null) {
         throw const FormatException('Không tìm thấy OPF path');
       }
@@ -83,8 +81,14 @@ class EpubParser {
         if (item == null || !_isHtmlItem(item)) continue;
 
         final html = _readArchiveText(files, item.href);
-        final title =
-            navTitles[item.href] ?? _extractTitle(html) ?? 'Chương $index';
+        String? title = navTitles[item.href];
+        if (title == null || title.trim().isEmpty || title.trim().toLowerCase() == 'unknown') {
+          title = _fastExtractTitle(html) ?? _extractTitle(html);
+        }
+        if (title == null || title.trim().isEmpty || title.trim().toLowerCase() == 'unknown') {
+          title = 'Chương $index';
+        }
+        title = title.trim();
         final blocks = _parseBlocks(html, item.href, files);
 
         if (blocks.isEmpty) continue;
@@ -140,9 +144,20 @@ class EpubParser {
       final idref = itemref.getAttribute('idref');
       final item = idref == null ? null : package.manifest[idref];
       if (item == null || !_isHtmlItem(item)) continue;
+      String? title = navTitles[item.href];
+      if (title == null || title.trim().isEmpty || title.trim().toLowerCase() == 'unknown') {
+        try {
+          final html = _readArchiveText(files, item.href);
+          title = _fastExtractTitle(html);
+        } catch (_) {}
+      }
+      if (title == null || title.trim().isEmpty || title.trim().toLowerCase() == 'unknown') {
+        title = 'Chương $index';
+      }
+      
       chapters.add(
         EpubChapterReference(
-          title: navTitles[item.href] ?? 'Chương $index',
+          title: title.trim(),
           href: item.href,
         ),
       );
@@ -174,10 +189,8 @@ class EpubParser {
   static _EpubPackage _readPackage(Map<String, ArchiveFile> files) {
     final container = _readArchiveText(files, 'META-INF/container.xml');
     final containerXml = XmlDocument.parse(container);
-    final opfPath = containerXml
-        .findAllElements('rootfile')
-        .first
-        .getAttribute('full-path');
+    final rootfile = containerXml.findAllElements('rootfile').firstOrNull;
+    final opfPath = rootfile?.getAttribute('full-path');
     if (opfPath == null) {
       throw const FormatException('Không tìm thấy OPF path');
     }
@@ -237,7 +250,7 @@ class EpubParser {
               item.href.toLowerCase().endsWith('nav.xhtml'),
         );
 
-    if (navItem != null && files.containsKey(navItem.href)) {
+    if (navItem != null && _findArchiveFile(files, navItem.href) != null) {
       try {
         final doc = XmlDocument.parse(_readArchiveText(files, navItem.href));
         final navDir = _dirname(navItem.href);
@@ -277,7 +290,7 @@ class EpubParser {
           item.href.toLowerCase().endsWith('.ncx'),
     );
 
-    if (ncxItem != null && files.containsKey(ncxItem.href)) {
+    if (ncxItem != null && _findArchiveFile(files, ncxItem.href) != null) {
       try {
         final doc = XmlDocument.parse(_readArchiveText(files, ncxItem.href));
         final navDir = _dirname(ncxItem.href);
@@ -314,11 +327,23 @@ class EpubParser {
         lower.endsWith('.htm');
   }
 
-  static String _readArchiveText(Map<String, ArchiveFile> files, String path) {
+  static ArchiveFile? _findArchiveFile(Map<String, ArchiveFile> files, String path) {
     final normalized = _normalizePath(path);
-    final file = files[normalized];
+    final direct = files[normalized];
+    if (direct != null) return direct;
+    final lower = normalized.toLowerCase();
+    for (final entry in files.entries) {
+      if (entry.key.toLowerCase() == lower) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  static String _readArchiveText(Map<String, ArchiveFile> files, String path) {
+    final file = _findArchiveFile(files, path);
     if (file == null || !file.isFile) {
-      throw FormatException('Không tìm thấy file EPUB: $normalized');
+      throw FormatException('Không tìm thấy file EPUB: $path');
     }
     final content = file.content;
     final bytes = content is Uint8List
@@ -327,6 +352,20 @@ class EpubParser {
         ? Uint8List.fromList(content)
         : Uint8List(0);
     return utf8.decode(bytes, allowMalformed: true);
+  }
+
+  static String? _fastExtractTitle(String html) {
+    final match = RegExp(r'<title[^>]*>(.*?)</title>', caseSensitive: false, dotAll: true).firstMatch(html);
+    if (match != null) {
+      final t = match.group(1)?.trim();
+      if (t != null && t.isNotEmpty && t.toLowerCase() != 'unknown') return t;
+    }
+    final hMatch = RegExp(r'<h[12][^>]*>(.*?)</h[12]>', caseSensitive: false, dotAll: true).firstMatch(html);
+    if (hMatch != null) {
+      final t = hMatch.group(1)?.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (t != null && t.isNotEmpty && t.toLowerCase() != 'unknown') return t;
+    }
+    return null;
   }
 
   static String? _extractTitle(String html) {
@@ -522,7 +561,7 @@ class EpubParser {
             final imgPath = _normalizePath(
               _joinPath(_dirname(htmlPath), cleanSrc),
             );
-            final imgFile = files[imgPath];
+            final imgFile = _findArchiveFile(files, imgPath);
             if (imgFile != null && imgFile.isFile) {
               final content = imgFile.content;
               if (content is Uint8List) {

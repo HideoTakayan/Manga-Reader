@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/level_service.dart';
 
@@ -70,13 +71,15 @@ class LeaderboardService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Map<String, int> _rankCache = {};
   bool _isWarmupStarted = false;
+  StreamSubscription? _warmupSub;
 
   /// Khởi động lắng nghe nền Top 20 user để cache thứ hạng VIP toàn app
   void initWarmup() {
     if (_isWarmupStarted) return;
     _isWarmupStarted = true;
     try {
-      _firestore
+      _warmupSub?.cancel();
+      _warmupSub = _firestore
           .collection('users')
           .orderBy('exp', descending: true)
           .limit(20)
@@ -88,6 +91,13 @@ class LeaderboardService {
         }
       }, onError: (_) {});
     } catch (_) {}
+  }
+
+  /// Hủy đăng ký lắng nghe realtime để giải phóng bộ nhớ
+  void dispose() {
+    _warmupSub?.cancel();
+    _warmupSub = null;
+    _isWarmupStarted = false;
   }
 
   /// Lấy thứ hạng hiện tại của người dùng từ cache (0 nếu không trong Top)

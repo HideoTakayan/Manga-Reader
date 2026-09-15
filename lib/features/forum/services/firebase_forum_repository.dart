@@ -27,19 +27,23 @@ class FirebaseForumRepository implements ForumRepository {
         final displayName = (data['displayName']?.toString() ?? '').trim();
         final name = (data['name']?.toString() ?? '').trim();
         final finalName = displayName.isNotEmpty ? displayName : name;
-        final avatarUrl = (data['avatarUrl']?.toString() ?? data['avatar']?.toString() ?? '').trim();
+        final rawAvatar = (data['avatarUrl']?.toString() ?? data['avatar']?.toString() ?? '').trim();
+        final safeAvatar = (rawAvatar.isNotEmpty && rawAvatar.length <= 2000 && !rawAvatar.startsWith('data:'))
+            ? rawAvatar
+            : (defaultAvatar.length <= 2000 && !defaultAvatar.startsWith('data:') ? defaultAvatar : '');
         final exp = (data['exp'] as num?)?.toInt() ?? 0;
         final level = (data['level'] as num?)?.toInt() ?? LevelService.getLevelInfo(exp).level;
         return (
           finalName.isNotEmpty ? finalName : defaultName,
-          avatarUrl.isNotEmpty ? avatarUrl : defaultAvatar,
+          safeAvatar,
           level > 0 ? level : 1,
         );
       }
     } catch (e) {
       debugPrint('Error getting custom profile: $e');
     }
-    return (defaultName, defaultAvatar, 1);
+    final safeDefault = (defaultAvatar.length <= 2000 && !defaultAvatar.startsWith('data:')) ? defaultAvatar : '';
+    return (defaultName, safeDefault, 1);
   }
 
   @override
@@ -559,7 +563,7 @@ class FirebaseForumRepository implements ForumRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (postSnapshot.exists) {
+      if (postSnapshot.exists && postSnapshot.data()?['isDeleted'] != true) {
         final count =
             (postSnapshot.data()?['commentCount'] as num?)?.toInt() ?? 0;
         if (count > 0) {
@@ -597,7 +601,10 @@ class FirebaseForumRepository implements ForumRepository {
       final reactionSnapshot = await transaction.get(reactionRef);
       if (reactionSnapshot.exists) {
         transaction.delete(reactionRef);
-        transaction.update(postRef, {'likeCount': FieldValue.increment(-1)});
+        final currentLikes = (postData['likeCount'] as num?)?.toInt() ?? 0;
+        if (currentLikes > 0) {
+          transaction.update(postRef, {'likeCount': currentLikes - 1});
+        }
       } else {
         transaction.set(reactionRef, {
           'createdAt': FieldValue.serverTimestamp(),
@@ -661,7 +668,10 @@ class FirebaseForumRepository implements ForumRepository {
       final reactionSnapshot = await transaction.get(reactionRef);
       if (reactionSnapshot.exists) {
         transaction.delete(reactionRef);
-        transaction.update(commentRef, {'likeCount': FieldValue.increment(-1)});
+        final currentLikes = (commentData['likeCount'] as num?)?.toInt() ?? 0;
+        if (currentLikes > 0) {
+          transaction.update(commentRef, {'likeCount': currentLikes - 1});
+        }
       } else {
         transaction.set(reactionRef, {
           'createdAt': FieldValue.serverTimestamp(),
@@ -917,9 +927,9 @@ class FirebaseForumRepository implements ForumRepository {
             }
             if (userQuery.docs.isNotEmpty) {
               targetUid = userQuery.docs.first.id;
-              _userMentionCache[name] = targetUid;
+              _addToMentionCache(name, targetUid);
             } else {
-              _userMentionCache[name] = null; // Cache không tồn tại để tránh query lại
+              _addToMentionCache(name, null); // Cache không tồn tại để tránh query lại
             }
           }
 
@@ -946,6 +956,18 @@ class FirebaseForumRepository implements ForumRepository {
   }
 
   static final Map<String, String?> _userMentionCache = {};
+  static const int _mentionCacheMaxSize = 500;
+
+  static void _addToMentionCache(String name, String? uid) {
+    if (_userMentionCache.length >= _mentionCacheMaxSize) {
+      // Evict oldest half to keep memory bounded
+      final keysToRemove = _userMentionCache.keys.take(_mentionCacheMaxSize ~/ 2).toList();
+      for (final k in keysToRemove) {
+        _userMentionCache.remove(k);
+      }
+    }
+    _userMentionCache[name] = uid;
+  }
 
   Future<void> _createForumNotification({
     required String type,

@@ -61,6 +61,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     setState(() {}); // Update the clear icon immediately
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
       final query = CatalogCacheService.instance.normalize(_searchController.text.trim());
       setState(() {
         if (query.isEmpty) {
@@ -78,6 +79,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _debounceTimer?.cancel();
     _searchController.dispose();
     _authSubscription
@@ -165,28 +167,51 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 'Admin Dashboard',
                 style: TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
                 ),
               ),
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF1E1E2C), // Deep premium dark blue
-                      Color(0xFF2D2B55), // Rich purple/indigo
-                    ],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(color: const Color(0xFF0F172A)), // Slate 900
+                  Positioned(
+                    top: -50,
+                    right: -50,
+                    child: Container(
+                      width: 200,
+                      height: 200,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF3B82F6), // Blue
+                      ),
+                    ),
                   ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.admin_panel_settings,
-                    size: 100,
-                    color: Colors.white.withValues(alpha: 0.05),
+                  Positioned(
+                    bottom: -100,
+                    left: -50,
+                    child: Container(
+                      width: 250,
+                      height: 250,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF8B5CF6), // Purple
+                      ),
+                    ),
                   ),
-                ),
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+                    child: Container(color: Colors.black.withValues(alpha: 0.1)),
+                  ),
+                  Center(
+                    child: Icon(
+                      Icons.admin_panel_settings_rounded,
+                      size: 110,
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                ],
               ),
             ),
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -293,7 +318,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         title: 'Truyện',
                         value: '${_stats['mangas']}',
                         icon: Icons.book,
-                        color: Colors.blueAccent,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                       const SizedBox(width: 16),
                       // userCount = -1 → hiện "N/A" thay vì số âm
@@ -338,8 +363,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                         icon: const Icon(Icons.add),
                         label: const Text('Thêm Truyện'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
-                          foregroundColor: Colors.white,
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(20),
                           ),
@@ -387,10 +412,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             builder: (ctx) => AlertDialog(
               backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              title: Text('Ngắt kết nối Drive?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
               content: Text(
                 'Bạn đang kết nối với email: ${_driveAccount!.email}',
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
               ),
               actions: [
                 TextButton(
@@ -418,28 +443,54 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildSearchBar() {
-    return TextField(
-      controller: _searchController,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        hintText: 'Tìm kiếm truyện theo tên hoặc tác giả...',
-        prefixIcon: const Icon(Icons.search),
-        suffixIcon: _searchController.text.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  _searchController.clear();
-                  FocusScope.of(context).unfocus();
-                },
-              )
-            : null,
-        filled: true,
-        fillColor: Theme.of(context).cardColor,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+            blurRadius: 0,
+            spreadRadius: 1,
+            offset: const Offset(0, 0),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Tìm kiếm truyện theo tên hoặc tác giả...',
+              hintStyle: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
+              prefixIcon: Icon(Icons.search_rounded, color: Theme.of(context).colorScheme.primary),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded),
+                      onPressed: () {
+                        _searchController.clear();
+                        FocusScope.of(context).unfocus();
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.transparent,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+            ),
+          ),
         ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 20),
       ),
     );
   }
@@ -465,27 +516,27 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
                       width: 1.5,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.search_off_rounded,
                     size: 48,
-                    color: Colors.blueAccent,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   _searchController.text.isEmpty
-                      ? 'Chưa có truyện nào trong kho'
+                       ? 'Chưa có truyện nào trong kho'
                       : 'Không tìm thấy truyện phù hợp',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -494,7 +545,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       ? 'Bấm nút "Thêm Truyện" ở trên để đăng bộ truyện đầu tiên lên hệ thống.'
                       : 'Hãy thử tìm kiếm với từ khóa khác hoặc xóa bộ lọc tìm kiếm.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -715,13 +769,18 @@ class _AdminMangaCard extends StatelessWidget {
                                 builder: (dialogContext) => AlertDialog(
                                   backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  title: const Text(
+                                  title: Text(
                                     'Xóa Truyện?',
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Theme.of(dialogContext).colorScheme.onSurface,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   content: Text(
                                     'Bạn có chắc muốn xóa truyện "${manga.title}" không? Hành động này không thể hoàn tác.',
-                                    style: const TextStyle(color: Colors.white70),
+                                    style: TextStyle(
+                                      color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.7),
+                                    ),
                                   ),
                                   actions: [
                                     TextButton(
@@ -829,41 +888,53 @@ class _AdminToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseColor = iconColor ?? Theme.of(context).colorScheme.primary;
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Theme.of(context).cardColor,
-            Theme.of(context).cardColor.withValues(alpha: 0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).cardColor.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: baseColor.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, color: iconColor ?? Theme.of(context).iconTheme.color),
-        label: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onPressed,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: baseColor.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: baseColor, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, height: 1.2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -877,71 +948,84 @@ class _StatCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
-  final Color color;
+  final Color? color;
   final VoidCallback? onTap;
 
   const _StatCard({
     required this.title,
     required this.value,
     this.icon = Icons.analytics,
-    this.color = Colors.blueAccent,
+    this.color,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveColor = color ?? Theme.of(context).colorScheme.primary;
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                color.withValues(alpha: 0.25),
-                color.withValues(alpha: 0.05),
-              ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: effectiveColor.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: effectiveColor.withValues(alpha: 0.2), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: effectiveColor.withValues(alpha: 0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.1),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -10,
+                      bottom: -10,
+                      child: Icon(
+                        icon,
+                        size: 80,
+                        color: effectiveColor.withValues(alpha: 0.15),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            value,
+                            style: TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              color: Theme.of(context).colorScheme.onSurface,
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, size: 28, color: color),
               ),
-              const SizedBox(height: 12),
-              Text(
-                value,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: Theme.of(context).textTheme.bodyLarge?.color,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-              ),
-            ],
+            ),
           ),
         ),
       ),

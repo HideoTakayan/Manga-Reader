@@ -24,6 +24,7 @@ enum FollowFilterStatus {
 }
 
 enum FollowSortOrder {
+  recentlyFollowed,
   updated,
   recentlyRead,
   title,
@@ -33,11 +34,13 @@ class FollowedMangaData {
   final List<CloudManga> mangas;
   final Map<String, ReadingHistory> historyMap;
   final Map<String, LibraryStatusEntry> statusMap;
+  final Map<String, DateTime> followedAtMap;
 
   FollowedMangaData({
     required this.mangas,
     required this.historyMap,
     required this.statusMap,
+    this.followedAtMap = const {},
   });
 }
 
@@ -57,7 +60,7 @@ class _FollowingPageState extends State<FollowingPage> {
   MangaContentType? _selectedTypeFilter;
   FollowFilterStatus _selectedStatusFilter = FollowFilterStatus.all;
   String? _selectedCustomTag;
-  FollowSortOrder _sortOrder = FollowSortOrder.updated;
+  FollowSortOrder _sortOrder = FollowSortOrder.recentlyFollowed;
   Timer? _searchDebounce;
 
   @override
@@ -130,7 +133,11 @@ class _FollowingPageState extends State<FollowingPage> {
   }
 
   // Lọc từ toàn bộ catalog Drive chỉ lấy các manga user đang theo dõi kèm lịch sử đọc
-  Future<FollowedMangaData> _getFollowedMangas(List<String> followedIds, String userId) async {
+  Future<FollowedMangaData> _getFollowedMangas(
+    List<String> followedIds,
+    String userId, {
+    Map<String, DateTime> followedAtMap = const {},
+  }) async {
     List<CloudManga> allMangas = [];
     try {
       allMangas = await DriveService.instance.getMangas(
@@ -187,7 +194,12 @@ class _FollowingPageState extends State<FollowingPage> {
     final statusList = await LibraryStatusService.instance.getAll();
     final statusMap = {for (final s in statusList) s.mangaId: s};
 
-    return FollowedMangaData(mangas: mangas, historyMap: historyMap, statusMap: statusMap);
+    return FollowedMangaData(
+      mangas: mangas,
+      historyMap: historyMap,
+      statusMap: statusMap,
+      followedAtMap: followedAtMap,
+    );
   }
 
   Future<void> _handleRefresh() async {
@@ -228,7 +240,7 @@ class _FollowingPageState extends State<FollowingPage> {
                     title: Text(
                       label,
                       style: TextStyle(
-                        color: isSelected ? color : Colors.white,
+                        color: isSelected ? color : Theme.of(ctx).colorScheme.onSurface,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
@@ -294,16 +306,16 @@ class _FollowingPageState extends State<FollowingPage> {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.redAccent.withValues(alpha: 0.12),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                     border: Border.all(
-                      color: Colors.redAccent.withValues(alpha: 0.25),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
                       width: 1.5,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.favorite_border_rounded,
                     size: 54,
-                    color: Colors.redAccent,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -334,8 +346,8 @@ class _FollowingPageState extends State<FollowingPage> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 28,
                       vertical: 12,
@@ -454,8 +466,8 @@ class _FollowingPageState extends State<FollowingPage> {
                           icon: const Icon(Icons.explore_rounded, size: 18),
                           label: const Text('Khám phá truyện', style: TextStyle(fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orangeAccent,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -469,11 +481,32 @@ class _FollowingPageState extends State<FollowingPage> {
           );
         }
 
-        final followedIds = docs.map((d) => d.id).toList();
+        final followedAtMap = <String, DateTime>{};
+        for (final doc in docs) {
+          final data = doc.data() as Map<String, dynamic>?;
+          final raw = data?['followedAt'];
+          if (raw is Timestamp) {
+            followedAtMap[doc.id] = raw.toDate();
+          } else if (raw is String) {
+            followedAtMap[doc.id] = DateTime.tryParse(raw) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          } else {
+            followedAtMap[doc.id] = DateTime.fromMillisecondsSinceEpoch(0);
+          }
+        }
+
+        // Sắp xếp ID theo thời gian theo dõi mới nhất lên đầu mặc định
+        final sortedDocs = List<QueryDocumentSnapshot>.from(docs);
+        sortedDocs.sort((a, b) {
+          final aDate = followedAtMap[a.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = followedAtMap[b.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+
+        final followedIds = sortedDocs.map((d) => d.id).toList();
 
         return FutureBuilder<FollowedMangaData>(
           key: ValueKey(_refreshKey),
-          future: _getFollowedMangas(followedIds, user.uid),
+          future: _getFollowedMangas(followedIds, user.uid, followedAtMap: followedAtMap),
           builder: (context, mangaSnapshot) {
             if (mangaSnapshot.connectionState == ConnectionState.waiting &&
                 !mangaSnapshot.hasData) {
@@ -541,6 +574,7 @@ class _FollowingPageState extends State<FollowingPage> {
             final mangas = data?.mangas ?? [];
             final historyMap = data?.historyMap ?? {};
             final statusMap = data?.statusMap ?? {};
+            final followedAtMap = data?.followedAtMap ?? {};
 
             if (mangas.isEmpty &&
                 mangaSnapshot.connectionState == ConnectionState.done) {
@@ -678,6 +712,15 @@ class _FollowingPageState extends State<FollowingPage> {
 
             // Sắp xếp danh sách
             switch (_sortOrder) {
+              case FollowSortOrder.recentlyFollowed:
+                filteredMangas.sort((a, b) {
+                  final aDate = followedAtMap[a.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                  final bDate = followedAtMap[b.id] ?? DateTime.fromMillisecondsSinceEpoch(0);
+                  final cmp = bDate.compareTo(aDate);
+                  if (cmp != 0) return cmp;
+                  return b.updatedAt.compareTo(a.updatedAt);
+                });
+                break;
               case FollowSortOrder.updated:
                 filteredMangas.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
                 break;
@@ -756,7 +799,7 @@ class _FollowingPageState extends State<FollowingPage> {
                       ),
                       const SizedBox(width: 8),
                       PopupMenuButton<FollowSortOrder>(
-                        icon: const Icon(Icons.sort_rounded, size: 20, color: Colors.orangeAccent),
+                        icon: Icon(Icons.sort_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
                         tooltip: 'Sắp xếp danh sách',
                         initialValue: _sortOrder,
                         color: Theme.of(context).cardColor,
@@ -765,6 +808,16 @@ class _FollowingPageState extends State<FollowingPage> {
                           setState(() => _sortOrder = val);
                         },
                         itemBuilder: (ctx) => [
+                          PopupMenuItem(
+                            value: FollowSortOrder.recentlyFollowed,
+                            child: Row(
+                              children: [
+                                Icon(Icons.access_time_filled_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 8),
+                                const Text('Mới theo dõi (mặc định)'),
+                              ],
+                            ),
+                          ),
                           const PopupMenuItem(
                             value: FollowSortOrder.updated,
                             child: Row(
@@ -844,7 +897,7 @@ class _FollowingPageState extends State<FollowingPage> {
                       _buildFilterChip(
                         label: '✅ Đã xong ($completedCount)',
                         isSelected: _selectedStatusFilter == FollowFilterStatus.completed,
-                        highlightColor: Colors.blueAccent,
+                        highlightColor: Colors.greenAccent,
                         onTap: () => setState(() {
                           _selectedStatusFilter = _selectedStatusFilter == FollowFilterStatus.completed
                               ? FollowFilterStatus.all
@@ -879,7 +932,7 @@ class _FollowingPageState extends State<FollowingPage> {
                       _buildFilterChip(
                         label: 'Truyện tranh',
                         isSelected: _selectedTypeFilter == MangaContentType.manga,
-                        highlightColor: Colors.blueAccent,
+                        highlightColor: Theme.of(context).colorScheme.primary,
                         onTap: () => setState(() => _selectedTypeFilter =
                             _selectedTypeFilter == MangaContentType.manga ? null : MangaContentType.manga),
                       ),
@@ -887,7 +940,7 @@ class _FollowingPageState extends State<FollowingPage> {
                       _buildFilterChip(
                         label: 'Tiểu thuyết',
                         isSelected: _selectedTypeFilter == MangaContentType.novel,
-                        highlightColor: Colors.purpleAccent,
+                        highlightColor: Colors.amber,
                         onTap: () => setState(() => _selectedTypeFilter =
                             _selectedTypeFilter == MangaContentType.novel ? null : MangaContentType.novel),
                       ),
@@ -948,7 +1001,15 @@ class _FollowingPageState extends State<FollowingPage> {
                               final hasNew = hist != null &&
                                   manga.updatedAt.isAfter(hist.updatedAt.add(const Duration(minutes: 5)));
                               final currentEntry = statusMap[manga.id];
-                              final timeAgo = _formatTimeAgo(manga.updatedAt);
+                              final followedDate = followedAtMap[manga.id];
+                              String timeAgoText;
+                              if (_sortOrder == FollowSortOrder.recentlyFollowed && followedDate != null && followedDate.millisecondsSinceEpoch > 0) {
+                                timeAgoText = 'Theo dõi ${_formatTimeAgo(followedDate)}';
+                              } else if (_sortOrder == FollowSortOrder.recentlyRead && hist != null) {
+                                timeAgoText = 'Đọc ${_formatTimeAgo(hist.updatedAt)}';
+                              } else {
+                                timeAgoText = 'Cập nhật ${_formatTimeAgo(manga.updatedAt)}';
+                              }
 
                               return Container(
                                 height: 132,
@@ -1144,13 +1205,13 @@ class _FollowingPageState extends State<FollowingPage> {
                                                           ],
                                                         ),
                                                       ),
-                                                      const PopupMenuItem(
+                                                      PopupMenuItem(
                                                         value: 'tags',
                                                         child: Row(
                                                           children: [
-                                                            Icon(Icons.sell_outlined, size: 18, color: Colors.purpleAccent),
-                                                            SizedBox(width: 10),
-                                                            Text('Quản lý nhãn (Tags)'),
+                                                            Icon(Icons.sell_outlined, size: 18, color: Theme.of(context).colorScheme.primary),
+                                                            const SizedBox(width: 10),
+                                                            const Text('Quản lý nhãn (Tags)'),
                                                           ],
                                                         ),
                                                       ),
@@ -1186,7 +1247,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                   } else {
                                                     if (currentEntry?.status == MangaReadingStatus.completed) {
                                                       progressIcon = Icons.check_circle_outline_rounded;
-                                                      progressColor = Colors.blueAccent;
+                                                      progressColor = Colors.greenAccent;
                                                       progressText = 'Đã hoàn thành toàn bộ';
                                                     } else if (currentEntry?.status == MangaReadingStatus.reading) {
                                                       progressIcon = Icons.menu_book_rounded;
@@ -1224,7 +1285,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                         ),
                                                       ),
                                                       Text(
-                                                        timeAgo,
+                                                        timeAgoText,
                                                         style: const TextStyle(color: Colors.white38, fontSize: 10),
                                                       ),
                                                     ],
@@ -1317,12 +1378,12 @@ class _FollowingPageState extends State<FollowingPage> {
                                                       decoration: BoxDecoration(
                                                         color: hasNew
                                                             ? Colors.deepOrangeAccent.withValues(alpha: 0.2)
-                                                            : Colors.orangeAccent.withValues(alpha: 0.15),
+                                                            : Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                                                         borderRadius: BorderRadius.circular(8),
                                                         border: Border.all(
                                                           color: hasNew
                                                               ? Colors.deepOrangeAccent.withValues(alpha: 0.5)
-                                                              : Colors.orangeAccent.withValues(alpha: 0.4),
+                                                              : Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
                                                           width: 0.9,
                                                         ),
                                                       ),
@@ -1334,7 +1395,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                             style: TextStyle(
                                                               color: hasNew
                                                                   ? Colors.deepOrangeAccent
-                                                                  : Colors.orangeAccent,
+                                                                  : Theme.of(context).colorScheme.primary,
                                                               fontSize: 10.5,
                                                               fontWeight: FontWeight.bold,
                                                             ),
@@ -1344,7 +1405,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                             Icons.arrow_forward_ios_rounded,
                                                             color: hasNew
                                                                 ? Colors.deepOrangeAccent
-                                                                : Colors.orangeAccent,
+                                                                : Theme.of(context).colorScheme.primary,
                                                             size: 9,
                                                           ),
                                                         ],
@@ -1380,7 +1441,7 @@ class _FollowingPageState extends State<FollowingPage> {
     Color? highlightColor,
     required VoidCallback onTap,
   }) {
-    final activeColor = highlightColor ?? Colors.orangeAccent;
+    final activeColor = highlightColor ?? Theme.of(context).colorScheme.primary;
 
     return GestureDetector(
       onTap: onTap,

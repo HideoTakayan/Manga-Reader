@@ -38,6 +38,7 @@ class _UsersListPageState extends State<UsersListPage> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
       if (!_isLoading && !_isLoadingMore && _hasMore) {
@@ -92,6 +93,7 @@ class _UsersListPageState extends State<UsersListPage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _debounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -160,20 +162,31 @@ class _UsersListPageState extends State<UsersListPage> {
                 color: theme.cardColor,
                 borderRadius: BorderRadius.circular(21),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
+                  color: theme.dividerColor,
                 ),
               ),
               child: TextField(
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
-                style: const TextStyle(fontSize: 13, color: Colors.white),
+                style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                 decoration: InputDecoration(
                   hintText: 'Tìm kiếm theo tên hoặc email...',
-                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                  prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white54),
+                  hintStyle: TextStyle(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                    fontSize: 13,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 18,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+                  ),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear, size: 16, color: Colors.white54),
+                          icon: Icon(
+                            Icons.clear,
+                            size: 16,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+                          ),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -239,19 +252,22 @@ class _UsersListPageState extends State<UsersListPage> {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Lỗi tải danh sách người dùng',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: theme.colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             '$_errorMessage\n(Đảm bảo bạn đăng nhập đúng tài khoản Admin)',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12, color: Colors.white54),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
                           ),
                           const SizedBox(height: 16),
                           OutlinedButton.icon(
@@ -259,8 +275,8 @@ class _UsersListPageState extends State<UsersListPage> {
                             icon: const Icon(Icons.refresh_rounded, size: 16),
                             label: const Text('Thử lại'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white70,
-                              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                              foregroundColor: theme.colorScheme.onSurface,
+                              side: BorderSide(color: theme.dividerColor),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
@@ -278,7 +294,7 @@ class _UsersListPageState extends State<UsersListPage> {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -286,7 +302,7 @@ class _UsersListPageState extends State<UsersListPage> {
                                   ? Icons.person_search_outlined
                                   : Icons.group_off_outlined,
                               size: 40,
-                              color: Colors.white38,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
                           const SizedBox(height: 16),
@@ -294,8 +310,8 @@ class _UsersListPageState extends State<UsersListPage> {
                             _searchQuery.isNotEmpty
                                 ? 'Không tìm thấy người dùng phù hợp'
                                 : 'Chưa có người dùng nào trong danh mục này',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface,
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                             ),
@@ -306,7 +322,10 @@ class _UsersListPageState extends State<UsersListPage> {
                             _searchQuery.isNotEmpty
                                 ? 'Hãy thử tìm kiếm với tên hoặc email khác'
                                 : 'Danh sách sẽ xuất hiện khi có người dùng tương ứng',
-                            style: const TextStyle(color: Colors.white38, fontSize: 13),
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                              fontSize: 13,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                           if (_searchQuery.isNotEmpty) ...[
@@ -373,7 +392,9 @@ class _UsersListPageState extends State<UsersListPage> {
       backgroundColor: Theme.of(context).cardColor,
       labelStyle: TextStyle(
         fontSize: 12,
-        color: isSelected ? Colors.white : Colors.white70,
+        color: isSelected
+            ? Theme.of(context).colorScheme.onPrimary
+            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -410,17 +431,17 @@ class _UsersListPageState extends State<UsersListPage> {
               ? Colors.redAccent.withValues(alpha: 0.5)
               : isMuted
               ? Colors.orangeAccent.withValues(alpha: 0.4)
-              : Colors.white.withValues(alpha: 0.05),
+              : theme.dividerColor,
         ),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         leading: CircleAvatar(
           radius: 20,
-          backgroundColor: Colors.white10,
+          backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.08),
           backgroundImage: isValidPhotoUrl ? CachedNetworkImageProvider(photoUrl) : null,
           child: !isValidPhotoUrl
-              ? const Icon(Icons.person, color: Colors.white54, size: 20)
+              ? Icon(Icons.person, color: theme.colorScheme.onSurface.withValues(alpha: 0.54), size: 20)
               : null,
         ),
         title: Row(
@@ -433,7 +454,7 @@ class _UsersListPageState extends State<UsersListPage> {
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
-                  color: isBanned ? Colors.redAccent : Colors.white,
+                  color: isBanned ? Colors.redAccent : theme.colorScheme.onSurface,
                 ),
               ),
             ),
@@ -481,12 +502,12 @@ class _UsersListPageState extends State<UsersListPage> {
                 margin: const EdgeInsets.only(left: 6),
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent,
+                  color: Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text(
+                child: Text(
                   'NHÓM DỊCH',
-                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimary),
                 ),
               ),
           ],
@@ -499,7 +520,7 @@ class _UsersListPageState extends State<UsersListPage> {
               email,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12),
             ),
             if (isMuted && mutedUntil != null)
               Padding(
@@ -511,7 +532,7 @@ class _UsersListPageState extends State<UsersListPage> {
               ),
           ],
         ),
-        trailing: const Icon(Icons.more_vert, color: Colors.white54),
+        trailing: Icon(Icons.more_vert, color: theme.colorScheme.onSurface.withValues(alpha: 0.54)),
         onTap: () => _showUserActionSheet(context, uid, data, isBanned, isMuted, mutedUntil),
       ),
     );
@@ -540,6 +561,7 @@ class _UsersListPageState extends State<UsersListPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -552,7 +574,7 @@ class _UsersListPageState extends State<UsersListPage> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -567,22 +589,25 @@ class _UsersListPageState extends State<UsersListPage> {
                         children: [
                           Text(
                             name,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: theme.colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             email,
-                            style: const TextStyle(color: Colors.white54, fontSize: 13),
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                              fontSize: 13,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white54),
+                      icon: Icon(Icons.close, color: theme.colorScheme.onSurface.withValues(alpha: 0.54)),
                       onPressed: () => Navigator.pop(sheetContext),
                     ),
                   ],
@@ -595,19 +620,29 @@ class _UsersListPageState extends State<UsersListPage> {
                     padding: const EdgeInsets.only(bottom: 8.0),
                     child: Text(
                       'Tiểu sử: $bio',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13, fontStyle: FontStyle.italic),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                   ),
                 Text(
                   'UID: $uid',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                    fontSize: 11,
+                  ),
                 ),
                 if (createdAt != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2, bottom: 8),
                     child: Text(
                       'Ngày tạo: ${timeago.format(createdAt, locale: 'vi')}',
-                      style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                        fontSize: 11,
+                      ),
                     ),
                   ),
 
@@ -615,7 +650,7 @@ class _UsersListPageState extends State<UsersListPage> {
 
                 // 1. Sao chép UID
                 ListTile(
-                  leading: const Icon(Icons.copy_rounded, color: Colors.blueAccent),
+                  leading: Icon(Icons.copy_rounded, color: Theme.of(context).colorScheme.primary),
                   title: const Text('Sao chép UID'),
                   dense: true,
                   onTap: () {
@@ -725,12 +760,20 @@ class _UsersListPageState extends State<UsersListPage> {
                       builder: (ctx) => AlertDialog(
                         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        title: Text(isBanned ? 'Gỡ cấm tài khoản?' : 'Cấm tài khoản?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        title: Text(
+                          isBanned ? 'Gỡ cấm tài khoản?' : 'Cấm tài khoản?',
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         content: Text(
                           isBanned
                               ? 'Bạn có chắc muốn gỡ cấm cho người dùng "$name" không?'
                               : 'Người dùng "$name" sẽ bị chặn toàn bộ quyền đăng bài, bình luận và chat.',
-                          style: const TextStyle(color: Colors.white70),
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
                         ),
                         actions: [
                           TextButton(
@@ -790,10 +833,18 @@ class _UsersListPageState extends State<UsersListPage> {
                       builder: (ctx) => AlertDialog(
                         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        title: const Text('Xóa người dùng?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        title: Text(
+                          'Xóa người dùng?',
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         content: Text(
                           'Bạn có chắc chắn muốn xóa hồ sơ của "$name" khỏi Firestore không? Hành động này không thể hoàn tác.',
-                          style: const TextStyle(color: Colors.white70),
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
                         ),
                         actions: [
                           TextButton(
@@ -854,7 +905,10 @@ class _UsersListPageState extends State<UsersListPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Chỉnh sửa thông tin', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Chỉnh sửa thông tin',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -862,7 +916,7 @@ class _UsersListPageState extends State<UsersListPage> {
               controller: nameCtrl,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
               decoration: const InputDecoration(
                 labelText: 'Tên hiển thị',
                 border: OutlineInputBorder(),
@@ -874,7 +928,7 @@ class _UsersListPageState extends State<UsersListPage> {
               maxLines: 2,
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.done,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
               decoration: const InputDecoration(
                 labelText: 'Tiểu sử (Bio)',
                 border: OutlineInputBorder(),
@@ -924,15 +978,19 @@ class _UsersListPageState extends State<UsersListPage> {
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      bioCtrl.dispose();
+    });
   }
+
 
   void _showMuteUserDialog(BuildContext context, String uid, String name) {
     final options = [
@@ -948,14 +1006,17 @@ class _UsersListPageState extends State<UsersListPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Cấm ngôn $name', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Cấm ngôn $name',
+          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: options.map((opt) {
             final label = opt['label'] as String;
             final duration = opt['duration'] as Duration;
             return ListTile(
-              title: Text(label),
+              title: Text(label, style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface)),
               trailing: const Icon(Icons.timer_outlined, size: 18),
               onTap: () async {
                 try {

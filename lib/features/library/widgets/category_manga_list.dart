@@ -339,7 +339,7 @@ class CategoryMangaList extends StatelessWidget {
               'Chưa có truyện nào trong mục "$category". Khám phá kho truyện và thêm vào danh mục để đọc bất cứ lúc nào!',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.white60,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                 fontSize: 13,
                 height: 1.45,
               ),
@@ -354,7 +354,7 @@ class CategoryMangaList extends StatelessWidget {
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
+                foregroundColor: theme.colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -388,6 +388,7 @@ class _MangaListItem extends StatelessWidget {
     final readingLabel = localStatus == null
         ? null
         : _readingStatusLabel(localStatus!.status);
+    final theme = Theme.of(context);
 
     return Material(
       color: Colors.transparent,
@@ -414,10 +415,10 @@ class _MangaListItem extends StatelessWidget {
         },
         child: Ink(
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? Colors.white : Colors.white12,
+              color: isSelected ? theme.colorScheme.primary : theme.dividerColor,
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -445,8 +446,8 @@ class _MangaListItem extends StatelessWidget {
                         manga.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
                         ),
@@ -460,8 +461,8 @@ class _MangaListItem extends StatelessWidget {
                         ].where((part) => part.trim().isNotEmpty).join(' • '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white54,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                           fontSize: 12,
                         ),
                       ),
@@ -482,7 +483,7 @@ class _MangaListItem extends StatelessWidget {
                 const SizedBox(width: 8),
                 Icon(
                   isSelected ? Icons.check_circle : Icons.chevron_right,
-                  color: isSelected ? Colors.white : Colors.white30,
+                  color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
                 ),
               ],
             ),
@@ -541,8 +542,8 @@ class _MangaGridItem extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          // Viền trắng 3px khi selected — AnimatedContainer animate smooth
-          border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
+          // Viền theme primary 3px khi selected — AnimatedContainer animate smooth
+          border: isSelected ? Border.all(color: Theme.of(context).colorScheme.primary, width: 3) : null,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(isSelected ? 9 : 12),
@@ -550,9 +551,9 @@ class _MangaGridItem extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               DriveImage(fileId: manga.coverFileId, fit: BoxFit.cover),
-              // Overlay mờ trắng khi selected
+              // Overlay mờ theme primary khi selected
               if (isSelected)
-                Container(color: Colors.white.withValues(alpha: 0.2)),
+                Container(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25)),
               // Gradient từ trong suốt → đen ở dưới để nổi tên truyện
               Container(
                 decoration: BoxDecoration(
@@ -608,13 +609,17 @@ class _MangaGridItem extends StatelessWidget {
               ),
               // Checkmark icon ở góc trên phải khi selected
               if (isSelected)
-                const Positioned(
+                Positioned(
                   top: 6,
                   right: 6,
                   child: CircleAvatar(
                     radius: 12,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.check, size: 16, color: Colors.black),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: Icon(
+                      Icons.check,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
                   ),
                 )
               else if (localStatus != null && localStatus!.tags.isNotEmpty)

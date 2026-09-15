@@ -37,7 +37,7 @@ void main() {
     test('does not throw on partial data', () {
       final history = ReadingHistory.fromMap({});
 
-      expect(history.userId, 'guest');
+      expect(history.userId, '');
       expect(history.mangaId, '');
       expect(history.chapterId, '');
       expect(history.lastPageIndex, 0);

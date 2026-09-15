@@ -60,6 +60,8 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final hasVoted = uid != null && widget.poll.voterUids.contains(uid);
     final userChoice = uid != null ? widget.poll.userVotes[uid] : null;
@@ -69,10 +71,10 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
       margin: const EdgeInsets.only(top: 10, bottom: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.purpleAccent.withValues(alpha: 0.25),
+          color: primary.withValues(alpha: 0.25),
         ),
       ),
       child: Column(
@@ -85,21 +87,21 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: Colors.purpleAccent.withValues(alpha: 0.2),
+                  color: primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.poll_rounded,
                   size: 16,
-                  color: Colors.purpleAccent,
+                  color: primary,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   widget.poll.question,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurface,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                     height: 1.3,
@@ -129,12 +131,12 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                   child: Container(
                     height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isUserChoice
-                            ? Colors.purpleAccent
-                            : Colors.white.withValues(alpha: 0.12),
+                            ? primary
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.12),
                         width: isUserChoice ? 1.5 : 1,
                       ),
                     ),
@@ -152,8 +154,8 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                                 widthFactor: pct,
                                 child: Container(
                                   color: isUserChoice
-                                      ? Colors.purpleAccent.withValues(alpha: 0.35)
-                                      : Colors.white.withValues(alpha: 0.15),
+                                      ? primary.withValues(alpha: 0.35)
+                                      : theme.colorScheme.onSurface.withValues(alpha: 0.12),
                                 ),
                               ),
                             ),
@@ -173,8 +175,8 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                                         : Icons.touch_app_outlined),
                                 size: 16,
                                 color: isUserChoice
-                                    ? Colors.purpleAccent
-                                    : Colors.white54,
+                                    ? primary
+                                    : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                               ),
                               const SizedBox(width: 8),
 
@@ -184,8 +186,8 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                                   optionText,
                                   style: TextStyle(
                                     color: isUserChoice
-                                        ? Colors.white
-                                        : Colors.white.withValues(alpha: 0.9),
+                                        ? primary
+                                        : theme.colorScheme.onSurface,
                                     fontWeight: isUserChoice
                                         ? FontWeight.bold
                                         : FontWeight.normal,
@@ -202,8 +204,8 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                                   '${(pct * 100).toStringAsFixed(0)}% ($optVotes)',
                                   style: TextStyle(
                                     color: isUserChoice
-                                        ? Colors.purpleAccent
-                                        : Colors.white60,
+                                        ? primary
+                                        : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                                     fontSize: 12,
                                     fontWeight: isUserChoice
                                         ? FontWeight.bold
@@ -228,15 +230,15 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
             children: [
               Text(
                 '📊 $totalVotes lượt bình chọn',
-                style: const TextStyle(
-                  color: Colors.white54,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                   fontSize: 11,
                 ),
               ),
               Text(
                 hasVoted ? '✓ Đã bình chọn' : 'Chạm vào lựa chọn để bình chọn',
                 style: TextStyle(
-                  color: hasVoted ? Colors.purpleAccent : Colors.white38,
+                  color: hasVoted ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.38),
                   fontSize: 11,
                   fontWeight: hasVoted ? FontWeight.bold : FontWeight.normal,
                 ),

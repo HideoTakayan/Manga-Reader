@@ -1,6 +1,6 @@
+import 'dart:ui';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +21,8 @@ import '../../services/folder_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/level_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:image_size_getter/image_size_getter.dart';
+import 'package:image_size_getter/file_input.dart';
 import 'novel_reader_widget.dart';
 import 'pdf_reader_view.dart';
 import 'reader_provider.dart';
@@ -60,6 +62,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   Timer? _holdTimer;
   Timer? _progressSaveTimer;
+  Timer?
+  _precacheDebounceTimer; // Debounce để tránh spam precacheImage khi cuộn nhanh
+  final Set<String> _precachedPaths = {}; // Track file đã cache, tránh gọi lại
   Ticker? _autoScrollTicker;
   Duration? _lastAutoScrollTick;
   bool _isAutoScrolling = false;
@@ -92,6 +97,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   StreamSubscription<ClaimExpResult>? _levelUpSub;
 
+  final Map<String, Size> _imageSizeCache = {};
+
+  Size? _getImageSize(String filePath) {
+    if (_imageSizeCache.containsKey(filePath)) {
+      return _imageSizeCache[filePath];
+    }
+    try {
+      final size =
+          ImageSizeGetter.getSizeResult(FileInput(File(filePath))).size;
+      _imageSizeCache[filePath] = size;
+      return size;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,8 +121,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     _levelUpSub = LevelService.instance.onLevelUp.listen((result) {
       if (mounted) {
-        final title = LevelService.levelTitles[
-            (result.newLevel - 1).clamp(0, LevelService.levelTitles.length - 1)];
+        final title =
+            LevelService.levelTitles[(result.newLevel - 1).clamp(
+              0,
+              LevelService.levelTitles.length - 1,
+            )];
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
@@ -130,7 +154,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                       Text(
                         'Danh hiệu: $title (+10 EXP)',
-                        style: const TextStyle(color: Colors.white70, fontSize: 11),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
@@ -155,6 +182,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // BUG-02 fix: reset so scroll-restore triggers correctly even on reload
+      _restoredScrollChapterId = null;
       ref
           .read(readerProvider.notifier)
           .init(
@@ -162,17 +191,46 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             mangaId: widget.mangaId,
             initialPageIndex: widget.initialPageIndex,
           );
+
+      _applyOrientation(ref.read(readerProvider).orientation);
     });
+  }
+
+  void _applyOrientation(ReaderOrientation orientation) {
+    switch (orientation) {
+      case ReaderOrientation.portrait:
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+        break;
+      case ReaderOrientation.landscape:
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+        break;
+      case ReaderOrientation.reversePortrait:
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitDown]);
+        break;
+      case ReaderOrientation.auto:
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+        break;
+    }
   }
 
   void _onVerticalScroll() {
     final state = ref.read(readerProvider);
 
-    if (state.readingMode != ReadingMode.vertical) return;
+    if (!state.isVerticalMode) return;
     if (!_scrollController.hasClients) return;
 
     final pixels = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
+    final readingMode =
+        state.readingMode; // cache local để khỏi lấy lại nhiều lần
 
     final isNearEnd = pixels >= maxExtent - _nextChapterThreshold;
 
@@ -192,7 +250,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final pageCount = state.pages.length;
     int estimatedPage = _currentPageNotifier.value;
 
-    if (pageCount > 0 && state.readingMode == ReadingMode.vertical) {
+    if (pageCount > 0 && state.isVerticalMode) {
       final viewportRender = _scrollController
           .position
           .context
@@ -274,7 +332,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           }
         }
       }
-    } else if (pageCount > 0 && state.readingMode == ReadingMode.horizontal) {
+    } else if (pageCount > 0 && readingMode == ReadingMode.horizontal) {
       // Dự phòng cho chế độ ngang nếu lọt vào đây (dù horizontal dùng onPageChanged)
       estimatedPage = _currentPageNotifier.value;
     }
@@ -317,7 +375,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _startAutoScroll() {
     final state = ref.read(readerProvider);
-    
+
     // Nếu là PDF chế độ ngang: dùng hẹn giờ lật từng trang
     if (state.isPdf && state.readingMode == ReadingMode.horizontal) {
       _autoPageTurnRunId++;
@@ -362,7 +420,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       final deltaSeconds =
           (elapsed - lastTick).inMicroseconds / Duration.microsecondsPerSecond;
       final safeDeltaSeconds = deltaSeconds.clamp(0.0, 0.05).toDouble();
-      final deltaPixels = _autoScrollPixelsPerSecond * _autoScrollSpeedMultiplier * safeDeltaSeconds;
+      final deltaPixels =
+          _autoScrollPixelsPerSecond *
+          _autoScrollSpeedMultiplier *
+          safeDeltaSeconds;
 
       if (state.isPdf) {
         // PDF cuộn dọc mượt mà từng pixel qua PdfReaderView
@@ -393,7 +454,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   void _schedulePdfAutoPageTurn(int runId) {
     if (!_isAutoScrolling || runId != _autoPageTurnRunId) return;
-    final durationMs = (_pdfAutoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier).round();
+    final durationMs =
+        (_pdfAutoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier)
+            .round();
     Future.delayed(Duration(milliseconds: durationMs.clamp(500, 10000)), () {
       if (!mounted) return;
       _advancePdfAutoPage(runId);
@@ -402,20 +465,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   Future<void> _advancePdfAutoPage(int runId) async {
     if (!_isAutoScrolling || runId != _autoPageTurnRunId) return;
-    
-    _pdfReaderKey.currentState?.autoScrollNext();
-    
+
+    final canContinue = _pdfReaderKey.currentState?.autoScrollNext() ?? false;
+    if (!canContinue) {
+      _stopAutoScroll();
+      return;
+    }
+
     _schedulePdfAutoPageTurn(runId);
   }
 
   void _scheduleHorizontalAutoPageTurn(int runId) {
-    final durationMs = (_autoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier).round();
-    Future.delayed(Duration(milliseconds: durationMs.clamp(300, 10000)), () async {
-      if (!mounted || !_isAutoScrolling || runId != _autoPageTurnRunId) {
-        return;
-      }
-      await _advanceHorizontalAutoPage(runId);
-    });
+    final durationMs =
+        (_autoPageTurnInterval.inMilliseconds / _autoScrollSpeedMultiplier)
+            .round();
+    Future.delayed(
+      Duration(milliseconds: durationMs.clamp(300, 10000)),
+      () async {
+        if (!mounted || !_isAutoScrolling || runId != _autoPageTurnRunId) {
+          return;
+        }
+        await _advanceHorizontalAutoPage(runId);
+      },
+    );
   }
 
   Future<void> _advanceHorizontalAutoPage(int runId) async {
@@ -441,10 +513,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       return;
     }
 
-    final currentPage = state.currentPageIndex.clamp(0, pageCount - 1);
-    if (currentPage < pageCount - 1) {
+    final spreads = _calculateSpreads(state.pages.length, state.dualPageMode);
+    final currentSpread = _pageController.page?.round() ?? 0;
+
+    if (currentSpread < spreads.length - 1) {
+      if (!_pageController.hasClients) {
+        _stopAutoScroll();
+        return;
+      }
       await _pageController.animateToPage(
-        currentPage + 1,
+        currentSpread + 1,
         duration: const Duration(milliseconds: 280),
         curve: Curves.easeOutCubic,
       );
@@ -490,8 +568,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor:
+              Theme.of(ctx).dialogTheme.backgroundColor ??
+              Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: const Text(
             'Hủy Theo Dõi?',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -509,7 +591,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Đồng ý'),
@@ -553,6 +637,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _isHoldingForNextChapter = true;
     });
 
+    // BUG-09 fix: stop any running animation before restarting
+    _holdProgressController.stop();
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
       _triggerNextChapter();
@@ -577,6 +663,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _isHoldingForPrevChapter = true;
     });
 
+    // BUG-09 fix: stop any running animation before restarting
+    _holdProgressController.stop();
     _holdProgressController.forward(from: 0);
     _holdTimer = Timer(_holdDuration, () {
       _triggerPrevChapter();
@@ -624,8 +712,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           previousChapterId != null &&
           previousChapterId != nextState.currentChapter?.id;
 
-      if (nextState.readingMode == ReadingMode.vertical &&
-          _scrollController.hasClients) {
+      if (nextState.isVerticalMode && _scrollController.hasClients) {
         _scrollController.jumpTo(0);
       } else if (nextState.readingMode == ReadingMode.horizontal) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -685,15 +772,24 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           final nextState = ref.read(readerProvider);
-          if (nextState.readingMode == ReadingMode.vertical &&
-              _scrollController.hasClients) {
+          if (nextState.isVerticalMode && _scrollController.hasClients) {
+            // BUG-07 fix: use 50% of screen height instead of magic 200px
+            final halfScreen = MediaQuery.of(context).size.height * 0.5;
             _scrollController.jumpTo(
-              _scrollController.position.maxScrollExtent - 200,
+              (_scrollController.position.maxScrollExtent - halfScreen).clamp(
+                0.0,
+                _scrollController.position.maxScrollExtent,
+              ),
             );
           } else if (nextState.readingMode == ReadingMode.horizontal &&
               _pageController.hasClients &&
               nextState.pages.isNotEmpty) {
-            _pageController.jumpToPage(nextState.pages.length - 1);
+            final spreads = _calculateSpreads(
+              nextState.pages.length,
+              nextState.dualPageMode,
+            );
+            final targetSpread = spreads.isNotEmpty ? spreads.length - 1 : 0;
+            _pageController.jumpToPage(targetSpread);
           }
         });
       }
@@ -704,10 +800,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void dispose() {
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
     _levelUpSub?.cancel();
     _scrollController.removeListener(_onVerticalScroll);
     _cancelHoldTimer();
     _progressSaveTimer?.cancel();
+    _precacheDebounceTimer?.cancel();
+    _precachedPaths.clear();
+    _imageSizeCache.clear();
     _autoScrollTicker?.dispose();
     _holdProgressController.dispose();
     _currentPageNotifier.dispose();
@@ -746,14 +848,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         isPrevKey = isVolUp;
       }
     } else {
-      isNextKey = event.logicalKey == LogicalKeyboardKey.arrowDown ||
+      isNextKey =
+          event.logicalKey == LogicalKeyboardKey.arrowDown ||
           (isRtl
               ? event.logicalKey == LogicalKeyboardKey.arrowLeft
               : event.logicalKey == LogicalKeyboardKey.arrowRight) ||
           event.logicalKey == LogicalKeyboardKey.space ||
           event.logicalKey == LogicalKeyboardKey.pageDown;
 
-      isPrevKey = event.logicalKey == LogicalKeyboardKey.arrowUp ||
+      isPrevKey =
+          event.logicalKey == LogicalKeyboardKey.arrowUp ||
           (isRtl
               ? event.logicalKey == LogicalKeyboardKey.arrowRight
               : event.logicalKey == LogicalKeyboardKey.arrowLeft) ||
@@ -761,49 +865,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
 
     if (isNextKey) {
-      if (state.readingMode == ReadingMode.horizontal) {
-        if (!_pageController.hasClients) return;
-        if (state.currentPageIndex < state.pages.length - 1) {
-          _pageController.nextPage(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        } else {
-          _triggerNextChapter();
-        }
-      } else {
-        if (!_scrollController.hasClients) return;
-        final currentOffset = _scrollController.offset;
-        final maxScroll = _scrollController.position.maxScrollExtent;
-        _scrollController.animateTo(
-          (currentOffset + 500).clamp(0.0, maxScroll),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-        );
-      }
+      _readerPageForward(state);
     } else if (isPrevKey) {
-      if (state.readingMode == ReadingMode.horizontal) {
-        if (!_pageController.hasClients) return;
-        if (state.currentPageIndex > 0) {
-          _pageController.previousPage(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        } else {
-          _triggerPrevChapter();
-        }
-      } else {
-        if (!_scrollController.hasClients) return;
-        final currentOffset = _scrollController.offset;
-        _scrollController.animateTo(
-          (currentOffset - 500).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-        );
-      }
+      _readerPageBackward(state);
     } else {
       final key = event.logicalKey;
       final notifier = ref.read(readerProvider.notifier);
@@ -851,12 +915,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final target = pageIndex.clamp(0, pageCount - 1);
     ref.read(readerProvider.notifier).onPageChanged(target);
 
-    // PDF handles jumping via initialPage passing to PdfReaderView
-    if (state.isPdf) return;
+    // PDF handles jumping via initialPage passing to PdfReaderView and direct controller jump
+    if (state.isPdf) {
+      _pdfReaderKey.currentState?.jumpToPage(target);
+      return;
+    }
 
     if (state.readingMode == ReadingMode.horizontal) {
       if (_pageController.hasClients) {
-        final spreads = _calculateSpreads(state.pages.length, state.dualPageMode);
+        final spreads = _calculateSpreads(
+          state.pages.length,
+          state.dualPageMode,
+        );
         final spreadIndex = spreads.indexWhere((s) => s.contains(target));
         final targetSpread = spreadIndex != -1 ? spreadIndex : target;
         _pageController.animateToPage(
@@ -870,6 +940,38 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     if (_scrollController.hasClients && state.pages.length > 1) {
       final maxScroll = _scrollController.position.maxScrollExtent;
+
+      // BUG-04 fix: try exact position via RenderBox (pages may have unequal heights).
+      // Fall back to linear estimate if the key hasn't laid out yet.
+      final pageKey = _pageKeys[target];
+      final ctx = pageKey?.currentContext;
+      if (ctx != null) {
+        final box = ctx.findRenderObject() as RenderBox?;
+        if (box != null && box.attached) {
+          final scrollPos = _scrollController.position;
+          try {
+            final viewport = scrollPos.context.storageContext;
+            final vpBox = viewport.findRenderObject() as RenderBox?;
+            if (vpBox != null && vpBox.attached) {
+              final localTop = vpBox
+                  .globalToLocal(box.localToGlobal(Offset.zero))
+                  .dy;
+              final absoluteOffset = (scrollPos.pixels + localTop).clamp(
+                0.0,
+                maxScroll,
+              );
+              _scrollController.animateTo(
+                absoluteOffset,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+              );
+              return;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Linear fallback for pages not yet in the widget tree
       final offset = maxScroll * (target / (state.pages.length - 1));
       _scrollController.animateTo(
         offset.clamp(0.0, maxScroll),
@@ -879,10 +981,33 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  Object _initialPhotoScale(ReaderImageFit fit) {
+  Object _initialPhotoScale(ReaderImageFit fit, {String? filePath}) {
+    if (fit == ReaderImageFit.smart && filePath != null) {
+      try {
+        final size = ImageSizeGetter.getSizeResult(
+          FileInput(File(filePath)),
+        ).size;
+        final imageRatio = size.width / size.height;
+        final screenSize = MediaQuery.of(context).size;
+        final screenRatio = screenSize.width / screenSize.height;
+
+        // Nếu ảnh dài hơn màn hình nhiều (ví dụ webtoon) -> Fit width (covered)
+        // Nếu ảnh ngang hoặc tỷ lệ gần bằng màn hình -> Fit screen (contained)
+        if (imageRatio < screenRatio * 0.8) {
+          return PhotoViewComputedScale.covered;
+        } else {
+          return PhotoViewComputedScale.contained;
+        }
+      } catch (_) {
+        return PhotoViewComputedScale.contained;
+      }
+    }
+
     switch (fit) {
+      case ReaderImageFit.smart: // Fallback
       case ReaderImageFit.width:
         return PhotoViewComputedScale.covered;
+      case ReaderImageFit.height:
       case ReaderImageFit.screen:
         return PhotoViewComputedScale.contained;
       case ReaderImageFit.original:
@@ -890,10 +1015,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
+  Alignment _getZoomAlignment(ReaderZoomStart zoomStart) {
+    switch (zoomStart) {
+      case ReaderZoomStart.left:
+        return Alignment.centerLeft;
+      case ReaderZoomStart.right:
+        return Alignment.centerRight;
+      case ReaderZoomStart.center:
+        return Alignment.center;
+      case ReaderZoomStart.auto:
+        return Alignment.center;
+    }
+  }
+
   BoxFit _verticalImageFit(ReaderImageFit fit) {
     switch (fit) {
+      case ReaderImageFit
+          .smart: // Trong chế độ cuộn dọc, fitWidth là tối ưu nhất cho smart
       case ReaderImageFit.width:
         return BoxFit.fitWidth;
+      case ReaderImageFit.height:
+        return BoxFit.fitHeight;
       case ReaderImageFit.screen:
         return BoxFit.contain;
       case ReaderImageFit.original:
@@ -923,27 +1065,30 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _readerPageForward(ReaderState state) {
-    if (state.readingMode == ReadingMode.horizontal && !state.isPdf) {
-      if (state.direction == ReaderDirection.rtl) {
-        if (state.currentPageIndex < state.pages.length - 1) {
-          _pageController.nextPage(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        } else {
-          _triggerNextChapter();
-        }
+    if (state.isPdf) {
+      if (state.readingMode == ReadingMode.horizontal) {
+        _pdfReaderKey.currentState?.nextPage();
       } else {
-        if (state.currentPageIndex < state.pages.length - 1) {
-          _pageController.nextPage(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        } else {
-          _triggerNextChapter();
-        }
+        final screenHeight = MediaQuery.of(context).size.height;
+        _pdfReaderKey.currentState?.scrollBy(screenHeight * 0.65);
       }
-    } else if (state.readingMode == ReadingMode.vertical) {
+      return;
+    }
+
+    if (state.readingMode == ReadingMode.horizontal) {
+      final spreads = _calculateSpreads(state.pages.length, state.dualPageMode);
+      final currentSpread = _pageController.hasClients
+          ? _pageController.page?.round() ?? 0
+          : 0;
+      if (currentSpread < spreads.length - 1) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        _triggerNextChapter();
+      }
+    } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
         final screenHeight = MediaQuery.of(context).size.height;
@@ -960,8 +1105,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _readerPageBackward(ReaderState state) {
-    if (state.readingMode == ReadingMode.horizontal && !state.isPdf) {
-      if (state.currentPageIndex > 0) {
+    if (state.isPdf) {
+      if (state.readingMode == ReadingMode.horizontal) {
+        _pdfReaderKey.currentState?.previousPage();
+      } else {
+        final screenHeight = MediaQuery.of(context).size.height;
+        _pdfReaderKey.currentState?.scrollBy(-(screenHeight * 0.65));
+      }
+      return;
+    }
+
+    if (state.readingMode == ReadingMode.horizontal) {
+      final currentSpread = _pageController.hasClients
+          ? _pageController.page?.round() ?? 0
+          : 0;
+      if (currentSpread > 0) {
         _pageController.previousPage(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
@@ -969,7 +1127,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       } else {
         _triggerPrevChapter();
       }
-    } else if (state.readingMode == ReadingMode.vertical) {
+    } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
         final screenHeight = MediaQuery.of(context).size.height;
@@ -985,7 +1143,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  String _tapZoneDescription(ReaderTapZone zone) {
+  String _tapZoneDescription(ReaderTapZone zone, {bool isVertical = false}) {
+    if (isVertical) {
+      switch (zone) {
+        case ReaderTapZone.default3Cols:
+          return 'Chạm mép dưới: Cuộn xuống, Mép trên: Cuộn lên, Giữa: Menu';
+        case ReaderTapZone.oneHanded:
+          return 'Nửa dưới màn hình: Cuộn xuống (thuận ngón cái), Đỉnh: Cuộn lên, Giữa: Menu';
+        case ReaderTapZone.leftHanded:
+          return 'Mép trái: Cuộn xuống, Mép phải: Cuộn lên, Giữa: Menu';
+        case ReaderTapZone.swipeOnly:
+          return 'Chạm chỉ để bật/tắt Menu. Điều hướng cuộn hoàn toàn bằng cách vuốt tay';
+        case ReaderTapZone.kindle:
+          return 'Nửa phải: Cuộn xuống, Nửa trái: Cuộn lên, Chính giữa: Menu';
+      }
+    }
     switch (zone) {
       case ReaderTapZone.default3Cols:
         return 'Trái: Lùi, Giữa: Menu, Phải: Tiến (hoặc ngược lại nếu đọc RTL)';
@@ -995,6 +1167,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         return 'Trái: Tiến (thuận tay trái), Phải: Lùi, Giữa: Menu';
       case ReaderTapZone.swipeOnly:
         return 'Chạm mọi nơi chỉ để bật/tắt Menu. Lật trang bằng cách vuốt';
+      case ReaderTapZone.kindle:
+        return 'Nửa phải: Tiến, Nửa trái: Lùi, Chính giữa: Menu';
     }
   }
 
@@ -1011,8 +1185,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final size = MediaQuery.of(context).size;
     final screenWidth = size.width;
     final screenHeight = size.height;
-    final tapX = details.globalPosition.dx;
-    final tapY = details.globalPosition.dy;
+    double tapX = details.globalPosition.dx;
+    double tapY = details.globalPosition.dy;
+
+    if (state.tapZoneInvert == ReaderTapZoneInvert.horizontal ||
+        state.tapZoneInvert == ReaderTapZoneInvert.both) {
+      tapX = screenWidth - tapX;
+    }
+    if (state.tapZoneInvert == ReaderTapZoneInvert.vertical ||
+        state.tapZoneInvert == ReaderTapZoneInvert.both) {
+      tapY = screenHeight - tapY;
+    }
 
     // 1. Chế độ chỉ vuốt
     if (state.tapZone == ReaderTapZone.swipeOnly) {
@@ -1020,15 +1203,34 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       return;
     }
 
-    // 2. Chế độ Đọc 1 tay (One-Handed / L-Shape)
-    if (state.tapZone == ReaderTapZone.oneHanded) {
-      // Đỉnh màn hình (18%) -> Lùi trang
-      if (tapY < screenHeight * 0.18) {
-        if (state.direction == ReaderDirection.rtl) {
+    // 1.5. Chế độ Kindle: Nửa phải tiến, nửa trái lùi. Chạm chính giữa mở menu
+    if (state.tapZone == ReaderTapZone.kindle) {
+      final midLeft = screenWidth * 0.3;
+      final midRight = screenWidth * 0.7;
+      if (tapX > midLeft && tapX < midRight) {
+        notifier.toggleControls();
+      } else if (tapX >= midRight) {
+        if (state.direction == ReaderDirection.rtl && !state.isVerticalMode) {
+          _readerPageBackward(state);
+        } else {
+          _readerPageForward(state);
+        }
+      } else {
+        if (state.direction == ReaderDirection.rtl && !state.isVerticalMode) {
           _readerPageForward(state);
         } else {
           _readerPageBackward(state);
         }
+      }
+      return;
+    }
+
+    // 2. Chế độ Đọc 1 tay (One-Handed / L-Shape)
+    // Thiết kế công thái học: Đỉnh màn hình luôn là LÙI, toàn bộ nửa dưới & hai lề dưới luôn là TIẾN
+    if (state.tapZone == ReaderTapZone.oneHanded) {
+      // Đỉnh màn hình (18%) -> Lùi trang / Cuộn lên
+      if (tapY < screenHeight * 0.18) {
+        _readerPageBackward(state);
         return;
       }
       // Vùng tâm màn hình (Menu controls)
@@ -1039,32 +1241,37 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         notifier.toggleControls();
         return;
       }
-      // Toàn bộ vùng còn lại (60% dưới + hai bên lề dưới) -> Tiến trang
-      if (state.direction == ReaderDirection.rtl) {
-        _readerPageBackward(state);
-      } else {
-        _readerPageForward(state);
-      }
+      // Toàn bộ vùng còn lại (vừa tầm ngón cái) -> Tiến trang / Cuộn xuống
+      _readerPageForward(state);
       return;
     }
 
     // 3. Chế độ Thuận tay trái (Left-Handed)
+    // Thiết kế công thái học: Lề trái là nơi ngón cái tay trái đặt vào -> Luôn là TIẾN
     if (state.tapZone == ReaderTapZone.leftHanded) {
-      // 40% Bên trái màn hình -> Tiến trang (dễ chạm nhất cho ngón cái tay trái)
-      if (tapX < screenWidth * 0.40) {
-        if (state.direction == ReaderDirection.rtl) {
-          _readerPageBackward(state);
-        } else {
+      if (state.isVerticalMode) {
+        // Mép trái (40%) -> Cuộn xuống (Tiến)
+        if (tapX < screenWidth * 0.40) {
           _readerPageForward(state);
         }
+        // Mép phải (40%) -> Cuộn lên (Lùi)
+        else if (tapX > screenWidth * 0.60) {
+          _readerPageBackward(state);
+        }
+        // 20% Giữa màn hình -> Menu controls
+        else {
+          notifier.toggleControls();
+        }
+        return;
       }
-      // 40% Bên phải màn hình -> Lùi trang
+
+      // Đọc ngang: 40% Bên trái màn hình -> Luôn TIẾN (dành cho ngón cái tay trái)
+      if (tapX < screenWidth * 0.40) {
+        _readerPageForward(state);
+      }
+      // 40% Bên phải màn hình -> Luôn LÙI
       else if (tapX > screenWidth * 0.60) {
-        if (state.direction == ReaderDirection.rtl) {
-          _readerPageForward(state);
-        } else {
-          _readerPageBackward(state);
-        }
+        _readerPageBackward(state);
       }
       // 20% Giữa màn hình -> Menu controls
       else {
@@ -1074,6 +1281,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
 
     // 4. Chế độ 3 Cột Mặc định (Default 3-Cols)
+    if (state.isVerticalMode) {
+      if (tapY < screenHeight * 0.35) {
+        _readerPageBackward(state);
+      } else if (tapY > screenHeight * 0.65) {
+        _readerPageForward(state);
+      } else {
+        notifier.toggleControls();
+      }
+      return;
+    }
+
     // 35% Bên trái màn hình
     if (tapX < screenWidth * 0.35) {
       if (state.direction == ReaderDirection.rtl) {
@@ -1100,28 +1318,36 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final state = ref.read(readerProvider);
     final chapterId = state.currentChapter?.id ?? widget.chapterId;
     final mangaId = state.mangaId ?? widget.mangaId;
+    // BUG-02 fix: clear restore guard so scrollOffset re-fires after reload
+    _restoredScrollChapterId = null;
     notifier.init(chapterId, mangaId: mangaId);
   }
 
   void _precacheNearbyPages(ReaderState state, {int? targetIndex}) {
     if (!mounted || state.pages.isEmpty) return;
-    final current = targetIndex ?? state.currentPageIndex;
-    final isVertical = state.readingMode == ReadingMode.vertical;
-    final forwardWindow = isVertical ? 5 : 2;
-    final backwardWindow = isVertical ? 2 : 2;
-    final start = (current - backwardWindow).clamp(0, state.pages.length - 1);
-    final end = (current + forwardWindow).clamp(0, state.pages.length - 1);
-    for (var i = start; i <= end; i++) {
-      try {
-        final filePath = state.pages[i];
-        if (filePath.isNotEmpty) {
+    // Debounce: tránh spam precache khi cuộn liên tục
+    _precacheDebounceTimer?.cancel();
+    _precacheDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      final current = targetIndex ?? state.currentPageIndex;
+      final isVertical = state.isVerticalMode;
+      final forwardWindow = isVertical ? 5 : 2;
+      final backwardWindow = isVertical ? 2 : 2;
+      final start = (current - backwardWindow).clamp(0, state.pages.length - 1);
+      final end = (current + forwardWindow).clamp(0, state.pages.length - 1);
+      for (var i = start; i <= end; i++) {
+        try {
+          final filePath = state.pages[i];
+          // Bỏ qua nếu đã cache rồi (tránh gọi precacheImage lặp lại)
+          if (filePath.isEmpty || _precachedPaths.contains(filePath)) continue;
           final file = File(filePath);
           if (file.existsSync()) {
+            _precachedPaths.add(filePath);
             precacheImage(FileImage(file), context);
           }
-        }
-      } catch (_) {}
-    }
+        } catch (_) {}
+      }
+    });
   }
 
   @override
@@ -1129,21 +1355,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final state = ref.watch(readerProvider);
     final notifier = ref.read(readerProvider.notifier);
 
-    if (!state.isLoading && state.isNovel && state.localFilePath != null) {
-      return NovelReaderWidget(
-        epubPath: state.localFilePath!,
-        storageKey: [
-          state.mangaId,
-          state.currentChapter?.id,
-        ].whereType<String>().where((value) => value.isNotEmpty).join('_'),
-        title:
-            state.currentChapter?.title ?? state.manga?.title ?? 'Truyện chữ',
-        realMangaId: state.mangaId,
-        realChapterId: state.currentChapter?.id,
-      );
-    }
-
+    // BUG FIX: ref.listen phải được gọi ở top-level trong build(), TRƯỚC mọi early-return,
+    // để listener luôn active dù đang đọc EPUB hay Manga.
     ref.listen<ReaderState>(readerProvider, (prev, next) {
+      if (prev?.currentChapter?.id != next.currentChapter?.id) {
+        _precachedPaths.clear();
+      }
+
       if (_isAutoScrolling &&
           (false ||
               (prev?.currentChapter?.id != next.currentChapter?.id &&
@@ -1161,10 +1379,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
       if (prev?.currentPageIndex != next.currentPageIndex &&
           next.readingMode == ReadingMode.horizontal) {
-        if (_pageController.hasClients &&
-            _pageController.page?.round() != next.currentPageIndex) {
-          _pageController.jumpToPage(next.currentPageIndex);
+        if (_pageController.hasClients) {
+          final spreads = _calculateSpreads(
+            next.pages.length,
+            next.dualPageMode,
+          );
+          final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
+          final targetSpread = spreads.indexWhere(
+            (s) => s.contains(next.currentPageIndex),
+          );
+          final safeSpread = targetSpread != -1
+              ? targetSpread
+              : next.currentPageIndex.clamp(0, maxSpread);
+          if (_pageController.page?.round() != safeSpread) {
+            _pageController.jumpToPage(safeSpread);
+          }
         }
+      }
+
+      if (prev?.orientation != next.orientation) {
+        _applyOrientation(next.orientation);
       }
 
       // Xử lý khi chuyển đổi giữa chế độ dọc và ngang
@@ -1173,24 +1407,31 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           if (!mounted) return;
 
           if (next.readingMode == ReadingMode.horizontal) {
-            if (_pageController.hasClients &&
-                _pageController.page?.round() != next.currentPageIndex) {
-              _pageController.jumpToPage(next.currentPageIndex);
+            if (_pageController.hasClients) {
+              final spreads = _calculateSpreads(
+                next.pages.length,
+                next.dualPageMode,
+              );
+              final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
+              final targetSpread = spreads.indexWhere(
+                (s) => s.contains(next.currentPageIndex),
+              );
+              final safeSpread = targetSpread != -1
+                  ? targetSpread
+                  : next.currentPageIndex.clamp(0, maxSpread);
+              if (_pageController.page?.round() != safeSpread) {
+                _pageController.jumpToPage(safeSpread);
+              }
             }
-          } else if (next.readingMode == ReadingMode.vertical) {
-            if (_scrollController.hasClients && next.pages.length > 1) {
-              final maxScroll = _scrollController.position.maxScrollExtent;
-              final targetOffset =
-                  maxScroll * (next.currentPageIndex / (next.pages.length - 1));
-              _scrollController.jumpTo(targetOffset.clamp(0.0, maxScroll));
-            }
+          } else if (next.isVerticalMode) {
+            _jumpToPage(next.currentPageIndex);
           }
         });
       }
 
       final chapterId = next.currentChapter?.id;
       if (!next.isLoading &&
-          next.readingMode == ReadingMode.vertical &&
+          next.isVerticalMode &&
           chapterId != null &&
           _restoredScrollChapterId != chapterId &&
           next.scrollOffset > 0) {
@@ -1202,6 +1443,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         });
       }
     });
+
+    // Early-return cho EPUB reader (sau khi ref.listen đã được đăng ký)
+    if (!state.isLoading && state.isNovel && state.localFilePath != null) {
+      return NovelReaderWidget(
+        epubPath: state.localFilePath!,
+        storageKey: [
+          state.mangaId,
+          state.currentChapter?.id,
+        ].whereType<String>().where((value) => value.isNotEmpty).join('_'),
+        title:
+            state.currentChapter?.title ?? state.manga?.title ?? 'Truyện chữ',
+        realMangaId: state.mangaId,
+        realChapterId: state.currentChapter?.id,
+      );
+    }
 
     return KeyboardListener(
       focusNode: _focusNode,
@@ -1216,80 +1472,130 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             ? _buildReaderError(state.errorMessage!, notifier)
             : Stack(
                 children: [
-                  // Nội dung ảnh manga (áp dụng bộ lọc đảo màu trực tiếp lên trang truyện nếu bật)
-                  state.invertColors
-                      ? ColorFiltered(
-                          colorFilter: const ColorFilter.matrix([
-                            // Ma trận đảo màu (Invert): đảo RGB, giữ nguyên alpha
-                            -1,  0,  0, 0, 255,
-                             0, -1,  0, 0, 255,
-                             0,  0, -1, 0, 255,
-                             0,  0,  0, 1,   0,
-                          ]),
-                          child: GestureDetector(
-                            onTapUp: (details) => _handleReaderTap(details, state, notifier),
-                            child: state.isPdf && state.localFilePath != null
-                                ? PdfReaderView(
-                                    key: _pdfReaderKey,
-                                    scrollDirection:
-                                        state.readingMode == ReadingMode.horizontal
-                                        ? Axis.horizontal
-                                        : Axis.vertical,
-                                    pdfPath: state.localFilePath!,
-                                    initialPage: state.currentPageIndex,
-                                    onDocumentLoaded: (pageCount) {
-                                      notifier.setPdfPageCount(pageCount);
-                                    },
-                                    onPageChanged: (pageIndex) {
-                                      notifier.onPageChanged(pageIndex);
-                                      _scheduleVerticalProgressSaveIfNeeded(
-                                        0.0,
-                                        pageIndex,
-                                      );
-                                    },
-                                    onToggleControls: notifier.toggleControls,
-                                  )
-                                : state.readingMode == ReadingMode.horizontal
-                                ? _buildHorizontalView(state, notifier)
-                                : _buildVerticalView(state, notifier),
+                  // Nội dung ảnh manga — chỉ rebuild khi page/mode/fit/filter thực sự thay đổi
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final contentState = ref.watch(
+                        readerProvider.select(
+                          (s) => (
+                            pages: s.pages,
+                            readingMode: s.readingMode,
+                            isPdf: s.isPdf,
+                            localFilePath: s.localFilePath,
+                            currentPageIndex: s.currentPageIndex,
+                            imageFit: s.imageFit,
+                            background: s.background,
+                            invertColors: s.invertColors,
+                            cropBorders: s.cropBorders,
+                            dualPageMode: s.dualPageMode,
+                            direction: s.direction,
+                            isNovel: s.isNovel,
+                            currentChapter: s.currentChapter,
                           ),
-                        )
-                      : GestureDetector(
-                          onTapUp: (details) => _handleReaderTap(details, state, notifier),
-                          child: state.isPdf && state.localFilePath != null
-                              ? PdfReaderView(
-                                  key: _pdfReaderKey,
-                                  scrollDirection:
-                                      state.readingMode == ReadingMode.horizontal
-                                      ? Axis.horizontal
-                                      : Axis.vertical,
-                                  pdfPath: state.localFilePath!,
-                                  initialPage: state.currentPageIndex,
-                                  onDocumentLoaded: (pageCount) {
-                                    notifier.setPdfPageCount(pageCount);
-                                  },
-                                  onPageChanged: (pageIndex) {
-                                    notifier.onPageChanged(pageIndex);
-                                    _scheduleVerticalProgressSaveIfNeeded(
-                                      0.0,
-                                      pageIndex,
-                                    );
-                                  },
-                                  onToggleControls: notifier.toggleControls,
-                                )
-                              : state.readingMode == ReadingMode.horizontal
-                              ? _buildHorizontalView(state, notifier)
-                              : _buildVerticalView(state, notifier),
                         ),
+                      );
+                      final contentNotifier = ref.read(readerProvider.notifier);
+                      final contentFullState = ref.read(readerProvider);
+
+                      Widget readerView = GestureDetector(
+                        onTapUp: (details) => _handleReaderTap(
+                          details,
+                          contentFullState,
+                          contentNotifier,
+                        ),
+                        child:
+                            contentState.isPdf &&
+                                contentState.localFilePath != null
+                            ? PdfReaderView(
+                                key: _pdfReaderKey,
+                                scrollDirection:
+                                    contentState.readingMode ==
+                                        ReadingMode.horizontal
+                                    ? Axis.horizontal
+                                    : Axis.vertical,
+                                pdfPath: contentState.localFilePath!,
+                                initialPage: contentState.currentPageIndex,
+                                onDocumentLoaded: (pageCount) {
+                                  contentNotifier.setPdfPageCount(pageCount);
+                                },
+                                onPageChanged: (pageIndex) {
+                                  contentNotifier.onPageChanged(pageIndex);
+                                  _scheduleVerticalProgressSaveIfNeeded(
+                                    0.0,
+                                    pageIndex,
+                                  );
+                                },
+                                onToggleControls:
+                                    contentNotifier.toggleControls,
+                              )
+                            : contentState.readingMode == ReadingMode.horizontal
+                            ? _buildHorizontalView(
+                                contentFullState,
+                                contentNotifier,
+                              )
+                            : _buildVerticalView(
+                                contentFullState,
+                                contentNotifier,
+                              ),
+                      );
+
+                      return ColorFiltered(
+                        colorFilter: contentState.invertColors
+                            ? const ColorFilter.matrix([
+                                -1,
+                                0,
+                                0,
+                                0,
+                                255,
+                                0,
+                                -1,
+                                0,
+                                0,
+                                255,
+                                0,
+                                0,
+                                -1,
+                                0,
+                                255,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                              ])
+                            : const ColorFilter.matrix([
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
+                              ]),
+                        child: readerView,
+                      );
+                    },
+                  ),
 
                   // ===== BỘ LỌC ẢNH BAN ĐÊM – các lớp phủ ảnh (IgnorePointer – không chặn touch) =====
                   // Lớp giảm sáng (Dim)
                   if (state.dimLevel > 0)
                     IgnorePointer(
                       child: Container(
-                        color: Colors.black.withValues(
-                          alpha: state.dimLevel,
-                        ),
+                        color: Colors.black.withValues(alpha: state.dimLevel),
                       ),
                     ),
 
@@ -1297,9 +1603,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   if (state.tintLevel > 0)
                     IgnorePointer(
                       child: Container(
-                        color: const Color(0xFFFF9500).withValues(
-                          alpha: state.tintLevel,
-                        ),
+                        color: const Color(
+                          0xFFFF9500,
+                        ).withValues(alpha: state.tintLevel),
                       ),
                     ),
 
@@ -1337,97 +1643,102 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     color: Colors.white,
                                     size: 24,
                                   ),
+                                  tooltip: 'Quay lại',
                                   onPressed: () => context.pop(),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
                                 ),
-                                const SizedBox(width: 10),
-
-                                // Ảnh bìa
-                                if (state.manga != null)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: DriveImage(
-                                      fileId: state.manga!.coverFileId,
-                                      width: 40,
-                                      height: 60,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 4),
 
                                 // Thông tin & Chọn chương
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(
-                                        state.manga?.title ?? 'Đang tải...',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (state.manga?.author != null)
-                                        Text(
-                                          state.manga!.author,
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
+                                      InkWell(
+                                        onTap: state.mangaId != null &&
+                                                state.mangaId!.isNotEmpty
+                                            ? () {
+                                                HapticFeedback.selectionClick();
+                                                context.push(
+                                                  '/detail/${state.mangaId}',
+                                                );
+                                              }
+                                            : null,
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 2,
+                                            horizontal: 2,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                          child: Text(
+                                            state.manga?.title ?? 'Đang tải...',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
-                                      const SizedBox(height: 4),
+                                      ),
+                                      const SizedBox(height: 2),
                                       // Nút chọn chương
                                       InkWell(
-                                        onTap: () => _showChapterListModal(
-                                          context,
-                                          state.chapters,
-                                          state.currentChapter,
-                                          state.mangaId,
-                                        ),
-                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
+                                          HapticFeedback.selectionClick();
+                                          _showChapterListModal(
+                                            context,
+                                            state.chapters,
+                                            state.currentChapter,
+                                            state.mangaId,
+                                          );
+                                        },
+                                        borderRadius: BorderRadius.circular(12),
                                         child: Container(
+                                          constraints: const BoxConstraints(
+                                            minHeight: 28,
+                                          ),
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
+                                            horizontal: 10,
                                             vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
                                             color: Colors.white.withValues(
-                                              alpha: 0.15,
+                                              alpha: 0.12,
                                             ),
                                             borderRadius: BorderRadius.circular(
-                                              16,
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.15,
+                                              ),
                                             ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Icon(
-                                                Icons.list,
-                                                color: Colors.white,
-                                                size: 14,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                state.currentChapter?.title ??
-                                                    'Chương ?',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
+                                              Flexible(
+                                                child: Text(
+                                                  state.currentChapter?.title ??
+                                                      'Chương ?',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                              const SizedBox(width: 4),
+                                              const SizedBox(width: 3),
                                               const Icon(
-                                                Icons.keyboard_arrow_down,
-                                                color: Colors.white,
-                                                size: 14,
+                                                Icons.keyboard_arrow_down_rounded,
+                                                color: Colors.white70,
+                                                size: 16,
                                               ),
                                             ],
                                           ),
@@ -1438,20 +1749,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                 ),
 
                                 // Nút Lưu ảnh trang về máy
-                                if (!state.isPdf && !state.isNovel && state.pages.isNotEmpty)
+                                if (!state.isPdf &&
+                                    !state.isNovel &&
+                                    state.pages.isNotEmpty)
                                   IconButton(
                                     icon: const Icon(
                                       Icons.download_rounded,
                                       color: Colors.white,
-                                      size: 24,
+                                      size: 22,
                                     ),
                                     tooltip: 'Lưu ảnh trang này về Thư viện',
-                                    onPressed: () => _saveCurrentPageImage(state),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                    onPressed: () =>
+                                        _saveCurrentPageImage(state),
+                                    padding: const EdgeInsets.all(6),
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   ),
-                                if (!state.isPdf && !state.isNovel && state.pages.isNotEmpty)
-                                  const SizedBox(width: 10),
+                                if (!state.isPdf &&
+                                    !state.isNovel &&
+                                    state.pages.isNotEmpty)
+                                  const SizedBox(width: 4),
                                 // Nút Menu (Ngăn kéo)
                                 if (!state
                                     .isPdf) // Ẩn Thumbnail grid khi đọc PDF
@@ -1459,14 +1775,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     icon: const Icon(
                                       Icons.grid_view,
                                       color: Colors.white,
-                                      size: 24,
+                                      size: 22,
                                     ),
                                     tooltip: 'Danh sách trang',
                                     onPressed: () =>
                                         _showPageThumbnailSheet(state),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(6),
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   ),
+                                if (!state.isPdf)
+                                  const SizedBox(width: 4),
                                 // Nút Chế độ Ẩn danh (Incognito)
                                 IconButton(
                                   icon: Icon(
@@ -1476,7 +1794,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     color: state.isIncognito
                                         ? Colors.purpleAccent
                                         : Colors.white,
-                                    size: 24,
+                                    size: 22,
                                   ),
                                   tooltip: state.isIncognito
                                       ? 'Đang bật Chế độ ẩn danh'
@@ -1484,7 +1802,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   onPressed: () {
                                     HapticFeedback.mediumImpact();
                                     notifier.toggleIncognito();
-                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).hideCurrentSnackBar();
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Row(
@@ -1514,27 +1834,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       ),
                                     );
                                   },
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                 ),
-                                const SizedBox(width: 10),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.report_problem,
-                                    color: Colors.orangeAccent,
-                                    size: 24,
-                                  ),
-                                  tooltip: 'Báo lỗi',
-                                  onPressed: () => _showReportDialog(state),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 4),
                                 IconButton(
                                   icon: const Icon(
                                     Icons.tune,
                                     color: Colors.white,
-                                    size: 24,
+                                    size: 22,
                                   ),
                                   tooltip: 'Cài đặt đọc',
                                   onPressed: () => _showReaderSettings(
@@ -1542,21 +1850,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     state,
                                     notifier,
                                   ),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(6),
+                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 4),
                                 Builder(
                                   builder: (context) => IconButton(
                                     icon: const Icon(
                                       Icons.menu,
                                       color: Colors.white,
-                                      size: 24,
+                                      size: 22,
                                     ),
                                     onPressed: () =>
                                         Scaffold.of(context).openDrawer(),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.all(6),
+                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   ),
                                 ),
                               ],
@@ -1620,21 +1928,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       MainAxisAlignment.spaceEvenly,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(
-                                        Icons.arrow_back_ios,
-                                        color: Colors.white,
+                                      icon: Icon(
+                                        Icons.skip_previous_rounded,
+                                        color:
+                                            notifier.getPrevChapterId() != null
+                                            ? Colors.white
+                                            : Colors.white24,
+                                        size: 26,
                                       ),
+                                      tooltip:
+                                          notifier.getPrevChapterId() != null
+                                          ? 'Chương trước'
+                                          : 'Đã là chương đầu tiên',
                                       onPressed:
                                           notifier.getPrevChapterId() != null
-                                          ? () => context.pushReplacement(
-                                              _readerRoute(
-                                                notifier.getPrevChapterId()!,
-                                                state.mangaId,
-                                              ),
-                                            )
+                                          ? () {
+                                              HapticFeedback.selectionClick();
+                                              context.pushReplacement(
+                                                _readerRoute(
+                                                  notifier.getPrevChapterId()!,
+                                                  state.mangaId,
+                                                ),
+                                              );
+                                            }
                                           : null,
                                     ),
                                     IconButton(
+                                      tooltip: state.isFollowed
+                                          ? 'Bỏ theo dõi truyện'
+                                          : 'Theo dõi truyện',
                                       icon: Icon(
                                         state.isFollowed
                                             ? Icons.favorite
@@ -1650,73 +1972,93 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                           ),
                                     ),
                                     Tooltip(
+                                      triggerMode: TooltipTriggerMode.manual,
                                       message: state.isCurrentPageBookmarked
                                           ? 'Đã bookmark (Nhấn giữ để sửa ghi chú)'
                                           : 'Bookmark trang này (Nhấn giữ để thêm ghi chú)',
-                                      child: GestureDetector(
-                                        onLongPress: () =>
-                                            _showBookmarkNoteDialog(state, notifier),
-                                        child: IconButton(
-                                          icon: Icon(
-                                            state.isCurrentPageBookmarked
-                                                ? Icons.bookmark
-                                                : Icons.bookmark_border,
-                                            color: state.isCurrentPageBookmarked
-                                                ? Colors.amber
-                                                : Colors.white,
-                                          ),
-                                          onPressed: () async {
-                                            HapticFeedback.lightImpact();
-                                            final added = await notifier
-                                                .toggleBookmark();
-                                            if (!context.mounted) return;
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).hideCurrentSnackBar();
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  added
-                                                      ? 'Đã thêm bookmark. Nhấn giữ để thêm ghi chú!'
-                                                      : 'Đã bỏ bookmark',
-                                                ),
-                                                behavior: SnackBarBehavior.floating,
-                                              ),
-                                            );
-                                          },
+                                      child: IconButton(
+                                        icon: Icon(
+                                          state.isCurrentPageBookmarked
+                                              ? Icons.bookmark
+                                              : Icons.bookmark_border,
+                                          color: state.isCurrentPageBookmarked
+                                              ? Colors.amber
+                                              : Colors.white,
                                         ),
+                                        onLongPress: () =>
+                                            _showBookmarkNoteDialog(
+                                              state,
+                                              notifier,
+                                            ),
+                                        onPressed: () async {
+                                          HapticFeedback.lightImpact();
+                                          final added = await notifier
+                                              .toggleBookmark();
+                                          if (!context.mounted) return;
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).hideCurrentSnackBar();
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                added
+                                                    ? 'Đã thêm bookmark. Nhấn giữ để thêm ghi chú!'
+                                                    : 'Đã bỏ bookmark',
+                                              ),
+                                              duration: const Duration(
+                                                milliseconds: 1500,
+                                              ),
+                                              behavior:
+                                                  SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ),
                                     IconButton(
                                       tooltip: _isAutoScrolling
-                                          ? 'Tắt tự động đọc'
+                                          ? 'Dừng tự động đọc'
                                           : state.readingMode ==
                                                 ReadingMode.horizontal
-                                          ? 'Tự lật trang'
-                                          : 'Tự cuộn',
+                                          ? 'Bật tự lật trang'
+                                          : 'Bật tự cuộn',
                                       icon: Icon(
                                         _isAutoScrolling
-                                            ? Icons.pause_circle
-                                            : Icons.play_circle,
-                                        color: Colors.white,
+                                            ? Icons.pause_circle_filled_rounded
+                                            : Icons.play_circle_outline_rounded,
+                                        color: _isAutoScrolling
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Colors.white,
+                                        size: 26,
                                       ),
                                       onPressed: _toggleAutoScroll,
                                     ),
                                     IconButton(
-                                      icon: const Icon(
-                                        Icons.arrow_forward_ios,
-                                        color: Colors.white,
+                                      icon: Icon(
+                                        Icons.skip_next_rounded,
+                                        color:
+                                            notifier.getNextChapterId() != null
+                                            ? Colors.white
+                                            : Colors.white24,
+                                        size: 26,
                                       ),
+                                      tooltip:
+                                          notifier.getNextChapterId() != null
+                                          ? 'Chương kế tiếp'
+                                          : 'Đã là chương mới nhất',
                                       onPressed:
                                           notifier.getNextChapterId() != null
-                                          ? () => context.pushReplacement(
-                                              _readerRoute(
-                                                notifier.getNextChapterId()!,
-                                                state.mangaId,
-                                              ),
-                                            )
+                                          ? () {
+                                              HapticFeedback.selectionClick();
+                                              context.pushReplacement(
+                                                _readerRoute(
+                                                  notifier.getNextChapterId()!,
+                                                  state.mangaId,
+                                                ),
+                                              );
+                                            }
                                           : null,
                                     ),
                                   ],
@@ -1728,22 +2070,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                     ),
                   // Mini HUD hiển thị giờ & trang khi ẩn thanh công cụ
-                  if (!state.showControls && state.showBatteryAndClock && !state.isNovel && !_isAutoScrolling)
+                  if (!state.showControls &&
+                      state.showBatteryAndClock &&
+                      !state.isNovel)
                     Positioned(
                       bottom: MediaQuery.of(context).padding.bottom + 8,
-                      right: 14,
+                      right: _isAutoScrolling ? null : 14,
+                      left: _isAutoScrolling ? 14 : null,
                       child: ValueListenableBuilder<int>(
                         valueListenable: _currentPageNotifier,
                         builder: (context, currentPage, _) => _MiniReaderHud(
                           currentPage: currentPage,
-                          totalPages: state.isPdf ? state.pdfPageCount : state.pages.length,
+                          totalPages: state.isPdf
+                              ? state.pdfPageCount
+                              : state.pages.length,
                         ),
                       ),
                     ),
                   // Thanh tinh chỉnh tốc độ tự cuộn
                   if (_isAutoScrolling)
                     Positioned(
-                      bottom: (state.showControls ? 120 : 32) + MediaQuery.of(context).padding.bottom,
+                      bottom:
+                          (state.showControls ? 155 : 32) +
+                          MediaQuery.of(context).padding.bottom,
                       right: 16,
                       child: _buildAutoScrollControlBar(),
                     ),
@@ -1754,26 +2103,38 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _increaseAutoScrollSpeed() {
+    if (_autoScrollSpeedMultiplier >= 4.0) return;
     HapticFeedback.lightImpact();
     setState(() {
-      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier + 0.25).clamp(0.5, 4.0);
+      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier + 0.25).clamp(
+        0.5,
+        4.0,
+      );
     });
   }
 
   void _decreaseAutoScrollSpeed() {
+    if (_autoScrollSpeedMultiplier <= 0.5) return;
     HapticFeedback.lightImpact();
     setState(() {
-      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier - 0.25).clamp(0.5, 4.0);
+      _autoScrollSpeedMultiplier = (_autoScrollSpeedMultiplier - 0.25).clamp(
+        0.5,
+        4.0,
+      );
     });
   }
 
   Widget _buildAutoScrollControlBar() {
+    final speedText = _autoScrollSpeedMultiplier % 1 == 0
+        ? '${_autoScrollSpeedMultiplier.toInt()}x'
+        : '${_autoScrollSpeedMultiplier.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '')}x';
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(20),
@@ -1792,38 +2153,66 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               IconButton(
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Giảm tốc độ',
-                icon: const Icon(Icons.remove, color: Colors.white70, size: 18),
-                onPressed: _decreaseAutoScrollSpeed,
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                tooltip: _autoScrollSpeedMultiplier > 0.5
+                    ? 'Giảm tốc độ'
+                    : 'Đã đạt tốc độ tối thiểu (0.5x)',
+                icon: Icon(
+                  Icons.remove_rounded,
+                  color: _autoScrollSpeedMultiplier > 0.5
+                      ? Colors.white70
+                      : Colors.white24,
+                  size: 20,
+                ),
+                onPressed: _autoScrollSpeedMultiplier > 0.5
+                    ? _decreaseAutoScrollSpeed
+                    : null,
               ),
               const SizedBox(width: 4),
-              Text(
-                '${_autoScrollSpeedMultiplier.toStringAsFixed(2)}x',
-                style: const TextStyle(
-                  color: Colors.amberAccent,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+              ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 38),
+                child: Text(
+                  speedText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.amberAccent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
               ),
               const SizedBox(width: 4),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Tăng tốc độ',
-                icon: const Icon(Icons.add, color: Colors.white70, size: 18),
-                onPressed: _increaseAutoScrollSpeed,
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                tooltip: _autoScrollSpeedMultiplier < 4.0
+                    ? 'Tăng tốc độ'
+                    : 'Đã đạt tốc độ tối đa (4.0x)',
+                icon: Icon(
+                  Icons.add_rounded,
+                  color: _autoScrollSpeedMultiplier < 4.0
+                      ? Colors.white70
+                      : Colors.white24,
+                  size: 20,
+                ),
+                onPressed: _autoScrollSpeedMultiplier < 4.0
+                    ? _increaseAutoScrollSpeed
+                    : null,
               ),
               const SizedBox(width: 6),
-              Container(width: 1, height: 16, color: Colors.white24),
+              Container(width: 1, height: 18, color: Colors.white24),
               const SizedBox(width: 6),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
                 tooltip: 'Dừng tự cuộn',
-                icon: const Icon(Icons.pause_circle_filled, color: Colors.redAccent, size: 22),
+                icon: const Icon(
+                  Icons.pause_circle_filled_rounded,
+                  color: Colors.redAccent,
+                  size: 24,
+                ),
                 onPressed: _stopAutoScroll,
               ),
             ],
@@ -1842,14 +2231,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     if (pageCount <= 0) return const SizedBox.shrink();
     final hasMultiplePages = pageCount > 1;
     final clampedPage = currentPage.clamp(0, pageCount > 0 ? pageCount - 1 : 0);
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1870,9 +2259,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     onTap: () {
                       final newDirection =
                           state.direction == ReaderDirection.rtl
-                              ? ReaderDirection.ltr
-                              : ReaderDirection.rtl;
-                      ref.read(readerProvider.notifier).setDirection(newDirection);
+                          ? ReaderDirection.ltr
+                          : ReaderDirection.rtl;
+                      ref
+                          .read(readerProvider.notifier)
+                          .setDirection(newDirection);
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -1892,10 +2283,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blueAccent.withValues(alpha: 0.2),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: Colors.blueAccent.withValues(alpha: 0.6),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
                         ),
                       ),
                       child: Row(
@@ -1905,7 +2296,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             state.direction == ReaderDirection.rtl
                                 ? Icons.arrow_back
                                 : Icons.arrow_forward,
-                            color: Colors.blueAccent,
+                            color: Theme.of(context).colorScheme.primary,
                             size: 13,
                           ),
                           const SizedBox(width: 4),
@@ -1913,8 +2304,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             state.direction == ReaderDirection.rtl
                                 ? 'Ngang (RTL)'
                                 : 'Ngang (LTR)',
-                            style: const TextStyle(
-                              color: Colors.blueAccent,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1930,54 +2321,64 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   ),
               ],
             ),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2.0,
-                thumbShape: const RoundSliderThumbShape(
-                  enabledThumbRadius: 6.0,
+            Directionality(
+              textDirection: state.direction == ReaderDirection.rtl
+                  ? TextDirection.rtl
+                  : TextDirection.ltr,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3.5,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 8.0,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 18.0,
+                  ),
                 ),
-                overlayShape: const RoundSliderOverlayShape(
-                  overlayRadius: 14.0,
-                ),
-              ),
-              child: Slider(
-                value: hasMultiplePages
-                    ? (_scrubbingPageIndex ?? clampedPage).toDouble().clamp(0.0, (pageCount - 1).toDouble())
-                    : 0,
-                min: 0,
-                max: hasMultiplePages ? (pageCount - 1).toDouble() : 1,
-                divisions: hasMultiplePages ? pageCount - 1 : null,
-                activeColor: Colors.blueAccent,
-                inactiveColor: Colors.white24,
-                onChangeStart: hasMultiplePages
-                    ? (value) {
-                        if (!state.isPdf && !state.isNovel && state.pages.isNotEmpty) {
-                          setState(() => _scrubbingPageIndex = value.round());
+                child: Slider(
+                  value: hasMultiplePages
+                      ? (_scrubbingPageIndex ?? clampedPage).toDouble().clamp(
+                          0.0,
+                          (pageCount - 1).toDouble(),
+                        )
+                      : 0,
+                  min: 0,
+                  max: hasMultiplePages ? (pageCount - 1).toDouble() : 1,
+                  divisions: hasMultiplePages ? pageCount - 1 : null,
+                  activeColor: Theme.of(context).colorScheme.primary,
+                  inactiveColor: Colors.white24,
+                  onChangeStart: hasMultiplePages
+                      ? (value) {
+                          if (!state.isPdf &&
+                              !state.isNovel &&
+                              state.pages.isNotEmpty) {
+                            setState(() => _scrubbingPageIndex = value.round());
+                          }
                         }
-                      }
-                    : null,
-                onChangeEnd: hasMultiplePages
-                    ? (value) {
-                        final newPage = value.round();
-                        _jumpToPage(newPage);
-                        if (_scrubbingPageIndex != null) {
-                          setState(() => _scrubbingPageIndex = null);
-                        }
-                      }
-                    : null,
-                onChanged: hasMultiplePages
-                    ? (value) {
-                        final newPage = value.round();
-                        if (newPage != (_scrubbingPageIndex ?? clampedPage)) {
-                          HapticFeedback.selectionClick();
-                        }
-                        if (_scrubbingPageIndex != null) {
-                          setState(() => _scrubbingPageIndex = newPage);
-                        } else {
+                      : null,
+                  onChangeEnd: hasMultiplePages
+                      ? (value) {
+                          final newPage = value.round();
                           _jumpToPage(newPage);
+                          if (_scrubbingPageIndex != null) {
+                            setState(() => _scrubbingPageIndex = null);
+                          }
                         }
-                      }
-                    : null,
+                      : null,
+                  onChanged: hasMultiplePages
+                      ? (value) {
+                          final newPage = value.round();
+                          if (newPage != (_scrubbingPageIndex ?? clampedPage)) {
+                            HapticFeedback.selectionClick();
+                          }
+                          if (_scrubbingPageIndex != null) {
+                            setState(() => _scrubbingPageIndex = newPage);
+                          } else {
+                            _jumpToPage(newPage);
+                          }
+                        }
+                      : null,
+                ),
               ),
             ),
           ],
@@ -2000,7 +2401,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             color: Colors.black.withValues(alpha: 0.85),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Colors.blueAccent.withValues(alpha: 0.7),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
               width: 1.5,
             ),
             boxShadow: [
@@ -2036,16 +2437,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withValues(alpha: 0.2),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: Colors.blueAccent.withValues(alpha: 0.5),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Text(
                   'Trang ${target + 1} / ${state.pages.length}',
-                  style: const TextStyle(
-                    color: Colors.blueAccent,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
                   ),
@@ -2066,7 +2467,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             top: 8,
             left: 8,
             child: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+              icon: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+              ),
               onPressed: () => Navigator.of(context).maybePop(),
             ),
           ),
@@ -2124,8 +2528,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         label: const Text('Quay lại'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.2),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -2136,8 +2545,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         icon: const Icon(Icons.refresh_rounded, size: 18),
                         label: const Text('Thử lại'),
                         style: FilledButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -2183,26 +2596,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text(
+              backgroundColor:
+                  Theme.of(ctx).dialogTheme.backgroundColor ??
+                  Theme.of(ctx).cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Text(
                 'Báo lỗi chương',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Loại lỗi:',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     DropdownButton<String>(
                       value: selectedReason,
                       dropdownColor: Theme.of(ctx).cardColor,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
                       isExpanded: true,
                       items: ['Lỗi ảnh', 'Sai chương', 'Thiếu trang', 'Khác']
                           .map(
@@ -2213,21 +2635,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           setDialogState(() => selectedReason = v!),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Mô tả thêm (Tùy chọn):',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: descController,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
                       maxLines: 3,
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: Theme.of(ctx).cardColor,
                         border: const OutlineInputBorder(),
                         hintText: 'Nhập mô tả chi tiết...',
-                        hintStyle: const TextStyle(color: Colors.white30),
+                        hintStyle: TextStyle(
+                          color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.35),
+                        ),
                       ),
                     ),
                   ],
@@ -2243,9 +2669,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   onPressed: () async {
                     final description = descController.text.trim();
@@ -2314,43 +2742,129 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       context: context,
       backgroundColor: Theme.of(context).cardColor,
       showDragHandle: true,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return Consumer(
           builder: (context, ref, _) {
             final current = ref.watch(readerProvider);
+            final theme = Theme.of(context);
+            final primary = theme.colorScheme.primary;
             return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Cài đặt đọc truyện tranh',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Cài đặt đọc truyện tranh',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white70),
+                              tooltip: 'Đóng',
+                              onPressed: () => Navigator.pop(context),
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: current.isPerMangaSettings
+                              ? primary.withValues(alpha: 0.15)
+                              : Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: current.isPerMangaSettings
+                                ? primary
+                                : Colors.transparent,
+                            width: 1,
+                          ),
+                        ),
+                        child: SwitchListTile(
+                          title: const Text(
+                            'Lưu cài đặt riêng cho truyện này',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            'Ghi đè cài đặt chung. Bật để lưu chế độ đọc, hướng lật, v.v. riêng cho phần truyện này.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white60,
+                            ),
+                          ),
+                          value: current.isPerMangaSettings,
+                          onChanged: (val) {
+                            notifier.setPerMangaSettings(val);
+                          },
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                          ),
+                          dense: true,
+                          activeTrackColor: primary.withValues(alpha: 0.5),
+                          activeThumbColor: primary,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const _ReaderSheetSectionHeader('BỐ CỤC & HƯỚNG ĐỌC', Icons.auto_stories_rounded),
                       const Text(
                         'Chế độ đọc',
                         style: TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReadingMode>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                          ),
+                        ),
                         segments: const [
                           ButtonSegment(
                             value: ReadingMode.vertical,
-                            icon: Icon(Icons.swap_vert),
-                            label: Text('Dọc'),
+                            icon: Icon(Icons.swap_vert, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Dọc', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReadingMode.verticalGap,
+                            icon: Icon(Icons.format_line_spacing, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Dọc (cách)', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReadingMode.horizontal,
-                            icon: Icon(Icons.swap_horiz),
-                            label: Text('Ngang'),
+                            icon: Icon(Icons.swap_horiz, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Ngang', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                         ],
                         selected: {current.readingMode},
@@ -2359,32 +2873,47 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           notifier.setReadingMode(values.first);
                         },
                       ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Hướng đọc ngang',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      const SizedBox(height: 8),
-                      SegmentedButton<ReaderDirection>(
-                        segments: const [
-                          ButtonSegment(
-                            value: ReaderDirection.ltr,
-                            icon: Icon(Icons.arrow_forward),
-                            label: Text('Trái qua phải'),
-                          ),
-                          ButtonSegment(
-                            value: ReaderDirection.rtl,
-                            icon: Icon(Icons.arrow_back),
-                            label: Text('Phải qua trái'),
-                          ),
-                        ],
-                        selected: {current.direction},
-                        onSelectionChanged: (values) {
-                          HapticFeedback.selectionClick();
-                          notifier.setDirection(values.first);
-                        },
-                      ),
                       if (current.readingMode == ReadingMode.horizontal) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Hướng đọc (Trái ↔ Phải)',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 8),
+                        SegmentedButton<ReaderDirection>(
+                          showSelectedIcon: false,
+                          style: ButtonStyle(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            padding: WidgetStateProperty.all(
+                              const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                            ),
+                          ),
+                          segments: const [
+                            ButtonSegment(
+                              value: ReaderDirection.ltr,
+                              icon: Icon(Icons.arrow_forward, size: 15),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Trái qua phải', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: ReaderDirection.rtl,
+                              icon: Icon(Icons.arrow_back, size: 15),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Phải qua trái', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          ],
+                          selected: {current.direction},
+                          onSelectionChanged: (values) {
+                            HapticFeedback.selectionClick();
+                            notifier.setDirection(values.first);
+                          },
+                        ),
+
                         const SizedBox(height: 16),
                         const Text(
                           'Chế độ hiển thị trang (Ngang/Tablet)',
@@ -2392,21 +2921,38 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                         const SizedBox(height: 8),
                         SegmentedButton<ReaderDualPageMode>(
+                          showSelectedIcon: false,
+                          style: ButtonStyle(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            padding: WidgetStateProperty.all(
+                              const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                            ),
+                          ),
                           segments: const [
                             ButtonSegment(
                               value: ReaderDualPageMode.off,
-                              icon: Icon(Icons.portrait),
-                              label: Text('Trang đơn'),
+                              icon: Icon(Icons.portrait, size: 15),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Trang đơn', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
                             ),
                             ButtonSegment(
                               value: ReaderDualPageMode.dual,
-                              icon: Icon(Icons.auto_stories),
-                              label: Text('Trang đôi'),
+                              icon: Icon(Icons.auto_stories, size: 15),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Trang đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
                             ),
                             ButtonSegment(
                               value: ReaderDualPageMode.dualCover,
-                              icon: Icon(Icons.menu_book),
-                              label: Text('Bìa đơn + Đôi'),
+                              icon: Icon(Icons.menu_book, size: 15),
+                              label: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Bìa đơn + Đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
                             ),
                           ],
                           selected: {current.dualPageMode},
@@ -2423,21 +2969,79 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderImageFit>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                          ),
+                        ),
                         segments: const [
                           ButtonSegment(
+                            value: ReaderImageFit.smart,
+                            icon: Icon(Icons.auto_awesome, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Smart',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          ButtonSegment(
                             value: ReaderImageFit.width,
-                            icon: Icon(Icons.fit_screen),
-                            label: Text('Rộng'),
+                            icon: Icon(Icons.fit_screen, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Rộng',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderImageFit.height,
+                            icon: Icon(Icons.height, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Dọc',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderImageFit.screen,
-                            icon: Icon(Icons.fullscreen),
-                            label: Text('Màn hình'),
+                            icon: Icon(Icons.fullscreen, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Màn',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderImageFit.original,
-                            icon: Icon(Icons.image),
-                            label: Text('Gốc'),
+                            icon: Icon(Icons.image, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Gốc',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                         ],
                         selected: {current.imageFit},
@@ -2447,6 +3051,116 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         },
                       ),
                       const SizedBox(height: 16),
+                      const Text(
+                        'Xoay màn hình',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<ReaderOrientation>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: ReaderOrientation.auto,
+                            icon: Icon(Icons.screen_rotation, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Tự do', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderOrientation.portrait,
+                            icon: Icon(Icons.screen_lock_portrait, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Dọc', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderOrientation.landscape,
+                            icon: Icon(Icons.screen_lock_landscape, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Ngang', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderOrientation.reversePortrait,
+                            icon: Icon(Icons.screen_lock_portrait, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Ngược', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                        selected: {current.orientation},
+                        onSelectionChanged: (values) {
+                          HapticFeedback.selectionClick();
+                          notifier.setOrientation(values.first);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Vị trí bắt đầu phóng to',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<ReaderZoomStart>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: ReaderZoomStart.auto,
+                            icon: Icon(Icons.auto_awesome, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Tự động', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderZoomStart.left,
+                            icon: Icon(Icons.align_horizontal_left, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Trái', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderZoomStart.center,
+                            icon: Icon(Icons.align_horizontal_center, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Giữa', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderZoomStart.right,
+                            icon: Icon(Icons.align_horizontal_right, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Phải', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                        selected: {current.zoomStart},
+                        onSelectionChanged: (values) {
+                          HapticFeedback.selectionClick();
+                          notifier.setZoomStart(values.first);
+                        },
+                      ),
+                      const _ReaderSheetSectionHeader('TIỆN ÍCH & TỰ ĐỘNG HÓA', Icons.tune_rounded),
 
                       // Cắt viền trắng thông minh (Smart Margin Crop)
                       Container(
@@ -2459,7 +3173,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.cropBorders
-                                ? Colors.orangeAccent.withValues(alpha: 0.45)
+                                ? primary.withValues(alpha: 0.45)
                                 : Colors.white12,
                           ),
                         ),
@@ -2468,7 +3182,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             Icon(
                               Icons.crop_free_rounded,
                               color: current.cropBorders
-                                  ? Colors.orangeAccent
+                                  ? primary
                                   : Colors.white70,
                               size: 22,
                             ),
@@ -2481,7 +3195,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     'Cắt viền trắng (Smart Crop)',
                                     style: TextStyle(
                                       color: current.cropBorders
-                                          ? Colors.orangeAccent
+                                          ? primary
                                           : Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
@@ -2500,11 +3214,75 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
                             Switch.adaptive(
                               value: current.cropBorders,
-                              activeTrackColor: Colors.orangeAccent,
-                              activeThumbColor: Colors.orangeAccent,
+                              activeTrackColor: primary,
+                              activeThumbColor: primary,
                               onChanged: (val) {
                                 HapticFeedback.selectionClick();
                                 notifier.setCropBorders(val);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Tự động xoay ảnh ngang (Rotate Landscape Images)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: current.rotateLandscapeImages
+                                ? primary.withValues(alpha: 0.45)
+                                : Colors.white12,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.rotate_90_degrees_cw_rounded,
+                              color: current.rotateLandscapeImages
+                                  ? primary
+                                  : Colors.white70,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Tự động xoay trang ngang',
+                                    style: TextStyle(
+                                      color: current.rotateLandscapeImages
+                                          ? primary
+                                          : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Xoay 90° các trang ảnh khổ ngang để xem tràn toàn màn hình',
+                                    style: TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: current.rotateLandscapeImages,
+                              activeTrackColor: primary,
+                              activeThumbColor: primary,
+                              onChanged: (val) {
+                                HapticFeedback.selectionClick();
+                                notifier.setRotateLandscapeImages(val);
                               },
                             ),
                           ],
@@ -2523,7 +3301,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.showBatteryAndClock
-                                ? Colors.orangeAccent.withValues(alpha: 0.45)
+                                ? primary.withValues(alpha: 0.45)
                                 : Colors.white12,
                           ),
                         ),
@@ -2532,7 +3310,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             Icon(
                               Icons.access_time_rounded,
                               color: current.showBatteryAndClock
-                                  ? Colors.orangeAccent
+                                  ? primary
                                   : Colors.white70,
                               size: 22,
                             ),
@@ -2545,7 +3323,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     'Đồng hồ & Trang góc màn hình',
                                     style: TextStyle(
                                       color: current.showBatteryAndClock
-                                          ? Colors.orangeAccent
+                                          ? primary
                                           : Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
@@ -2564,8 +3342,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             ),
                             Switch.adaptive(
                               value: current.showBatteryAndClock,
-                              activeTrackColor: Colors.orangeAccent,
-                              activeThumbColor: Colors.orangeAccent,
+                              activeTrackColor: primary,
+                              activeThumbColor: primary,
                               onChanged: (val) {
                                 HapticFeedback.selectionClick();
                                 notifier.setShowBatteryAndClock(val);
@@ -2642,33 +3420,148 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const _ReaderSheetSectionHeader('PHÍM CỨNG & CỬ CHỈ', Icons.touch_app_rounded),
+
+                      // Phím âm lượng chuyển trang (Volume Page Turn)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: current.volumePageTurn
+                                ? primary.withValues(alpha: 0.45)
+                                : Colors.white12,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.volume_up_rounded,
+                                  color: current.volumePageTurn
+                                      ? primary
+                                      : Colors.white70,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Phím âm lượng chuyển trang',
+                                        style: TextStyle(
+                                          color: current.volumePageTurn
+                                              ? primary
+                                              : Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      const Text(
+                                        'Dùng nút tăng/giảm âm lượng để lật trang hoặc cuộn đọc',
+                                        style: TextStyle(
+                                          color: Colors.white54,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch.adaptive(
+                                  value: current.volumePageTurn,
+                                  activeTrackColor: primary,
+                                  activeThumbColor: primary,
+                                  onChanged: (val) {
+                                    HapticFeedback.selectionClick();
+                                    notifier.setVolumePageTurn(val);
+                                  },
+                                ),
+                              ],
+                            ),
+                            if (current.volumePageTurn) ...[
+                              const Divider(color: Colors.white10, height: 16),
+                              Row(
+                                children: [
+                                  const SizedBox(width: 34),
+                                  const Expanded(
+                                    child: Text(
+                                      'Đảo ngược chiều phím',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                  Switch.adaptive(
+                                    value: current.invertVolumeKeys,
+                                    activeTrackColor: primary,
+                                    activeThumbColor: primary,
+                                    onChanged: (val) {
+                                      HapticFeedback.selectionClick();
+                                      notifier.setInvertVolumeKeys(val);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const _ReaderSheetSectionHeader('MÀU NỀN & BẢO VỆ MẮT', Icons.palette_outlined),
                       const Text(
                         'Màu nền',
                         style: TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderBackground>(
+                        showSelectedIcon: true,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                          ),
+                        ),
                         segments: const [
                           ButtonSegment(
                             value: ReaderBackground.black,
-                            icon: Icon(Icons.dark_mode),
-                            label: Text('Đen'),
+                            icon: Icon(Icons.dark_mode, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Đen', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderBackground.gray,
-                            icon: Icon(Icons.contrast),
-                            label: Text('Xám'),
+                            icon: Icon(Icons.contrast, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Xám', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderBackground.sepia,
-                            icon: Icon(Icons.wb_twilight),
-                            label: Text('Giấy ấm'),
+                            icon: Icon(Icons.wb_twilight, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Giấy ấm', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderBackground.white,
-                            icon: Icon(Icons.light_mode),
-                            label: Text('Trắng'),
+                            icon: Icon(Icons.light_mode, size: 15),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Trắng', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            ),
                           ),
                         ],
                         selected: {current.background},
@@ -2684,26 +3577,79 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderTapZone>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                          ),
+                        ),
                         segments: const [
                           ButtonSegment(
                             value: ReaderTapZone.default3Cols,
-                            icon: Icon(Icons.view_column_rounded),
-                            label: Text('3 Cột'),
+                            icon: Icon(Icons.view_column_rounded, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '3 Cột',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderTapZone.oneHanded,
-                            icon: Icon(Icons.touch_app_rounded),
-                            label: Text('1 Tay (L)'),
+                            icon: Icon(Icons.touch_app_rounded, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '1 Tay',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderTapZone.leftHanded,
-                            icon: Icon(Icons.pan_tool_alt_rounded),
-                            label: Text('Tay trái'),
+                            icon: Icon(Icons.pan_tool_alt_rounded, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Trái',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderTapZone.kindle,
+                            icon: Icon(Icons.menu_book_rounded, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Kindle',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                           ButtonSegment(
                             value: ReaderTapZone.swipeOnly,
-                            icon: Icon(Icons.swipe_rounded),
-                            label: Text('Chỉ vuốt'),
+                            icon: Icon(Icons.swipe_rounded, size: 14),
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'Vuốt',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ),
                           ),
                         ],
                         selected: {current.tapZone},
@@ -2712,10 +3658,100 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           notifier.setTapZone(values.first);
                         },
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _tapZoneDescription(current.tapZone),
-                        style: const TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.info_outline_rounded,
+                              size: 14,
+                              color: Colors.amberAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _tapZoneDescription(
+                                  current.tapZone,
+                                  isVertical: current.isVerticalMode,
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _TapZoneDiagram(
+                        tapZone: current.tapZone,
+                        isVertical: current.isVerticalMode,
+                        isRtl: current.direction == ReaderDirection.rtl,
+                        tapZoneInvert: current.tapZoneInvert,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Đảo ngược vùng chạm',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<ReaderTapZoneInvert>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          padding: WidgetStateProperty.all(
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: ReaderTapZoneInvert.none,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Không', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderTapZoneInvert.horizontal,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Ngang', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderTapZoneInvert.vertical,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Dọc', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: ReaderTapZoneInvert.both,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Cả hai', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                        selected: {current.tapZoneInvert},
+                        onSelectionChanged: (values) {
+                          HapticFeedback.selectionClick();
+                          notifier.setTapZoneInvert(values.first);
+                        },
                       ),
                       const SizedBox(height: 16),
 
@@ -2748,12 +3784,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             child: _EyeCarePresetBtn(
                               label: 'Chuẩn',
                               icon: Icons.brightness_auto,
-                              isSelected: current.dimLevel == 0.0 && current.tintLevel == 0.0 && !current.invertColors,
+                              activeColor: Colors.lightBlueAccent,
+                              isSelected:
+                                  current.dimLevel == 0.0 &&
+                                  current.tintLevel == 0.0 &&
+                                  !current.invertColors,
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                ref.read(readerProvider.notifier).setDimLevel(0.0);
-                                ref.read(readerProvider.notifier).setTintLevel(0.0);
-                                ref.read(readerProvider.notifier).setInvertColors(false);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setDimLevel(0.0);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setTintLevel(0.0);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setInvertColors(false);
                               },
                             ),
                           ),
@@ -2762,12 +3808,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             child: _EyeCarePresetBtn(
                               label: 'Ấm áp',
                               icon: Icons.wb_twilight,
-                              isSelected: current.tintLevel > 0.1 && !current.invertColors,
+                              activeColor: Colors.orangeAccent,
+                              isSelected:
+                                  current.tintLevel >= 0.2 &&
+                                  current.dimLevel < 0.1 &&
+                                  !current.invertColors,
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                ref.read(readerProvider.notifier).setDimLevel(0.0);
-                                ref.read(readerProvider.notifier).setTintLevel(0.25);
-                                ref.read(readerProvider.notifier).setInvertColors(false);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setDimLevel(0.0);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setTintLevel(0.25);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setInvertColors(false);
                               },
                             ),
                           ),
@@ -2776,10 +3832,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             child: _EyeCarePresetBtn(
                               label: 'Đảo màu',
                               icon: Icons.invert_colors,
+                              activeColor: Colors.purpleAccent,
                               isSelected: current.invertColors,
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                ref.read(readerProvider.notifier).setInvertColors(!current.invertColors);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setInvertColors(!current.invertColors);
                               },
                             ),
                           ),
@@ -2788,12 +3847,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             child: _EyeCarePresetBtn(
                               label: 'Dịu mắt',
                               icon: Icons.nightlight_round,
-                              isSelected: current.dimLevel > 0.2 && !current.invertColors,
+                              activeColor: Colors.amberAccent,
+                              isSelected:
+                                  current.dimLevel >= 0.3 &&
+                                  current.tintLevel >= 0.1 &&
+                                  !current.invertColors,
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                ref.read(readerProvider.notifier).setDimLevel(0.35);
-                                ref.read(readerProvider.notifier).setTintLevel(0.15);
-                                ref.read(readerProvider.notifier).setInvertColors(false);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setDimLevel(0.35);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setTintLevel(0.15);
+                                ref
+                                    .read(readerProvider.notifier)
+                                    .setInvertColors(false);
                               },
                             ),
                           ),
@@ -2804,17 +3873,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       // Thanh giảm sáng
                       Row(
                         children: [
-                          const Icon(Icons.brightness_4, color: Colors.white54, size: 16),
+                          const Icon(
+                            Icons.brightness_4,
+                            color: Colors.white54,
+                            size: 16,
+                          ),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
                               'Giảm sáng',
-                              style: TextStyle(color: Colors.white70, fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                           Text(
                             '${(current.dimLevel * 100).round()}%',
-                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -2824,8 +3903,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           activeTrackColor: Colors.white70,
                           inactiveTrackColor: Colors.white12,
                           thumbColor: Colors.white,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 14,
+                          ),
                         ),
                         child: Slider(
                           value: current.dimLevel,
@@ -2841,28 +3924,42 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       // Thanh lọc ánh sáng xanh
                       Row(
                         children: [
-                          const Icon(Icons.filter_vintage, color: Colors.orangeAccent, size: 16),
+                          Icon(
+                            Icons.filter_vintage,
+                            color: primary,
+                            size: 16,
+                          ),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
                               'Lọc ánh sáng xanh',
-                              style: TextStyle(color: Colors.white70, fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                           Text(
                             '${(current.tintLevel * 200).round()}%',
-                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
                       SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 2.5,
-                          activeTrackColor: Colors.orangeAccent,
+                          activeTrackColor: primary,
                           inactiveTrackColor: Colors.white12,
-                          thumbColor: Colors.orange,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                          thumbColor: primary,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 14,
+                          ),
                         ),
                         child: Slider(
                           value: current.tintLevel,
@@ -2872,45 +3969,46 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               ref.read(readerProvider.notifier).setTintLevel(v),
                         ),
                       ),
-
+                      const SizedBox(height: 20),
+                      const Divider(color: Colors.white12),
                       const SizedBox(height: 4),
-
-                      // Switch đảo màu
-                      Row(
-                        children: [
-                          const Icon(Icons.invert_colors, color: Colors.purpleAccent, size: 16),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Đảo màu ảnh (Invert)',
-                                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                                ),
-                                Text(
-                                  'Tốt cho manga nền trắng khi đọc đêm',
-                                  style: TextStyle(color: Colors.white38, fontSize: 11),
-                                ),
-                              ],
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: primary,
+                            side: BorderSide(
+                              color: primary,
+                              width: 0.8,
                             ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
-                          Switch(
-                            value: current.invertColors,
-                            activeThumbColor: Colors.purpleAccent,
-                            activeTrackColor: Colors.purpleAccent.withValues(alpha: 0.4),
-                            onChanged: (v) =>
-                                ref.read(readerProvider.notifier).setInvertColors(v),
+                          icon: const Icon(
+                            Icons.report_problem_outlined,
+                            size: 18,
                           ),
-                        ],
+                          label: const Text(
+                            'B\u00e1o l\u1ed7i ch\u01b0\u01a1ng / h\u00ecnh \u1ea3nh',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showReportDialog(state);
+                          },
+                        ),
                       ),
+                      const SizedBox(height: 4),
                     ],
                   ),
                 ),
               ),
-            );
-          },
-        );
+            ),
+          );
+        },
+      );
       },
     );
   }
@@ -2918,73 +4016,96 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _showPageThumbnailSheet(ReaderState state) {
     if (state.pages.isEmpty) return;
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final itemWidth = (screenWidth - 62) / 4;
+    final itemHeight = itemWidth / 0.68;
+    final rowHeight = itemHeight + 10;
+    final currentRow = state.currentPageIndex ~/ 4;
+    final targetOffset = (currentRow * rowHeight - rowHeight).clamp(0.0, double.infinity);
+    final scrollController = ScrollController(initialScrollOffset: targetOffset);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
       showDragHandle: true,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
+        final theme = Theme.of(context);
+        final primary = theme.colorScheme.primary;
+        final onPrimary = theme.colorScheme.onPrimary;
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            state.currentChapter?.title ?? 'Danh sách trang',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.78,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              state.currentChapter?.title ?? 'Danh sách trang',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Tổng cộng ${state.pages.length} trang • Chạm để nhảy trang',
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 12,
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tổng cộng ${state.pages.length} trang • Chạm để nhảy trang',
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.orangeAccent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.orangeAccent.withValues(alpha: 0.4),
+                          ],
                         ),
                       ),
-                      child: Text(
-                        'Trang ${state.currentPageIndex + 1}/${state.pages.length}',
-                        style: const TextStyle(
-                          color: Colors.orangeAccent,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: primary.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          'Trang ${state.currentPageIndex + 1}/${state.pages.length}',
+                          style: TextStyle(
+                            color: primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: GridView.builder(
-                    itemCount: state.pages.length,
+                      const SizedBox(width: 6),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        tooltip: 'Đóng',
+                        onPressed: () => Navigator.pop(context),
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: GridView.builder(
+                      controller: scrollController,
+                      itemCount: state.pages.length,
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 4,
@@ -3011,14 +4132,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: selected
-                                  ? Colors.orangeAccent
+                                  ? primary
                                   : Colors.white12,
                               width: selected ? 2.5 : 1,
                             ),
                             boxShadow: selected
                                 ? [
                                     BoxShadow(
-                                      color: Colors.orangeAccent.withValues(
+                                      color: primary.withValues(
                                         alpha: 0.35,
                                       ),
                                       blurRadius: 8,
@@ -3049,13 +4170,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       vertical: 1.5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.orangeAccent,
+                                      color: primary,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'Đang đọc',
                                       style: TextStyle(
-                                        color: Colors.black,
+                                        color: onPrimary,
                                         fontSize: 8.5,
                                         fontWeight: FontWeight.w900,
                                       ),
@@ -3079,7 +4200,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                       '${index + 1}',
                                       style: TextStyle(
                                         color: selected
-                                            ? Colors.orangeAccent
+                                            ? primary
                                             : Colors.white,
                                         fontSize: 11,
                                         fontWeight: FontWeight.bold,
@@ -3098,15 +4219,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               ],
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  ).then((_) {
+    scrollController.dispose();
+  });
+}
 
   /// Lưu ảnh của trang truyện hiện tại vào Thư viện máy (Pictures/MangaReader)
-  Future<void> _saveCurrentPageImage(ReaderState state, {int? pageIndex}) async {
+  Future<void> _saveCurrentPageImage(
+    ReaderState state, {
+    int? pageIndex,
+  }) async {
     final targetIndex = pageIndex ?? _currentPageNotifier.value;
-    if (state.pages.isEmpty || targetIndex < 0 || targetIndex >= state.pages.length) {
+    if (state.pages.isEmpty ||
+        targetIndex < 0 ||
+        targetIndex >= state.pages.length) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3125,7 +4254,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cần cấp quyền truy cập bộ nhớ để lưu ảnh vào Thư viện'),
+            content: Text(
+              'Cần cấp quyền truy cập bộ nhớ để lưu ảnh vào Thư viện',
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.redAccent,
           ),
@@ -3152,7 +4283,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+              const Icon(
+                Icons.check_circle_rounded,
+                color: Colors.greenAccent,
+                size: 20,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -3163,7 +4298,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             ],
           ),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           backgroundColor: const Color(0xFF1E293B),
           duration: const Duration(seconds: 3),
         ),
@@ -3186,13 +4323,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   ) async {
     HapticFeedback.lightImpact();
     final existingBookmark = await notifier.getCurrentPageBookmark();
-    final textController = TextEditingController(text: existingBookmark?.note ?? '');
+    final textController = TextEditingController(
+      text: existingBookmark?.note ?? '',
+    );
 
     if (!mounted) return;
     final save = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
+        backgroundColor:
+            Theme.of(dialogCtx).dialogTheme.backgroundColor ??
+            Theme.of(dialogCtx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -3200,7 +4341,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             const SizedBox(width: 8),
             Text(
               'Ghi chú Bookmark (Trang ${state.currentPageIndex + 1})',
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -3219,7 +4364,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               maxLines: 3,
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Ví dụ: Đoạn đánh nhau hay, manh mối cốt truyện, wallpaper đẹp...',
+                hintText:
+                    'Ví dụ: Đoạn đánh nhau hay, manh mối cốt truyện, wallpaper đẹp...',
                 hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.08),
@@ -3237,22 +4383,31 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             onPressed: () => Navigator.pop(dialogCtx, false),
             child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
           ),
-          if (existingBookmark?.note != null && existingBookmark!.note!.isNotEmpty)
+          if (existingBookmark?.note != null &&
+              existingBookmark!.note!.isNotEmpty)
             TextButton(
               onPressed: () {
                 textController.clear();
                 Navigator.pop(dialogCtx, true);
               },
-              child: const Text('Xóa ghi chú', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'Xóa ghi chú',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber,
               foregroundColor: Colors.black87,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Lưu ghi chú', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Lưu ghi chú',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -3325,35 +4480,58 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final pageIndices = spreads[index];
         if (pageIndices.length == 1) {
           final pageIdx = pageIndices[0];
-          if (state.cropBorders) {
-            return PhotoViewGalleryPageOptions.customChild(
-              child: ClipRect(
-                child: Transform.scale(
-                  scale: 1.08,
-                  alignment: Alignment.center,
-                  child: Image.file(
-                    File(state.pages[pageIdx]),
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
-                ),
+          final baseScale = _initialPhotoScale(
+            state.imageFit,
+            filePath: state.pages[pageIdx],
+          );
+          final effectiveInitialScale =
+              (state.cropBorders && baseScale is PhotoViewComputedScale)
+              ? baseScale * 1.04
+              : (state.cropBorders && baseScale is num)
+              ? baseScale * 1.04
+              : baseScale;
+
+          bool shouldRotate = false;
+          if (state.rotateLandscapeImages) {
+            final size = _getImageSize(state.pages[pageIdx]);
+            if (size != null && size.width > size.height) {
+              shouldRotate = true;
+            }
+          }
+
+          if (shouldRotate) {
+            Widget child = RotatedBox(
+              quarterTurns: 1, // Xoay 90 độ
+              child: Image.file(
+                File(state.pages[pageIdx]),
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
               ),
+            );
+            if (state.cropBorders) {
+              child = ClipRect(
+                child: Transform.scale(
+                  scale: 1.04,
+                  alignment: Alignment.center,
+                  child: child,
+                ),
+              );
+            }
+            return PhotoViewGalleryPageOptions.customChild(
+              child: child,
               initialScale: PhotoViewComputedScale.contained,
               minScale: PhotoViewComputedScale.contained,
               maxScale: PhotoViewComputedScale.covered * 3,
+              basePosition: _getZoomAlignment(state.zoomStart),
             );
           }
 
           return PhotoViewGalleryPageOptions(
-            imageProvider: ResizeImage(
-              FileImage(File(state.pages[pageIdx])),
-              width: (MediaQuery.of(context).size.width *
-                      MediaQuery.of(context).devicePixelRatio)
-                  .toInt(),
-            ),
-            initialScale: _initialPhotoScale(state.imageFit),
+            imageProvider: FileImage(File(state.pages[pageIdx])),
+            initialScale: effectiveInitialScale,
             minScale: PhotoViewComputedScale.contained,
             maxScale: PhotoViewComputedScale.covered * 3,
+            basePosition: _getZoomAlignment(state.zoomStart),
           );
         }
 
@@ -3386,7 +4564,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         if (state.cropBorders) {
           dualRow = ClipRect(
             child: Transform.scale(
-              scale: 1.08,
+              scale: 1.03, // Tỷ lệ an toàn cho manga scan trang đôi
               alignment: Alignment.center,
               child: dualRow,
             ),
@@ -3398,6 +4576,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           initialScale: PhotoViewComputedScale.contained,
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 3,
+          basePosition: _getZoomAlignment(state.zoomStart),
         );
       },
       itemCount: spreads.length + 1,
@@ -3423,14 +4602,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     ReaderNotifier notifier,
   ) {
     final hasNextChapter = notifier.getNextChapterId() != null;
+    final isRtl = state.direction == ReaderDirection.rtl;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.keyboard_double_arrow_right,
+          Icon(
+            isRtl
+                ? Icons.keyboard_double_arrow_left
+                : Icons.keyboard_double_arrow_right,
             color: Colors.white54,
             size: 40,
           ),
@@ -3461,14 +4643,45 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               label: const Text('Đọc chương tiếp'),
             )
           else
-            const Column(
+            Column(
               children: [
-                Icon(Icons.check_circle_outline, color: Colors.green, size: 32),
-                SizedBox(height: 8),
-                Text(
-                  'Đây là chương cuối cùng',
+                const Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.green,
+                  size: 36,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Bạn đã đọc hết truyện!',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Đây là chương cuối cùng của bộ truyện này.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: () => context.pop(),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text('Quay lại chi tiết truyện'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -3497,55 +4710,100 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final pageIndex = index - 1;
         final key = _pageKeys.putIfAbsent(pageIndex, () => GlobalKey());
 
-        Widget imageWidget = Image.file(
-          File(state.pages[pageIndex]),
-          fit: _verticalImageFit(state.imageFit),
-          width: double.infinity,
-          alignment: Alignment.topCenter,
-          cacheWidth:
-              (MediaQuery.of(context).size.width *
-                      MediaQuery.of(context).devicePixelRatio)
-                  .toInt(),
-          filterQuality: FilterQuality.none, // Khử anti-aliasing
-          errorBuilder: (_, __, ___) => Container(
-            height: 200,
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.broken_image_rounded, size: 36, color: Colors.white38),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Không thể tải trang ${pageIndex + 1}',
-                    style: const TextStyle(color: Colors.white60, fontSize: 13),
-                  ),
-                ],
+        bool shouldRotate = false;
+        Size? imageSize;
+        if (state.rotateLandscapeImages) {
+          imageSize = _getImageSize(state.pages[pageIndex]);
+          if (imageSize != null && imageSize.width > imageSize.height) {
+            shouldRotate = true;
+          }
+        }
+
+        Widget imageWidget;
+        if (shouldRotate && imageSize != null && imageSize.width > 0) {
+          imageWidget = AspectRatio(
+            aspectRatio: imageSize.height / imageSize.width,
+            child: RotatedBox(
+              quarterTurns: 1,
+              child: Image.file(
+                File(state.pages[pageIndex]),
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.none,
               ),
             ),
-          ),
-        );
+          );
+        } else {
+          imageWidget = Image.file(
+            File(state.pages[pageIndex]),
+            fit: _verticalImageFit(state.imageFit),
+            width: double.infinity,
+            alignment: Alignment.topCenter,
+            gaplessPlayback: true, // Khử flash trắng khi rebuild item
+            filterQuality: FilterQuality.none, // Khử anti-aliasing
+            errorBuilder: (_, __, ___) => Container(
+              height: 200,
+              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.broken_image_rounded,
+                      size: 36,
+                      color: Colors.white38,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Không thể tải trang ${pageIndex + 1}',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
 
         if (state.cropBorders) {
+          // Chỉ scale nhẹ theo chiều ngang (X: 1.03) để khử lề quét scan 2 bên,
+          // TUYỆT ĐỐI GIỮ NGUYÊN 100% CHIỀU DỌC (Y: 1.0) để không làm đứt gãy mối nối các trang Webtoon!
           imageWidget = ClipRect(
-            child: Transform.scale(
-              scale: 1.08,
+            child: Transform(
+              transform: Matrix4.diagonal3Values(1.03, 1.0, 1.0),
               alignment: Alignment.center,
               child: imageWidget,
             ),
           );
         }
 
-        return Container(
-          key: key,
-          child: Transform.translate(
-            offset: const Offset(0, -0.5), // Khử hở viền 1px
+        if (state.isGapMode) {
+          imageWidget = Padding(
+            padding: const EdgeInsets.only(bottom: 16),
             child: imageWidget,
+          );
+        }
+
+        return RepaintBoundary(
+          child: Container(
+            key: key,
+            child: state.isGapMode
+                ? imageWidget
+                : Transform.translate(
+                    offset: const Offset(
+                      0,
+                      -0.5,
+                    ), // Khử hở viền 1px cho continuous scroll
+                    child: imageWidget,
+                  ),
           ),
         );
       },
@@ -3604,14 +4862,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           CircularProgressIndicator(
                             value: _holdProgressController.value,
                             strokeWidth: 4,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.blueAccent,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           // Biểu tượng mũi tên lên
                           Icon(
                             Icons.arrow_upward,
-                            color: Colors.blueAccent.withValues(
+                            color: Theme.of(context).colorScheme.primary.withValues(
                               alpha:
                                   0.5 + (_holdProgressController.value * 0.5),
                             ),
@@ -3623,10 +4881,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Giữ để đọc chương trước...',
                   style: TextStyle(
-                    color: Colors.blueAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -3662,9 +4920,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           else
             Column(
               children: [
-                const Icon(
+                Icon(
                   Icons.first_page,
-                  color: Colors.blueAccent,
+                  color: Theme.of(context).colorScheme.primary,
                   size: 32,
                 ),
                 const SizedBox(height: 8),
@@ -3773,14 +5031,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           CircularProgressIndicator(
                             value: _holdProgressController.value,
                             strokeWidth: 4,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.blueAccent,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           // Biểu tượng ở giữa
                           Icon(
                             Icons.arrow_downward,
-                            color: Colors.blueAccent.withValues(
+                            color: Theme.of(context).colorScheme.primary.withValues(
                               alpha:
                                   0.5 + (_holdProgressController.value * 0.5),
                             ),
@@ -3792,10 +5050,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Giữ để đọc chương tiếp...',
                   style: TextStyle(
-                    color: Colors.blueAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -3905,7 +5163,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 class _ReaderDrawerContent extends ConsumerStatefulWidget {
   final ReaderState state;
   final ReaderNotifier notifier;
-  final Function(String chapterId, String? mangaId, {int? page}) onNavigateChapter;
+  final Function(String chapterId, String? mangaId, {int? page})
+  onNavigateChapter;
   final Function(int pageIndex) onJumpToPage;
   final Function(ReaderNotifier notifier) onReloadChapter;
 
@@ -3918,13 +5177,15 @@ class _ReaderDrawerContent extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_ReaderDrawerContent> createState() => _ReaderDrawerContentState();
+  ConsumerState<_ReaderDrawerContent> createState() =>
+      _ReaderDrawerContentState();
 }
 
 class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final TextEditingController _chapterSearchController = TextEditingController();
+  final TextEditingController _chapterSearchController =
+      TextEditingController();
   final ScrollController _chapterScrollController = ScrollController();
   String _chapterSearchQuery = '';
   Timer? _searchDebounce;
@@ -3969,8 +5230,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
         userId: userId,
       );
       final prefs = await SharedPreferences.getInstance();
-      final reversed =
-          prefs.getBool('manga_sort_reversed_$mangaId') ?? false;
+      final reversed = prefs.getBool('manga_sort_reversed_$mangaId') ?? false;
       if (mounted) {
         setState(() {
           _readChapterIds = readIds;
@@ -4026,6 +5286,16 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
       SnackBar(
         content: Text('Đã xóa bookmark Trang ${bookmark.pageIndex + 1}'),
         behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'HOÀN TÁC',
+          textColor: Colors.amber,
+          onPressed: () async {
+            HapticFeedback.lightImpact();
+            await widget.notifier.restoreBookmark(bookmark);
+            await _loadBookmarks();
+          },
+        ),
       ),
     );
   }
@@ -4036,7 +5306,9 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
     final save = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
+        backgroundColor:
+            Theme.of(dialogCtx).dialogTheme.backgroundColor ??
+            Theme.of(dialogCtx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -4045,7 +5317,11 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
             Expanded(
               child: Text(
                 'Ghi chú (Trang ${bookmark.pageIndex + 1})',
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -4090,16 +5366,24 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                 textController.clear();
                 Navigator.pop(dialogCtx, true);
               },
-              child: const Text('Xóa ghi chú', style: TextStyle(color: Colors.redAccent)),
+              child: const Text(
+                'Xóa ghi chú',
+                style: TextStyle(color: Colors.redAccent),
+              ),
             ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.amber,
               foregroundColor: Colors.black87,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Lưu',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -4134,27 +5418,33 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
 
     // Filter chapters
     final seen = <String>{};
-    final normalizedSearch = CatalogCacheService.instance.normalize(_chapterSearchQuery);
-    final rawChapters = state.chapters
-        .where((c) => seen.add(c.id))
-        .where((c) {
-          if (normalizedSearch.isEmpty) return true;
-          final normTitle = CatalogCacheService.instance.normalize(c.title);
-          return normTitle.contains(normalizedSearch);
-        })
-        .toList();
-    final filteredChapters = _isSortReversed ? rawChapters.reversed.toList() : rawChapters;
+    final normalizedSearch = CatalogCacheService.instance.normalize(
+      _chapterSearchQuery,
+    );
+    final rawChapters = state.chapters.where((c) => seen.add(c.id)).where((c) {
+      if (normalizedSearch.isEmpty) return true;
+      final normTitle = CatalogCacheService.instance.normalize(c.title);
+      return normTitle.contains(normalizedSearch);
+    }).toList();
+    final filteredChapters = _isSortReversed
+        ? rawChapters.reversed.toList()
+        : rawChapters;
 
     // Auto-scroll to current chapter
     if (!_hasAutoScrolled && currentChapter != null) {
-      final selectedIndex = filteredChapters.indexWhere((c) => c.id == currentChapter.id);
+      final selectedIndex = filteredChapters.indexWhere(
+        (c) => c.id == currentChapter.id,
+      );
       if (selectedIndex > 0) {
         _hasAutoScrolled = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_chapterScrollController.hasClients) {
             final targetOffset = (selectedIndex * 56.0) - 100.0;
             _chapterScrollController.jumpTo(
-              targetOffset.clamp(0.0, _chapterScrollController.position.maxScrollExtent),
+              targetOffset.clamp(
+                0.0,
+                _chapterScrollController.position.maxScrollExtent,
+              ),
             );
           }
         });
@@ -4163,13 +5453,18 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
 
     // Filter bookmarks
     final currentChapterId = currentChapter?.id;
-    final displayBookmarks = _filterOnlyCurrentChapter && currentChapterId != null
+    final displayBookmarks =
+        _filterOnlyCurrentChapter && currentChapterId != null
         ? _bookmarks.where((b) => b.chapterId == currentChapterId).toList()
         : _bookmarks;
 
     final currentChapterBookmarkCount = currentChapterId == null
         ? 0
         : _bookmarks.where((b) => b.chapterId == currentChapterId).length;
+
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final onPrimary = theme.colorScheme.onPrimary;
 
     return Drawer(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -4218,8 +5513,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                             const SizedBox(height: 2),
                             Text(
                               state.currentChapter?.title ?? '',
-                              style: const TextStyle(
-                                color: Colors.orangeAccent,
+                              style: TextStyle(
+                                color: primary,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -4230,7 +5525,11 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
                         tooltip: 'Đóng',
                         onPressed: () => Navigator.pop(context),
                       ),
@@ -4239,17 +5538,23 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                   const SizedBox(height: 8),
                   TabBar(
                     controller: _tabController,
-                    indicatorColor: Colors.orangeAccent,
+                    indicatorColor: primary,
                     indicatorWeight: 3,
-                    labelColor: Colors.orangeAccent,
+                    labelColor: primary,
                     unselectedLabelColor: Colors.white60,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                     tabs: [
                       Tab(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.format_list_numbered_rounded, size: 16),
+                            const Icon(
+                              Icons.format_list_numbered_rounded,
+                              size: 16,
+                            ),
                             const SizedBox(width: 6),
                             Text('Chương (${state.chapters.length})'),
                           ],
@@ -4287,34 +5592,64 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                             Expanded(
                               child: TextField(
                                 controller: _chapterSearchController,
-                                style: const TextStyle(color: Colors.white, fontSize: 13),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                ),
                                 textInputAction: TextInputAction.search,
                                 decoration: InputDecoration(
                                   hintText: 'Tìm số chương...',
-                                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                                  prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 16),
+                                  hintStyle: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search,
+                                    color: Colors.white54,
+                                    size: 16,
+                                  ),
                                   suffixIcon: _chapterSearchQuery.isNotEmpty
                                       ? IconButton(
-                                          icon: const Icon(Icons.clear, color: Colors.white54, size: 14),
+                                          icon: const Icon(
+                                            Icons.clear,
+                                            color: Colors.white54,
+                                            size: 14,
+                                          ),
                                           onPressed: () {
                                             _chapterSearchController.clear();
-                                            setState(() => _chapterSearchQuery = '');
+                                            setState(
+                                              () => _chapterSearchQuery = '',
+                                            );
                                           },
                                         )
                                       : null,
                                   filled: true,
-                                  fillColor: Colors.white.withValues(alpha: 0.08),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  fillColor: Colors.white.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 8,
+                                  ),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
                                     borderSide: BorderSide.none,
                                   ),
                                 ),
                                 onChanged: (val) {
-                                  if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-                                  _searchDebounce = Timer(const Duration(milliseconds: 150), () {
-                                    if (mounted) setState(() => _chapterSearchQuery = val);
-                                  });
+                                  if (_searchDebounce?.isActive ?? false) {
+                                    _searchDebounce!.cancel();
+                                  }
+                                  _searchDebounce = Timer(
+                                    const Duration(milliseconds: 150),
+                                    () {
+                                      if (mounted) {
+                                        setState(
+                                          () => _chapterSearchQuery = val,
+                                        );
+                                      }
+                                    },
+                                  );
                                 },
                               ),
                             ),
@@ -4322,16 +5657,27 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                             IconButton(
                               icon: Icon(
                                 Icons.swap_vert_rounded,
-                                color: _isSortReversed ? Colors.orangeAccent : Colors.white70,
+                                color: _isSortReversed
+                                    ? primary
+                                    : Colors.white70,
                                 size: 22,
                               ),
-                              tooltip: _isSortReversed ? 'Mới nhất trước' : 'Cũ nhất trước',
+                              tooltip: _isSortReversed
+                                  ? 'Mới nhất trước'
+                                  : 'Cũ nhất trước',
                               onPressed: () async {
                                 HapticFeedback.selectionClick();
-                                setState(() => _isSortReversed = !_isSortReversed);
-                                if (widget.state.mangaId != null && widget.state.mangaId!.isNotEmpty) {
-                                  final prefs = await SharedPreferences.getInstance();
-                                  await prefs.setBool('manga_sort_reversed_${widget.state.mangaId}', _isSortReversed);
+                                setState(
+                                  () => _isSortReversed = !_isSortReversed,
+                                );
+                                if (widget.state.mangaId != null &&
+                                    widget.state.mangaId!.isNotEmpty) {
+                                  final prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.setBool(
+                                    'manga_sort_reversed_${widget.state.mangaId}',
+                                    _isSortReversed,
+                                  );
                                 }
                               },
                             ),
@@ -4342,56 +5688,81 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                       Expanded(
                         child: filteredChapters.isEmpty
                             ? const Center(
-                                child: Text('Không tìm thấy chương nào', style: TextStyle(color: Colors.white54)),
+                                child: Text(
+                                  'Không tìm thấy chương nào',
+                                  style: TextStyle(color: Colors.white54),
+                                ),
                               )
                             : ListView.builder(
                                 controller: _chapterScrollController,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                                 itemCount: filteredChapters.length,
                                 itemBuilder: (context, index) {
                                   final chapter = filteredChapters[index];
-                                  final isCurrent = chapter.id == currentChapter?.id;
-                                  final isRead = _readChapterIds.contains(chapter.id);
+                                  final isCurrent =
+                                      chapter.id == currentChapter?.id;
+                                  final isRead = _readChapterIds.contains(
+                                    chapter.id,
+                                  );
 
                                   return Container(
-                                    margin: const EdgeInsets.symmetric(vertical: 3),
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: isCurrent
-                                          ? Colors.orangeAccent.withValues(alpha: 0.14)
-                                          : Colors.white.withValues(alpha: 0.04),
+                                          ? primary.withValues(
+                                              alpha: 0.14,
+                                            )
+                                          : Colors.white.withValues(
+                                              alpha: 0.04,
+                                            ),
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color: isCurrent
-                                            ? Colors.orangeAccent.withValues(alpha: 0.7)
-                                            : Colors.white.withValues(alpha: 0.08),
+                                            ? primary.withValues(
+                                                alpha: 0.7,
+                                              )
+                                            : Colors.white.withValues(
+                                                alpha: 0.08,
+                                              ),
                                         width: isCurrent ? 1.5 : 1,
                                       ),
                                     ),
                                     child: ListTile(
                                       dense: true,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 0,
+                                          ),
                                       leading: Icon(
                                         isCurrent
                                             ? Icons.play_circle_filled_rounded
                                             : isRead
-                                                ? Icons.check_circle_rounded
-                                                : Icons.radio_button_unchecked,
+                                            ? Icons.check_circle_rounded
+                                            : Icons.radio_button_unchecked,
                                         color: isCurrent
-                                            ? Colors.orangeAccent
+                                            ? primary
                                             : isRead
-                                                ? Colors.greenAccent
-                                                : Colors.white24,
+                                            ? Colors.greenAccent
+                                            : Colors.white24,
                                         size: 20,
                                       ),
                                       title: Text(
                                         chapter.title,
                                         style: TextStyle(
                                           color: isCurrent
-                                              ? Colors.orangeAccent
+                                              ? primary
                                               : isRead
-                                                  ? Colors.white60
-                                                  : Colors.white,
-                                          fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                                              ? Colors.white60
+                                              : Colors.white,
+                                          fontWeight: isCurrent
+                                              ? FontWeight.bold
+                                              : FontWeight.w500,
                                           fontSize: 13,
                                         ),
                                         maxLines: 1,
@@ -4399,15 +5770,20 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                       ),
                                       trailing: isCurrent
                                           ? Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
                                               decoration: BoxDecoration(
-                                                color: Colors.orangeAccent,
-                                                borderRadius: BorderRadius.circular(6),
+                                                color: primary,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
                                               ),
-                                              child: const Text(
+                                              child: Text(
                                                 'Đang đọc',
                                                 style: TextStyle(
-                                                  color: Colors.black,
+                                                  color: onPrimary,
                                                   fontWeight: FontWeight.w900,
                                                   fontSize: 10,
                                                 ),
@@ -4418,7 +5794,10 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                         HapticFeedback.selectionClick();
                                         Navigator.pop(context);
                                         if (!isCurrent) {
-                                          widget.onNavigateChapter(chapter.id, widget.state.mangaId);
+                                          widget.onNavigateChapter(
+                                            chapter.id,
+                                            widget.state.mangaId,
+                                          );
                                         }
                                       },
                                     ),
@@ -4438,30 +5817,58 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         child: Row(
                           children: [
                             ChoiceChip(
-                              label: Text('Tất cả (${_bookmarks.length})', style: const TextStyle(fontSize: 11.5)),
-                              selected: !_filterOnlyCurrentChapter,
-                              selectedColor: Colors.orangeAccent,
-                              labelStyle: TextStyle(
-                                color: !_filterOnlyCurrentChapter ? Colors.black : Colors.white70,
-                                fontWeight: !_filterOnlyCurrentChapter ? FontWeight.bold : FontWeight.normal,
+                              label: Text(
+                                'Tất cả (${_bookmarks.length})',
+                                style: const TextStyle(fontSize: 11.5),
                               ),
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                              selected: !_filterOnlyCurrentChapter,
+                              selectedColor: primary,
+                              labelStyle: TextStyle(
+                                color: !_filterOnlyCurrentChapter
+                                    ? onPrimary
+                                    : Colors.white70,
+                                fontWeight: !_filterOnlyCurrentChapter
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.08,
+                              ),
                               onSelected: (val) {
-                                if (val) setState(() => _filterOnlyCurrentChapter = false);
+                                if (val) {
+                                  HapticFeedback.selectionClick();
+                                  setState(
+                                    () => _filterOnlyCurrentChapter = false,
+                                  );
+                                }
                               },
                             ),
                             const SizedBox(width: 8),
                             ChoiceChip(
-                              label: Text('Chương này ($currentChapterBookmarkCount)', style: const TextStyle(fontSize: 11.5)),
-                              selected: _filterOnlyCurrentChapter,
-                              selectedColor: Colors.orangeAccent,
-                              labelStyle: TextStyle(
-                                color: _filterOnlyCurrentChapter ? Colors.black : Colors.white70,
-                                fontWeight: _filterOnlyCurrentChapter ? FontWeight.bold : FontWeight.normal,
+                              label: Text(
+                                'Chương này ($currentChapterBookmarkCount)',
+                                style: const TextStyle(fontSize: 11.5),
                               ),
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                              selected: _filterOnlyCurrentChapter,
+                              selectedColor: primary,
+                              labelStyle: TextStyle(
+                                color: _filterOnlyCurrentChapter
+                                    ? onPrimary
+                                    : Colors.white70,
+                                fontWeight: _filterOnlyCurrentChapter
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.08,
+                              ),
                               onSelected: (val) {
-                                if (val) setState(() => _filterOnlyCurrentChapter = true);
+                                if (val) {
+                                  HapticFeedback.selectionClick();
+                                  setState(
+                                    () => _filterOnlyCurrentChapter = true,
+                                  );
+                                }
                               },
                             ),
                           ],
@@ -4473,177 +5880,256 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         child: _isLoadingBookmarks
                             ? const Center(child: CircularProgressIndicator())
                             : displayBookmarks.isEmpty
-                                ? Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(24),
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.bookmark_border_rounded,
+                                        size: 48,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.25,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        _filterOnlyCurrentChapter
+                                            ? 'Chưa có bookmark nào trong chương này'
+                                            : 'Chưa có trang đánh dấu nào',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'Chạm vào biểu tượng Bookmark trên thanh điều khiển khi đọc để lưu lại trang yêu thích!',
+                                        style: TextStyle(
+                                          color: Colors.white38,
+                                          fontSize: 12,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                itemCount: displayBookmarks.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final bookmark = displayBookmarks[index];
+                                  final chapterTitle = _getChapterTitle(
+                                    bookmark.chapterId,
+                                  );
+                                  final isSameChapter =
+                                      bookmark.chapterId == currentChapter?.id;
+
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      Navigator.pop(context);
+                                      if (isSameChapter) {
+                                        widget.onJumpToPage(bookmark.pageIndex);
+                                      } else {
+                                        widget.onNavigateChapter(
+                                          bookmark.chapterId,
+                                          widget.state.mangaId,
+                                          page: bookmark.pageIndex,
+                                        );
+                                      }
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.05,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSameChapter
+                                              ? Colors.amber.withValues(
+                                                  alpha: 0.4,
+                                                )
+                                              : Colors.white12,
+                                        ),
+                                      ),
                                       child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Icon(
-                                            Icons.bookmark_border_rounded,
-                                            size: 48,
-                                            color: Colors.white.withValues(alpha: 0.25),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 3,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.amber
+                                                      .withValues(alpha: 0.2),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: Colors.amber
+                                                        .withValues(alpha: 0.5),
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.bookmark_rounded,
+                                                      color: Colors.amber,
+                                                      size: 12,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Trang ${bookmark.pageIndex + 1}',
+                                                      style: const TextStyle(
+                                                        color: Colors.amber,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  chapterTitle,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 12),
-                                          Text(
-                                            _filterOnlyCurrentChapter
-                                                ? 'Chưa có bookmark nào trong chương này'
-                                                : 'Chưa có trang đánh dấu nào',
-                                            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
-                                            textAlign: TextAlign.center,
-                                          ),
+                                          if (bookmark.note != null &&
+                                              bookmark.note!.isNotEmpty) ...[
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              width: double.infinity,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.amber.withValues(
+                                                  alpha: 0.08,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                border: const Border(
+                                                  left: BorderSide(
+                                                    color: Colors.amber,
+                                                    width: 3,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.format_quote_rounded,
+                                                    color: Colors.amber,
+                                                    size: 14,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      bookmark.note!,
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                        fontSize: 12,
+                                                        fontStyle:
+                                                            FontStyle.italic,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                           const SizedBox(height: 6),
-                                          const Text(
-                                            'Chạm vào biểu tượng Bookmark trên thanh điều khiển khi đọc để lưu lại trang yêu thích!',
-                                            style: TextStyle(color: Colors.white38, fontSize: 12),
-                                            textAlign: TextAlign.center,
+                                          Row(
+                                            children: [
+                                              Text(
+                                                _formatDateTime(
+                                                  bookmark.updatedAt,
+                                                ),
+                                                style: const TextStyle(
+                                                  color: Colors.white38,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              IconButton(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                padding: EdgeInsets.zero,
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 34,
+                                                      minHeight: 34,
+                                                    ),
+                                                icon: const Icon(
+                                                  Icons.edit_note_rounded,
+                                                  color: Colors.amberAccent,
+                                                  size: 20,
+                                                ),
+                                                tooltip: 'Sửa ghi chú',
+                                                onPressed: () =>
+                                                    _editBookmarkNote(bookmark),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              IconButton(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                padding: EdgeInsets.zero,
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 34,
+                                                      minHeight: 34,
+                                                    ),
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  color: Colors.redAccent,
+                                                  size: 20,
+                                                ),
+                                                tooltip: 'Xóa bookmark',
+                                                onPressed: () =>
+                                                    _deleteBookmark(bookmark),
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
                                     ),
-                                  )
-                                : ListView.separated(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    itemCount: displayBookmarks.length,
-                                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                                    itemBuilder: (context, index) {
-                                      final bookmark = displayBookmarks[index];
-                                      final chapterTitle = _getChapterTitle(bookmark.chapterId);
-                                      final isSameChapter = bookmark.chapterId == currentChapter?.id;
-
-                                      return InkWell(
-                                        borderRadius: BorderRadius.circular(12),
-                                        onTap: () {
-                                          HapticFeedback.selectionClick();
-                                          Navigator.pop(context);
-                                          if (isSameChapter) {
-                                            widget.onJumpToPage(bookmark.pageIndex);
-                                          } else {
-                                            widget.onNavigateChapter(
-                                              bookmark.chapterId,
-                                              widget.state.mangaId,
-                                              page: bookmark.pageIndex,
-                                            );
-                                          }
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.05),
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color: isSameChapter
-                                                  ? Colors.amber.withValues(alpha: 0.4)
-                                                  : Colors.white12,
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.amber.withValues(alpha: 0.2),
-                                                      borderRadius: BorderRadius.circular(6),
-                                                      border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        const Icon(Icons.bookmark_rounded, color: Colors.amber, size: 12),
-                                                        const SizedBox(width: 4),
-                                                        Text(
-                                                          'Trang ${bookmark.pageIndex + 1}',
-                                                          style: const TextStyle(
-                                                            color: Colors.amber,
-                                                            fontSize: 11,
-                                                            fontWeight: FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      chapterTitle,
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 13,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              if (bookmark.note != null && bookmark.note!.isNotEmpty) ...[
-                                                const SizedBox(height: 8),
-                                                Container(
-                                                  width: double.infinity,
-                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.amber.withValues(alpha: 0.08),
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    border: const Border(
-                                                      left: BorderSide(color: Colors.amber, width: 3),
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      const Icon(Icons.format_quote_rounded, color: Colors.amber, size: 14),
-                                                      const SizedBox(width: 6),
-                                                      Expanded(
-                                                        child: Text(
-                                                          bookmark.note!,
-                                                          style: const TextStyle(
-                                                            color: Colors.white70,
-                                                            fontSize: 12,
-                                                            fontStyle: FontStyle.italic,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(height: 6),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    _formatDateTime(bookmark.updatedAt),
-                                                    style: const TextStyle(color: Colors.white38, fontSize: 11),
-                                                  ),
-                                                  const Spacer(),
-                                                  IconButton(
-                                                    visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                                    icon: const Icon(Icons.edit_note_rounded, color: Colors.amberAccent, size: 18),
-                                                    tooltip: 'Sửa ghi chú',
-                                                    onPressed: () => _editBookmarkNote(bookmark),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  IconButton(
-                                                    visualDensity: VisualDensity.compact,
-                                                    padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                                                    tooltip: 'Xóa bookmark',
-                                                    onPressed: () => _deleteBookmark(bookmark),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                  );
+                                },
+                              ),
                       ),
                     ],
                   ),
@@ -4668,14 +6154,20 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         foregroundColor: Colors.white,
                         side: const BorderSide(color: Colors.white24),
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       icon: Icon(
-                        state.readingMode == ReadingMode.horizontal ? Icons.swap_vert : Icons.swap_horiz,
+                        state.readingMode == ReadingMode.horizontal
+                            ? Icons.swap_vert
+                            : Icons.swap_horiz,
                         size: 16,
                       ),
                       label: Text(
-                        state.readingMode == ReadingMode.horizontal ? 'Đọc Dọc' : 'Đọc Ngang',
+                        state.readingMode == ReadingMode.horizontal
+                            ? 'Đọc Dọc'
+                            : 'Đọc Ngang',
                         style: const TextStyle(fontSize: 12),
                       ),
                       onPressed: () {
@@ -4696,10 +6188,15 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         foregroundColor: Colors.white70,
                         side: const BorderSide(color: Colors.white24),
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text('Tải lại', style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        'Tải lại',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       onPressed: () {
                         Navigator.pop(context);
                         widget.onReloadChapter(notifier);
@@ -4802,18 +6299,19 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
       snap: true,
       builder: (context, scrollController) {
         final seen = <String>{};
-        final normalizedSearch =
-            CatalogCacheService.instance.normalize(_searchQuery);
-        final rawChapters = widget.chapters
-            .where((c) => seen.add(c.id))
-            .where((c) {
-              if (normalizedSearch.isEmpty) return true;
-              final normTitle = CatalogCacheService.instance.normalize(c.title);
-              return normTitle.contains(normalizedSearch);
-            })
-            .toList();
-        final filteredChapters =
-            _isSortReversed ? rawChapters.reversed.toList() : rawChapters;
+        final normalizedSearch = CatalogCacheService.instance.normalize(
+          _searchQuery,
+        );
+        final rawChapters = widget.chapters.where((c) => seen.add(c.id)).where((
+          c,
+        ) {
+          if (normalizedSearch.isEmpty) return true;
+          final normTitle = CatalogCacheService.instance.normalize(c.title);
+          return normTitle.contains(normalizedSearch);
+        }).toList();
+        final filteredChapters = _isSortReversed
+            ? rawChapters.reversed.toList()
+            : rawChapters;
 
         if (!_hasAutoScrolled && widget.currentChapter != null) {
           final selectedIndex = filteredChapters.indexWhere(
@@ -4825,12 +6323,18 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
               if (scrollController.hasClients) {
                 final targetOffset = (selectedIndex * 52.0) - 100.0;
                 scrollController.jumpTo(
-                  targetOffset.clamp(0.0, scrollController.position.maxScrollExtent),
+                  targetOffset.clamp(
+                    0.0,
+                    scrollController.position.maxScrollExtent,
+                  ),
                 );
               }
             });
           }
         }
+
+        final theme = Theme.of(context);
+        final primary = theme.colorScheme.primary;
 
         return Container(
           decoration: BoxDecoration(
@@ -4861,15 +6365,27 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                           icon: const Icon(Icons.close, color: Colors.white),
                           onPressed: () => Navigator.pop(context),
                         ),
-                        const Expanded(
-                          child: Text(
-                            'DS Chương',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Danh Sách Chương',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '${filteredChapters.length} chương',
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         // Nút đảo chiều thứ tự chương
@@ -4877,7 +6393,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                           icon: Icon(
                             Icons.swap_vert_rounded,
                             color: _isSortReversed
-                                ? Colors.orangeAccent
+                                ? primary
                                 : Colors.white,
                           ),
                           tooltip: _isSortReversed
@@ -4964,11 +6480,22 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: 'Tìm nhanh số chương (vd: 12, Chapter 50)...',
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                    prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 18),
+                    hintStyle: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 12,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: Colors.white54,
+                      size: 18,
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                            icon: const Icon(
+                              Icons.clear,
+                              color: Colors.white54,
+                              size: 16,
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _searchQuery = '');
@@ -4977,17 +6504,27 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                         : null,
                     filled: true,
                     fillColor: Colors.white.withValues(alpha: 0.08),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
                     ),
                   ),
                   onChanged: (val) {
-                    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
-                    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
-                      if (mounted) setState(() => _searchQuery = val);
-                    });
+                    if (_searchDebounce?.isActive ?? false) {
+                      _searchDebounce!.cancel();
+                    }
+                    _searchDebounce = Timer(
+                      const Duration(milliseconds: 150),
+                      () {
+                        if (mounted) {
+                          setState(() => _searchQuery = val);
+                        }
+                      },
+                    );
                   },
                 ),
               ),
@@ -5020,9 +6557,9 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                               if (!isSelected) {
                                 final mangaQuery =
                                     widget.mangaId == null ||
-                                            widget.mangaId!.isEmpty
-                                        ? ''
-                                        : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
+                                        widget.mangaId!.isEmpty
+                                    ? ''
+                                    : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
                                 context.pushReplacement(
                                   '/reader/${chapter.id}$mangaQuery',
                                 );
@@ -5044,7 +6581,9 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                       height: 6,
                                       margin: const EdgeInsets.only(right: 8),
                                       decoration: BoxDecoration(
-                                        color: Theme.of(context).colorScheme.primary,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
                                         shape: BoxShape.circle,
                                       ),
                                     ),
@@ -5054,26 +6593,64 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                       chapter.title,
                                       style: TextStyle(
                                         color: isSelected
-                                            ? Colors.blueAccent
+                                            ? primary
                                             : isRead
-                                                ? Colors.white38
-                                                : Colors.white,
+                                            ? Colors.white38
+                                            : Colors.white,
                                         fontWeight: isSelected || !isRead
                                             ? FontWeight.bold
                                             : FontWeight.normal,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    date,
-                                    style: TextStyle(
-                                      color: isRead
-                                          ? Colors.white24
-                                          : Colors.grey,
-                                      fontSize: 12,
+                                  if (isSelected)
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: primary.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: primary.withValues(
+                                            alpha: 0.6,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.play_arrow_rounded,
+                                            size: 13,
+                                            color: primary,
+                                          ),
+                                          const SizedBox(width: 2),
+                                          Text(
+                                            'Đang đọc',
+                                            style: TextStyle(
+                                              color: primary,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  else
+                                    Text(
+                                      date,
+                                      style: TextStyle(
+                                        color: isRead
+                                            ? Colors.white24
+                                            : Colors.grey,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
                                 ],
                               ),
                             ),
@@ -5089,24 +6666,54 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
   }
 }
 
+class _ReaderSheetSectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  const _ReaderSheetSectionHeader(this.title, this.icon);
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(top: 22, bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: primary,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(child: Divider(color: Colors.white12, height: 1)),
+        ],
+      ),
+    );
+  }
+}
+
 class _EyeCarePresetBtn extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool isSelected;
   final VoidCallback onTap;
+  final Color activeColor;
 
   const _EyeCarePresetBtn({
     required this.label,
     required this.icon,
     required this.isSelected,
     required this.onTap,
+    this.activeColor = Colors.orangeAccent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = label == 'Đảo màu'
-        ? Colors.purpleAccent
-        : (label == 'Ấm áp' ? Colors.orangeAccent : (label == 'Dịu mắt' ? Colors.amberAccent : Colors.white));
 
     return InkWell(
       onTap: onTap,
@@ -5154,10 +6761,7 @@ class _MiniReaderHud extends StatefulWidget {
   final int currentPage;
   final int totalPages;
 
-  const _MiniReaderHud({
-    required this.currentPage,
-    required this.totalPages,
-  });
+  const _MiniReaderHud({required this.currentPage, required this.totalPages});
 
   @override
   State<_MiniReaderHud> createState() => _MiniReaderHudState();
@@ -5171,7 +6775,17 @@ class _MiniReaderHudState extends State<_MiniReaderHud> {
   void initState() {
     super.initState();
     _updateTime();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _updateTime());
+    _scheduleNextMinute();
+  }
+
+  void _scheduleNextMinute() {
+    final now = DateTime.now();
+    final msUntilNextMinute = 60000 - (now.second * 1000 + now.millisecond);
+    _timer = Timer(Duration(milliseconds: msUntilNextMinute), () {
+      if (!mounted) return;
+      _updateTime();
+      _scheduleNextMinute();
+    });
   }
 
   @override
@@ -5209,7 +6823,11 @@ class _MiniReaderHudState extends State<_MiniReaderHud> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.access_time_rounded, size: 11.5, color: Colors.white70),
+            const Icon(
+              Icons.access_time_rounded,
+              size: 11.5,
+              color: Colors.white70,
+            ),
             const SizedBox(width: 4),
             Text(
               _timeString,
@@ -5233,8 +6851,8 @@ class _MiniReaderHudState extends State<_MiniReaderHud> {
               const SizedBox(width: 6),
               Text(
                 '${widget.currentPage + 1}/${widget.totalPages}',
-                style: const TextStyle(
-                  color: Colors.orangeAccent,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.3,
@@ -5248,4 +6866,494 @@ class _MiniReaderHudState extends State<_MiniReaderHud> {
   }
 }
 
+class _TapZoneDiagram extends StatelessWidget {
+  final ReaderTapZone tapZone;
+  final bool isVertical;
+  final bool isRtl;
+  final ReaderTapZoneInvert tapZoneInvert;
 
+  const _TapZoneDiagram({
+    required this.tapZone,
+    required this.isVertical,
+    this.isRtl = false,
+    this.tapZoneInvert = ReaderTapZoneInvert.none,
+  });
+
+  static const _forwardColorBase = Color(0xFF4CAF50);
+  static const _backwardColorBase = Color(0xFFFF9800);
+  static const _menuColorBase = Color(0xFF2196F3);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Sơ đồ chính
+        Container(
+          height: 160,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _buildDiagram(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Legend chú giải màu
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _LegendItem(
+              color: _forwardColorBase,
+              label: isVertical ? 'Cuộn xuống' : 'Trang sau',
+              icon: isVertical
+                  ? Icons.keyboard_arrow_down
+                  : Icons.arrow_forward_ios,
+            ),
+            const SizedBox(width: 16),
+            _LegendItem(
+              color: _backwardColorBase,
+              label: isVertical ? 'Cuộn lên' : 'Trang trước',
+              icon: isVertical ? Icons.keyboard_arrow_up : Icons.arrow_back_ios,
+            ),
+            const SizedBox(width: 16),
+            const _LegendItem(
+              color: _menuColorBase,
+              label: 'Mở menu',
+              icon: Icons.menu_rounded,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildZone({
+    required Color baseColor,
+    required IconData icon,
+    required String label,
+    String? sublabel,
+    double iconSize = 18,
+    double labelSize = 9.5,
+  }) {
+    return Container(
+      color: baseColor.withValues(alpha: 0.22),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: ClipRect(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: baseColor, size: iconSize),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: baseColor.withValues(alpha: 0.95),
+                  fontSize: labelSize,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              if (sublabel != null) ...[
+                const SizedBox(height: 1),
+                Text(
+                  sublabel,
+                  style: const TextStyle(color: Colors.white54, fontSize: 8),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiagram() {
+    final bool invertH =
+        tapZoneInvert == ReaderTapZoneInvert.horizontal ||
+        tapZoneInvert == ReaderTapZoneInvert.both;
+    final bool invertV =
+        tapZoneInvert == ReaderTapZoneInvert.vertical ||
+        tapZoneInvert == ReaderTapZoneInvert.both;
+
+    IconData fwdIconRaw = isVertical
+        ? Icons.keyboard_double_arrow_down
+        : Icons.arrow_forward_ios_rounded;
+    IconData bwdIconRaw = isVertical
+        ? Icons.keyboard_double_arrow_up
+        : Icons.arrow_back_ios_rounded;
+    String fwdLabelRaw = isVertical ? 'Cuộn xuống' : 'Trang sau';
+    String bwdLabelRaw = isVertical ? 'Cuộn lên' : 'Trang trước';
+
+    // Đảo ngược dọc → hoán đổi tiến/lùi theo chiều Y
+    final IconData forwardIcon = invertV ? bwdIconRaw : fwdIconRaw;
+    final IconData backwardIcon = invertV ? fwdIconRaw : bwdIconRaw;
+    final String forwardLabel = invertV ? bwdLabelRaw : fwdLabelRaw;
+    final String backwardLabel = invertV ? fwdLabelRaw : bwdLabelRaw;
+
+    // Chỉ vuốt
+    if (tapZone == ReaderTapZone.swipeOnly) {
+      return _buildZone(
+        baseColor: _menuColorBase,
+        icon: Icons.touch_app_rounded,
+        label: 'Chạm = Mở menu',
+        sublabel: 'Vuốt để lật trang / cuộn',
+        iconSize: 22,
+        labelSize: 11,
+      );
+    }
+
+    // Kiểu Kindle (chia nửa màn hình)
+    if (tapZone == ReaderTapZone.kindle) {
+      final bool effectiveRtl = invertH ? !isRtl : isRtl;
+      final leftColor = effectiveRtl ? _forwardColorBase : _backwardColorBase;
+      final rightColor = effectiveRtl ? _backwardColorBase : _forwardColorBase;
+      final leftLbl = effectiveRtl ? forwardLabel : backwardLabel;
+      final rightLbl = effectiveRtl ? backwardLabel : forwardLabel;
+      final leftIco = effectiveRtl ? forwardIcon : backwardIcon;
+      final rightIco = effectiveRtl ? backwardIcon : forwardIcon;
+
+      return Row(
+        children: [
+          Expanded(
+            flex: 30,
+            child: _buildZone(
+              baseColor: leftColor,
+              icon: leftIco,
+              label: leftLbl,
+              sublabel: 'Chạm nửa TRÁI',
+            ),
+          ),
+          Expanded(
+            flex: 40,
+            child: _buildZone(
+              baseColor: _menuColorBase,
+              icon: Icons.menu_rounded,
+              label: 'Menu',
+              sublabel: 'Chạm chính GIỮA\n(40% giữa)',
+            ),
+          ),
+          Expanded(
+            flex: 30,
+            child: _buildZone(
+              baseColor: rightColor,
+              icon: rightIco,
+              label: rightLbl,
+              sublabel: 'Chạm nửa PHẢI',
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 1 Tay (L-shape / One-Handed)
+    if (tapZone == ReaderTapZone.oneHanded) {
+      return Column(
+        children: [
+          // Dải đỉnh màn hình: 18% chiều cao -> Lùi / Cuộn lên
+          Expanded(
+            flex: 18,
+            child: _buildZone(
+              baseColor: _backwardColorBase,
+              icon: backwardIcon,
+              label: backwardLabel,
+              sublabel: 'Chạm đỉnh (18%)',
+              iconSize: 14,
+              labelSize: 9,
+            ),
+          ),
+          // Vùng còn lại: 82% chiều cao -> Toàn bộ vùng ngón cái với hộp Menu ở trung tâm
+          Expanded(
+            flex: 82,
+            child: Stack(
+              children: [
+                // Nền xanh toàn bộ (Cuộn xuống / Trang sau - Thuận ngón cái)
+                Positioned.fill(
+                  child: Container(
+                    color: _forwardColorBase.withValues(alpha: 0.22),
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(forwardIcon, color: _forwardColorBase, size: 20),
+                            const SizedBox(height: 2),
+                            Text(
+                              forwardLabel,
+                              style: TextStyle(
+                                color: _forwardColorBase.withValues(alpha: 0.95),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 1),
+                            const Text(
+                              'Nửa dưới màn hình (Vừa tầm ngón cái)',
+                              style: TextStyle(color: Colors.white54, fontSize: 8),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Hộp Mở menu ở trung tâm (Chạm giữa màn hình)
+                Align(
+                  alignment: const Alignment(0, -0.25),
+                  child: FractionallySizedBox(
+                    widthFactor: 0.52,
+                    heightFactor: 0.45,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _menuColorBase.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _menuColorBase.withValues(alpha: 0.7),
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: _buildZone(
+                          baseColor: _menuColorBase,
+                          icon: Icons.menu_rounded,
+                          label: 'Mở menu',
+                          sublabel: 'Chạm giữa màn hình',
+                          iconSize: 16,
+                          labelSize: 9.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Chế độ DỌC
+    if (isVertical) {
+      if (tapZone == ReaderTapZone.leftHanded) {
+        // Thuận tay trái đọc dọc: trái=tiến, phải=lùi (có thể đảo ngang)
+        final leftColor = invertH ? _backwardColorBase : _forwardColorBase;
+        final rightColor = invertH ? _forwardColorBase : _backwardColorBase;
+        final leftLbl = invertH ? backwardLabel : forwardLabel;
+        final rightLbl = invertH ? forwardLabel : backwardLabel;
+        final leftIco = invertH ? backwardIcon : forwardIcon;
+        final rightIco = invertH ? forwardIcon : backwardIcon;
+        return Row(
+          children: [
+            Expanded(
+              flex: 40,
+              child: _buildZone(
+                baseColor: leftColor,
+                icon: leftIco,
+                label: leftLbl,
+                sublabel: 'Chạm mép TRÁI',
+              ),
+            ),
+            Expanded(
+              flex: 20,
+              child: _buildZone(
+                baseColor: _menuColorBase,
+                icon: Icons.menu_rounded,
+                label: 'Menu',
+                sublabel: 'Giữa',
+              ),
+            ),
+            Expanded(
+              flex: 40,
+              child: _buildZone(
+                baseColor: rightColor,
+                icon: rightIco,
+                label: rightLbl,
+                sublabel: 'Chạm mép PHẢI',
+              ),
+            ),
+          ],
+        );
+      }
+      // default3Cols dọc: trên=lùi, giữa=menu, dưới=tiến
+      final topColor = _backwardColorBase;
+      final botColor = _forwardColorBase;
+      final topLabel = backwardLabel;
+      final botLabel = forwardLabel;
+      final topIcon = backwardIcon;
+      final botIcon = forwardIcon;
+      return Column(
+        children: [
+          Expanded(
+            flex: 35,
+            child: _buildZone(
+              baseColor: topColor,
+              icon: topIcon,
+              label: topLabel,
+              sublabel: 'Chạm 1/3 TRÊN',
+            ),
+          ),
+          Expanded(
+            flex: 30,
+            child: _buildZone(
+              baseColor: _menuColorBase,
+              icon: Icons.menu_rounded,
+              label: 'Mở menu',
+              sublabel: 'Chạm vùng GIỮA',
+            ),
+          ),
+          Expanded(
+            flex: 35,
+            child: _buildZone(
+              baseColor: botColor,
+              icon: botIcon,
+              label: botLabel,
+              sublabel: 'Chạm 1/3 DƯỚI',
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Chế độ NGANG – Tay trái
+    if (tapZone == ReaderTapZone.leftHanded) {
+      final leftColor = invertH ? _backwardColorBase : _forwardColorBase;
+      final rightColor = invertH ? _forwardColorBase : _backwardColorBase;
+      final leftLbl = invertH ? backwardLabel : forwardLabel;
+      final rightLbl = invertH ? forwardLabel : backwardLabel;
+      final leftIco = invertH ? backwardIcon : forwardIcon;
+      final rightIco = invertH ? forwardIcon : backwardIcon;
+      return Row(
+        children: [
+          Expanded(
+            flex: 40,
+            child: _buildZone(
+              baseColor: leftColor,
+              icon: leftIco,
+              label: leftLbl,
+              sublabel: 'Chạm mép TRÁI\n(ngón cái tay trái)',
+            ),
+          ),
+          Expanded(
+            flex: 20,
+            child: _buildZone(
+              baseColor: _menuColorBase,
+              icon: Icons.menu_rounded,
+              label: 'Menu',
+              sublabel: 'Giữa',
+            ),
+          ),
+          Expanded(
+            flex: 40,
+            child: _buildZone(
+              baseColor: rightColor,
+              icon: rightIco,
+              label: rightLbl,
+              sublabel: 'Chạm mép PHẢI',
+            ),
+          ),
+        ],
+      );
+    }
+
+    // default3Cols ngang (LTR / RTL) + hỗ trợ invertH
+    final bool effectiveRtl = invertH ? !isRtl : isRtl;
+    final leftLabel = effectiveRtl ? forwardLabel : backwardLabel;
+    final leftIcon = effectiveRtl ? forwardIcon : backwardIcon;
+    final leftColor = effectiveRtl ? _forwardColorBase : _backwardColorBase;
+    final rightLabel = effectiveRtl ? backwardLabel : forwardLabel;
+    final rightIcon = effectiveRtl ? backwardIcon : forwardIcon;
+    final rightColor = effectiveRtl ? _backwardColorBase : _forwardColorBase;
+
+    return Row(
+      children: [
+        Expanded(
+          flex: 35,
+          child: _buildZone(
+            baseColor: leftColor,
+            icon: leftIcon,
+            label: leftLabel,
+            sublabel: 'Chạm mép TRÁI',
+          ),
+        ),
+        Expanded(
+          flex: 30,
+          child: _buildZone(
+            baseColor: _menuColorBase,
+            icon: Icons.menu_rounded,
+            label: 'Mở menu',
+            sublabel: 'Chạm vùng GIỮA',
+          ),
+        ),
+        Expanded(
+          flex: 35,
+          child: _buildZone(
+            baseColor: rightColor,
+            icon: rightIcon,
+            label: rightLabel,
+            sublabel: 'Chạm mép PHẢI',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final IconData icon;
+
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: color.withValues(alpha: 0.6), width: 1),
+          ),
+          child: Icon(icon, color: color, size: 10),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: color.withValues(alpha: 0.85),
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}

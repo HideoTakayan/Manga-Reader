@@ -100,9 +100,9 @@ class LevelService extends ChangeNotifier {
   ];
 
   static String _getClaimedChaptersKey(String? uid) =>
-      'exp_claimed_chapters_${uid ?? "guest"}';
+      'exp_claimed_chapters_${uid ?? "unknown"}';
   static String _getLocalExpKey(String? uid) =>
-      'user_local_exp_${uid ?? "guest"}';
+      'user_local_exp_${uid ?? "unknown"}';
 
   final Set<String> _claimedChapterKeys = {};
   int _currentExp = 0;
@@ -111,6 +111,7 @@ class LevelService extends ChangeNotifier {
 
   final _levelUpStreamController = StreamController<ClaimExpResult>.broadcast();
   Stream<ClaimExpResult> get onLevelUp => _levelUpStreamController.stream;
+  StreamSubscription? _authSubscription;
 
   int get currentExp => _currentExp;
   LevelInfo get currentLevelInfo => getLevelInfo(_currentExp);
@@ -122,7 +123,8 @@ class LevelService extends ChangeNotifier {
 
     // Tự động reload khi người dùng đăng nhập hoặc đăng xuất
     try {
-      FirebaseAuth.instance.authStateChanges().listen((user) {
+      await _authSubscription?.cancel();
+      _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
         reloadForUser(uid: user?.uid);
       });
     } catch (_) {}
@@ -171,16 +173,21 @@ class LevelService extends ChangeNotifier {
                 !data.containsKey('level') ||
                 !data.containsKey('claimedChaptersCount');
             if (needsLeaderboardPatch) {
-              final info = getLevelInfo(_currentExp);
+              // Cap local EXP to prevent inflated SharedPreferences values
+              // being promoted to cloud. Max legitimate EXP = Lv10 threshold +
+              // one full level's worth (51100 + 25600).
+              const maxLocalMigrationExp = 76700;
+              final safeExp = _currentExp.clamp(0, maxLocalMigrationExp);
+              final info = getLevelInfo(safeExp);
               await FirebaseFirestore.instance
                   .collection('users')
                   .doc(effectiveUid)
                   .set({
-                'exp': _currentExp,
+                'exp': safeExp,
                 'level': info.level,
                 'title': info.title,
                 'claimedChaptersCount':
-                    _claimedChapterKeys.length,
+                    _claimedChapterKeys.length.clamp(0, 10000),
               }, SetOptions(merge: true));
             }
 
@@ -188,15 +195,27 @@ class LevelService extends ChangeNotifier {
               _currentExp = cloudExp;
               await prefs.setInt(_getLocalExpKey(effectiveUid), _currentExp);
             } else if (_currentExp > cloudExp) {
-              final info = getLevelInfo(_currentExp);
-              await FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(effectiveUid)
-                  .set({
-                'exp': _currentExp,
-                'level': info.level,
-                'title': info.title,
-              }, SetOptions(merge: true));
+              // Only push local EXP to cloud if the delta is within a safe
+              // bound. The Firestore rule also enforces <=1000, but we guard
+              // client-side as well to avoid unnecessary permission-denied
+              // errors on first sync after extended offline sessions.
+              const maxSyncDelta = 1000; // = expPerChapter * 100 chapters
+              if (_currentExp - cloudExp <= maxSyncDelta) {
+                final info = getLevelInfo(_currentExp);
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(effectiveUid)
+                    .set({
+                  'exp': _currentExp,
+                  'level': info.level,
+                  'title': info.title,
+                }, SetOptions(merge: true));
+              } else {
+                // Delta too large: trust cloud to avoid cheating.
+                _currentExp = cloudExp;
+                await prefs.setInt(
+                    _getLocalExpKey(effectiveUid), _currentExp);
+              }
             }
           }
         } catch (_) {}
@@ -313,9 +332,19 @@ class LevelService extends ChangeNotifier {
     // Lưu vào SharedPreferences
     try {
       final prefs = await SharedPreferences.getInstance();
+      // Cap at 2000 entries to prevent unbounded SharedPreferences XML growth.
+      // EXP integrity is maintained server-side via claimedChaptersCount.
+      const maxKeys = 2000;
+      List<String> keysToSave = _claimedChapterKeys.toList();
+      if (keysToSave.length > maxKeys) {
+        keysToSave = keysToSave.sublist(keysToSave.length - maxKeys);
+        _claimedChapterKeys
+          ..clear()
+          ..addAll(keysToSave);
+      }
       await prefs.setStringList(
         _getClaimedChaptersKey(_activeUid),
-        _claimedChapterKeys.toList(),
+        keysToSave,
       );
       await prefs.setInt(_getLocalExpKey(_activeUid), _currentExp);
     } catch (_) {}
@@ -351,5 +380,12 @@ class LevelService extends ChangeNotifier {
 
     notifyListeners();
     return result;
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    _levelUpStreamController.close();
+    super.dispose();
   }
 }

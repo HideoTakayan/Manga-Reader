@@ -37,20 +37,28 @@ class CommunityGlossaryPack {
     this.updatedAt,
   });
 
-  Map<String, dynamic> toFirestore() => {
-        'title': title,
-        'description': description,
-        'authorId': authorId,
-        'authorName': authorName,
-        'authorAvatar': authorAvatar,
-        'mangaTitle': mangaTitle,
-        'rules': rules.map((r) => {'from': r.from, 'to': r.to}).toList(),
-        'downloadsCount': downloadsCount,
-        'likesCount': likesCount,
-        'likedUserIds': likedUserIds,
-        'createdAt': Timestamp.fromDate(createdAt),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+  Map<String, dynamic> toFirestore() {
+    final safeAvatar = (authorAvatar.length <= 2000 && !authorAvatar.startsWith('data:'))
+        ? authorAvatar
+        : '';
+    final safeName = title.trim().length > 100 ? title.trim().substring(0, 100) : title.trim();
+    return {
+      'name': safeName,
+      'title': safeName,
+      'description': description.trim().length > 1000 ? description.trim().substring(0, 1000) : description.trim(),
+      'authorId': authorId,
+      'authorName': authorName.trim().length > 100 ? authorName.trim().substring(0, 100) : authorName.trim(),
+      'authorAvatar': safeAvatar,
+      if (mangaTitle != null && mangaTitle!.trim().isNotEmpty)
+        'mangaTitle': mangaTitle!.trim().length > 200 ? mangaTitle!.trim().substring(0, 200) : mangaTitle!.trim(),
+      'rules': rules.map((r) => {'from': r.from, 'to': r.to}).toList(),
+      'downloadsCount': downloadsCount,
+      'likesCount': likesCount,
+      'likedUserIds': likedUserIds,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
 
   factory CommunityGlossaryPack.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -79,7 +87,7 @@ class CommunityGlossaryPack {
 
     return CommunityGlossaryPack(
       id: doc.id,
-      title: data['title']?.toString() ?? 'Gói từ điển',
+      title: (data['title'] ?? data['name'])?.toString() ?? 'Gói từ điển',
       description: data['description']?.toString() ?? '',
       authorId: data['authorId']?.toString() ?? '',
       authorName: data['authorName']?.toString() ?? 'Thành viên ẩn danh',

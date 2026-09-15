@@ -35,7 +35,6 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
   bool _isSubmitting = false;
   CloudManga? _selectedManga;
   File? _imageFile;
-  String? _gifUrl;
   ForumPoll? _poll;
   bool _showEmojiPicker = false;
   final Set<String> _selectedTags = {};
@@ -111,14 +110,12 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
     final isMangaShare = widget.type == 'manga_share';
     if (!isMangaShare &&
         body.isEmpty &&
-        _gifUrl == null &&
         _imageFile == null &&
         _poll == null) {
       return;
     }
     if (isMangaShare &&
         body.isEmpty &&
-        _gifUrl == null &&
         _selectedManga == null) {
       return;
     }
@@ -144,7 +141,6 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
           authorName: authorName,
           authorAvatar: user.photoURL ?? '',
           body: body,
-          gifUrl: _gifUrl,
           imageFile: _imageFile,
           poll: _poll,
           tags: _selectedTags.toList(),
@@ -170,7 +166,6 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
             _selectedManga!.coverFileId,
           ),
           sharedMangaAuthor: _selectedManga!.author,
-          gifUrl: _gifUrl,
           tags: _selectedTags.toList(),
         );
       }
@@ -198,11 +193,11 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.tag_rounded, color: Colors.purpleAccent),
-            SizedBox(width: 8),
-            Text('Thêm Hashtag Tự Do', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            Icon(Icons.tag_rounded, color: Theme.of(ctx).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Thêm Hashtag Tự Do', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
           ],
         ),
         content: TextField(
@@ -212,7 +207,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
           decoration: InputDecoration(
             hintText: 'Ví dụ: review, trinhtham, onepiece...',
             prefixText: '#',
-            prefixStyle: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold),
+            prefixStyle: TextStyle(color: Theme.of(ctx).colorScheme.primary, fontWeight: FontWeight.bold),
             filled: true,
             fillColor: Colors.white.withValues(alpha: 0.05),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -264,11 +259,11 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
           return AlertDialog(
             backgroundColor: Theme.of(dialogCtx).cardColor,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.poll_rounded, color: Colors.purpleAccent),
-                SizedBox(width: 8),
-                Text('Tạo bình chọn', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                Icon(Icons.poll_rounded, color: Theme.of(dialogCtx).colorScheme.primary),
+                const SizedBox(width: 8),
+                const Text('Tạo bình chọn', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
               ],
             ),
             content: SingleChildScrollView(
@@ -332,8 +327,8 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                           optionCtrls.add(TextEditingController());
                         });
                       },
-                      icon: const Icon(Icons.add, size: 18, color: Colors.purpleAccent),
-                      label: const Text('Thêm lựa chọn', style: TextStyle(color: Colors.purpleAccent)),
+                      icon: Icon(Icons.add, size: 18, color: Theme.of(dialogCtx).colorScheme.primary),
+                      label: Text('Thêm lựa chọn', style: TextStyle(color: Theme.of(dialogCtx).colorScheme.primary)),
                     ),
                 ],
               ),
@@ -345,8 +340,8 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purpleAccent,
-                  foregroundColor: Colors.white,
+                  backgroundColor: Theme.of(dialogCtx).colorScheme.primary,
+                  foregroundColor: Theme.of(dialogCtx).colorScheme.onPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () {
@@ -417,16 +412,16 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.purpleAccent.withValues(alpha: 0.12),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                     border: Border.all(
-                      color: Colors.purpleAccent.withValues(alpha: 0.25),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
                       width: 1.5,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.lock_outline_rounded,
                     size: 54,
-                    color: Colors.purpleAccent,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -457,8 +452,8 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purpleAccent,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 28,
                       vertical: 12,
@@ -488,11 +483,9 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                   _isSubmitting ||
                       (widget.type == 'discussion' &&
                           _bodyController.text.trim().isEmpty &&
-                          _gifUrl == null &&
                           _imageFile == null) ||
                       (widget.type == 'manga_share' &&
                           _bodyController.text.trim().isEmpty &&
-                          _gifUrl == null &&
                           _selectedManga == null) ||
                       _bodyController.text.length > _maxBodyLength
                   ? null
@@ -654,38 +647,16 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                     ],
                   ),
 
-                if (_gifUrl != null)
-                  Stack(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        constraints: const BoxConstraints(maxHeight: 200),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(_gifUrl!, fit: BoxFit.cover),
-                        ),
-                      ),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: IconButton(
-                          icon: const Icon(Icons.cancel),
-                          color: Colors.white,
-                          onPressed: () => setState(() => _gifUrl = null),
-                        ),
-                      ),
-                    ],
-                  ),
 
                 if (_poll != null)
                   Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.purpleAccent.withValues(alpha: 0.1),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: Colors.purpleAccent.withValues(alpha: 0.35),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                       ),
                     ),
                     child: Column(
@@ -693,10 +664,10 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                       children: [
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.poll_rounded,
                               size: 18,
-                              color: Colors.purpleAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -890,16 +861,9 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                       }
                     });
                   },
-                  onGifSelected: (url) {
-                    setState(() {
-                      _gifUrl = url;
-                      _imageFile = null; // Chỉ chọn 1 trong 2
-                    });
-                  },
                   onImageSelected: (file) {
                     setState(() {
                       _imageFile = file;
-                      _gifUrl = null;
                     });
                   },
                 ),

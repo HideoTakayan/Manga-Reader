@@ -94,11 +94,18 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
           children: [
             Text(
               widget.group.name,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white),
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
             Text(
               '${_allGroupMangas.length} bộ truyện đã đăng',
-              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.6)),
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
             ),
           ],
         ),
@@ -106,14 +113,17 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
           _buildDriveAction(),
           IconButton(
             tooltip: 'Làm mới',
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+            icon: Icon(
+              Icons.refresh_rounded,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
             onPressed: _loadMangas,
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.blueAccent,
-        foregroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         elevation: 4,
         onPressed: () async {
           final result = await showDialog<bool>(
@@ -127,8 +137,8 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
             _loadMangas();
           }
         },
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text('Đăng Truyện Mới', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Đăng Truyện Mới', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: Column(
         children: [
@@ -143,11 +153,11 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(context).scaffoldBackgroundColor,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
                   ),
                   child: TextField(
                     controller: _searchController,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                     textInputAction: TextInputAction.search,
                     onChanged: (_) {
                       if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -157,11 +167,18 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                     },
                     decoration: InputDecoration(
                       hintText: 'Tìm kiếm truyện theo tên, tác giả...',
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
-                      prefixIcon: const Icon(Icons.search_rounded, color: Colors.blueAccent, size: 20),
+                      hintStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                        fontSize: 13,
+                      ),
+                      prefixIcon: Icon(Icons.search_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18, color: Colors.white54),
+                              icon: Icon(
+                                Icons.clear_rounded,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                              ),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(_applyFilters);
@@ -196,12 +213,12 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
           // Manga Grid or Empty State
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.blueAccent),
+                ? Center(
+                    child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
                   )
                 : RefreshIndicator(
                     onRefresh: _loadMangas,
-                    color: Colors.blueAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     child: _filteredMangas.isEmpty
                         ? SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
@@ -252,16 +269,16 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.blueAccent : theme.scaffoldBackgroundColor,
+          color: isSelected ? theme.colorScheme.primary : theme.scaffoldBackgroundColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? Colors.blueAccent : Colors.white.withValues(alpha: 0.08),
+            color: isSelected ? theme.colorScheme.primary : theme.dividerColor.withValues(alpha: 0.2),
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
+            color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
           ),
@@ -310,8 +327,8 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
               builder: (ctx) => AlertDialog(
                 backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                content: Text('Bạn đang kết nối với email: ${_driveAccount!.email}', style: const TextStyle(color: Colors.white70)),
+                title: Text('Ngắt kết nối Drive?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
+                content: Text('Bạn đang kết nối với email: ${_driveAccount!.email}', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
                   ElevatedButton(
@@ -343,31 +360,34 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Tài khoản Google của bạn chưa được Admin cấp quyền truy cập Google Drive.\n\nNhập email Google bên dưới, Admin sẽ thêm bạn vào danh sách cho phép:',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7), fontSize: 13),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
                 decoration: InputDecoration(
                   labelText: 'Email Google',
                   labelStyle: const TextStyle(color: Color(0xFFFFB74D)),
                   hintText: 'example@gmail.com',
-                  hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                  hintStyle: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.4)),
                   prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFFB74D)),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.05),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  fillColor: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.05),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Theme.of(ctx).dividerColor.withValues(alpha: 0.2)),
+                  ),
                 ),
               ),
             ],
@@ -377,8 +397,8 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
@@ -409,7 +429,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                 }
               }
             },
-            child: const Text('Gửi yêu cầu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text('Gửi yêu cầu', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -428,14 +448,14 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.blueAccent.withValues(alpha: 0.12),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
               ),
-              child: const Icon(Icons.auto_stories_outlined, size: 40, color: Colors.blueAccent),
+              child: Icon(Icons.auto_stories_outlined, size: 40, color: Theme.of(context).colorScheme.primary),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Không tìm thấy bộ truyện nào',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
@@ -443,7 +463,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                   ? 'Không có kết quả khớp với từ khóa tìm kiếm.'
                   : 'Nhóm chưa đăng truyện nào. Bấm nút "Đăng Truyện Mới" bên dưới để tải lên bộ truyện đầu tiên!',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, height: 1.4),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 13, height: 1.4),
             ),
           ],
         ),
@@ -593,6 +613,7 @@ class _GroupMangaCard extends StatelessWidget {
   }
 
   void _showMangaActions(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -629,10 +650,10 @@ class _GroupMangaCard extends StatelessWidget {
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.15),
+                    color: primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.list_alt_rounded, color: Colors.blueAccent, size: 22),
+                  child: Icon(Icons.list_alt_rounded, color: primary, size: 22),
                 ),
                 title: const Text('Quản lý Chương', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                 subtitle: const Text('Thêm chapter, xoá, đổi thứ tự kéo thả', style: TextStyle(color: Colors.white54, fontSize: 12)),

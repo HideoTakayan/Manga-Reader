@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'gif_picker_sheet.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
 class ForumComposer extends StatelessWidget {
   final VoidCallback onEmojiPressed;
-  final ValueChanged<String> onGifSelected;
   final ValueChanged<File> onImageSelected;
   final VoidCallback? onPollPressed;
   final bool showImagePicker;
@@ -14,33 +14,22 @@ class ForumComposer extends StatelessWidget {
   const ForumComposer({
     super.key,
     required this.onEmojiPressed,
-    required this.onGifSelected,
     required this.onImageSelected,
     this.onPollPressed,
     this.showImagePicker = true,
     this.enabled = true,
   });
 
-  Future<void> _pickImage() async {
+  Future<void> _pickMedia() async {
+    final pickerPlatform = ImagePickerPlatform.instance;
+    if (pickerPlatform is ImagePickerAndroid) {
+      pickerPlatform.useAndroidPhotoPicker = true;
+    }
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70, // Giảm chất lượng ảnh sơ bộ
-    );
+    // pickImage kích hoạt Android Photo Picker (Tất cả ảnh / Albums) giống Messenger
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
       onImageSelected(File(pickedFile.path));
-    }
-  }
-
-  void _showGifPicker(BuildContext context) async {
-    final gifUrl = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const GifPickerSheet(),
-    );
-    if (gifUrl != null) {
-      onGifSelected(gifUrl);
     }
   }
 
@@ -54,16 +43,11 @@ class ForumComposer extends StatelessWidget {
           onPressed: enabled ? onEmojiPressed : null,
           tooltip: 'Chọn Emoji',
         ),
-        IconButton(
-          icon: const Icon(Icons.gif_box_outlined),
-          onPressed: enabled ? () => _showGifPicker(context) : null,
-          tooltip: 'Chọn GIF',
-        ),
         if (showImagePicker)
           IconButton(
             icon: const Icon(Icons.image_outlined),
-            onPressed: enabled ? _pickImage : null,
-            tooltip: 'Chọn Ảnh',
+            onPressed: enabled ? _pickMedia : null,
+            tooltip: 'Chọn Ảnh / GIF',
           ),
         if (onPollPressed != null)
           IconButton(

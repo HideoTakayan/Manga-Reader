@@ -62,7 +62,8 @@ void main() {
     });
 
     test('FollowSortOrder enum contains all expected sort orders', () {
-      expect(FollowSortOrder.values.length, 3);
+      expect(FollowSortOrder.values.length, 4);
+      expect(FollowSortOrder.values, contains(FollowSortOrder.recentlyFollowed));
       expect(FollowSortOrder.values, contains(FollowSortOrder.updated));
       expect(FollowSortOrder.values, contains(FollowSortOrder.recentlyRead));
       expect(FollowSortOrder.values, contains(FollowSortOrder.title));

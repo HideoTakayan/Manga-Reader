@@ -66,9 +66,10 @@ class InteractionService {
     }
   }
 
-  /// Đánh giá truyện (1-5 sao). Lưu vào Document của manga để tiết kiệm Reads/Writes.
+  /// Đánh giá truyện (1-5 sao). Lưu theo userId vào subcollection `ratings` và cập nhật manga doc qua Transaction.
   Future<void> rateManga(String mangaId, int stars) async {
-    if (_auth.currentUser == null) {
+    final user = _auth.currentUser;
+    if (user == null) {
       throw Exception('Bạn cần đăng nhập để đánh giá truyện.');
     }
     if (stars < 1 || stars > 5) {
@@ -80,15 +81,77 @@ class InteractionService {
     }
 
     try {
-      final ref = _db.collection('comics').doc(mangaId);
-      await ref.set({
-        'ratingSum': FieldValue.increment(stars),
-        'ratingCount': FieldValue.increment(1),
-      }, SetOptions(merge: true));
+      final ratingRef = _db
+          .collection('comics')
+          .doc(mangaId)
+          .collection('ratings')
+          .doc(user.uid);
+      final mangaRef = _db.collection('comics').doc(mangaId);
+
+      // Wrap entire operation in a transaction to avoid TOCTOU race conditions
+      // where concurrent calls could read the same oldStars and apply the delta twice.
+      await _db.runTransaction((transaction) async {
+        final ratingDoc = await transaction.get(ratingRef);
+
+        if (ratingDoc.exists && ratingDoc.data() != null) {
+          // Đã có rating → update stars + điều chỉnh ratingSum
+          final oldStars =
+              (ratingDoc.data()!['stars'] as num?)?.toInt() ?? stars;
+          final diff = stars - oldStars;
+
+          transaction.set(ratingRef, {
+            'userId': user.uid,
+            'stars': stars,
+            'ratedAt': FieldValue.serverTimestamp(),
+          });
+
+          if (diff != 0) {
+            transaction.set(
+              mangaRef,
+              {'ratingSum': FieldValue.increment(diff)},
+              SetOptions(merge: true),
+            );
+          }
+        } else {
+          // Chưa có rating → tạo mới + tăng ratingCount
+          transaction.set(ratingRef, {
+            'userId': user.uid,
+            'stars': stars,
+            'ratedAt': FieldValue.serverTimestamp(),
+          });
+
+          transaction.set(
+            mangaRef,
+            {
+              'ratingSum': FieldValue.increment(stars),
+              'ratingCount': FieldValue.increment(1),
+            },
+            SetOptions(merge: true),
+          );
+        }
+      });
     } catch (e) {
       debugPrint('Lỗi khi đánh giá truyện: $e');
       rethrow;
     }
+  }
+
+  /// Lấy đánh giá của user hiện tại cho truyện này từ Firestore
+  Future<int?> getUserRating(String mangaId) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    try {
+      final doc = await _db
+          .collection('comics')
+          .doc(mangaId)
+          .collection('ratings')
+          .doc(user.uid)
+          .get();
+      if (doc.exists && doc.data() != null) {
+        return (doc.data()!['stars'] as num?)?.toInt();
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Theo dõi điểm đánh giá trung bình realtime
@@ -179,22 +242,25 @@ class InteractionService {
           .collection('likes')
           .doc(user.uid);
       final mangaRef = _db.collection('comics').doc(mangaId);
-      // Dùng batch để ghi 2 document nguyên tử
-      final batch = _db.batch();
-      batch.set(likeRef, {'likedAt': FieldValue.serverTimestamp()});
-      batch.set(
-        mangaRef,
-        {'likeCount': FieldValue.increment(1)},
-        SetOptions(merge: true),
-      );
-      await batch.commit();
+
+      await _db.runTransaction((transaction) async {
+        final likeDoc = await transaction.get(likeRef);
+        if (likeDoc.exists) return; // Đã like rồi thì không tăng nữa
+
+        transaction.set(likeRef, {'likedAt': FieldValue.serverTimestamp()});
+        transaction.set(
+          mangaRef,
+          {'likeCount': FieldValue.increment(1)},
+          SetOptions(merge: true),
+        );
+      });
     } catch (e) {
       debugPrint('Lỗi khi like truyện: $e');
       rethrow;
     }
   }
 
-  /// Bỏ like một bộ truyện. Nếu chưa like thì bỏ qua (idempotent).
+  /// Bỏ like một bộ truyện. Nếu chưa like thì bỏ qua (idempotent), không giảm likeCount dưới 0.
   Future<void> unlikeManga(String mangaId) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Bạn cần đăng nhập để bỏ thích truyện.');
@@ -205,14 +271,21 @@ class InteractionService {
           .collection('likes')
           .doc(user.uid);
       final mangaRef = _db.collection('comics').doc(mangaId);
-      final batch = _db.batch();
-      batch.delete(likeRef);
-      batch.set(
-        mangaRef,
-        {'likeCount': FieldValue.increment(-1)},
-        SetOptions(merge: true),
-      );
-      await batch.commit();
+
+      await _db.runTransaction((transaction) async {
+        final likeDoc = await transaction.get(likeRef);
+        if (!likeDoc.exists) return; // Chưa like thì không làm gì
+
+        final mangaDoc = await transaction.get(mangaRef);
+        final currentLikes = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
+
+        transaction.delete(likeRef);
+        transaction.set(
+          mangaRef,
+          {'likeCount': currentLikes > 0 ? currentLikes - 1 : 0},
+          SetOptions(merge: true),
+        );
+      });
     } catch (e) {
       debugPrint('Lỗi khi bỏ like truyện: $e');
       rethrow;

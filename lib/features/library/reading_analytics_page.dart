@@ -11,6 +11,7 @@ import '../../data/models.dart';
 import '../../data/models_cloud.dart';
 import '../../data/drive_service.dart';
 import '../../services/achievement_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/novel_service.dart';
 import '../catalog/catalog_cache_service.dart';
 import 'manga_wrapped_dialog.dart';
@@ -47,7 +48,11 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
 
   Future<void> _loadData() async {
     final authUid = FirebaseAuth.instance.currentUser?.uid;
-    final userIds = authUid == null ? ['guest'] : ['guest', authUid];
+    final safeUid = AuthService.safeUid;
+    final userIds = <String>{
+      safeUid,
+      if (authUid != null) authUid,
+    }.toList();
 
     final historyByManga = <String, ReadingHistory>{};
     final activityByKey = <String, ReadingActivity>{};
@@ -414,30 +419,30 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                           Container(
                             padding: const EdgeInsets.all(24),
                             decoration: BoxDecoration(
-                              color: Colors.orange.withValues(alpha: 0.1),
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.auto_graph_rounded,
                               size: 64,
-                              color: Colors.orangeAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           const SizedBox(height: 20),
-                          const Text(
+                          Text(
                             'Chưa có dữ liệu thống kê',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'Hãy bắt đầu đọc truyện để theo dõi chuỗi ngày đọc, biểu đồ hoạt động và thể loại yêu thích của bạn!',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white60,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                               fontSize: 13,
                               height: 1.4,
                             ),
@@ -448,8 +453,8 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                             icon: const Icon(Icons.explore_rounded, size: 18),
                             label: const Text('Bắt đầu đọc ngay'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: Colors.white,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimary,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
                                 vertical: 12,
@@ -508,7 +513,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,7 +529,10 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
             _currentStreak > 0
                 ? 'Chuỗi đọc hiện tại: $_currentStreak ngày liên tiếp.'
                 : 'Đọc hôm nay để bắt đầu chuỗi mới.',
-            style: const TextStyle(color: Colors.white60, fontSize: 13),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+              fontSize: 13,
+            ),
           ),
         ],
       ),
@@ -671,13 +679,17 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3,
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.3,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -813,33 +825,65 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildSectionTitle(_isMonthView ? 'Hoạt động 30 ngày qua' : 'Hoạt động tuần này'),
+        Expanded(
+          child: Text(
+            _isMonthView ? 'Hoạt động 30 ngày qua' : 'Hoạt động tuần này',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               ChoiceChip(
-                label: const Text('Tuần', style: TextStyle(fontSize: 11)),
+                label: Text(
+                  'Tuần',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: !_isMonthView
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
                 selected: !_isMonthView,
-                selectedColor: Colors.orangeAccent,
+                selectedColor: Theme.of(context).colorScheme.primary,
                 visualDensity: VisualDensity.compact,
                 onSelected: (val) {
-                  if (val) setState(() => _isMonthView = false);
+                  if (val) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _isMonthView = false);
+                  }
                 },
               ),
               const SizedBox(width: 4),
               ChoiceChip(
-                label: const Text('30 ngày', style: TextStyle(fontSize: 11)),
+                label: Text(
+                  '30 ngày',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _isMonthView
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
                 selected: _isMonthView,
-                selectedColor: Colors.orangeAccent,
+                selectedColor: Theme.of(context).colorScheme.primary,
                 visualDensity: VisualDensity.compact,
                 onSelected: (val) {
-                  if (val) setState(() => _isMonthView = true);
+                  if (val) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _isMonthView = true);
+                  }
                 },
               ),
             ],
@@ -859,7 +903,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -887,9 +931,28 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('30 ngày trước', style: TextStyle(fontSize: 10.5, color: Colors.white38)),
-              Text('Đỉnh điểm: $maxCount chap/ngày', style: const TextStyle(fontSize: 10.5, color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-              const Text('Hôm nay', style: TextStyle(fontSize: 10.5, color: Colors.white38)),
+              Text(
+                '30 ngày trước',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
+              Text(
+                'Đỉnh điểm: $maxCount chap/ngày',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                'Hôm nay',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                ),
+              ),
             ],
           ),
         ],
@@ -917,11 +980,11 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.auto_awesome, color: Colors.orangeAccent),
-            SizedBox(width: 8),
-            Text('Thẻ Độc Giả', style: TextStyle(fontWeight: FontWeight.bold)),
+            Icon(Icons.auto_awesome, color: Theme.of(ctx).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Thẻ Độc Giả', style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
         content: Container(
@@ -932,12 +995,12 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.orangeAccent.withValues(alpha: 0.15),
-                Colors.deepPurpleAccent.withValues(alpha: 0.15),
+                Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.15),
+                Theme.of(ctx).colorScheme.secondary.withValues(alpha: 0.15),
               ],
             ),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.3)),
+            border: Border.all(color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.3)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -956,13 +1019,19 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const Text('Manga-Reader Analytics', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        Text(
+                          'Manga-Reader Analytics',
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 11,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white12, height: 20),
+              Divider(color: Theme.of(ctx).dividerColor, height: 20),
               Text('🔥 Streak: $_currentStreak ngày liên tiếp', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
               Text('📖 Đã đọc: $_totalReadMangas truyện ($_chaptersRead chap)', style: const TextStyle(fontSize: 13)),
@@ -994,8 +1063,8 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
             icon: const Icon(Icons.copy_rounded, size: 16),
             label: const Text('Sao chép tóm tắt'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(ctx).colorScheme.primary,
+              foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
@@ -1014,7 +1083,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1054,7 +1123,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         children: [
@@ -1083,14 +1152,14 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
       child: Column(
         children: [
           for (var i = 0; i < _recentReads.length; i++) ...[
             _RecentReadRow(item: _recentReads[i], onRefresh: _loadData),
             if (i != _recentReads.length - 1)
-              const Divider(color: Colors.white10, height: 22),
+              Divider(color: Theme.of(context).dividerColor, height: 22),
           ],
         ],
       ),
@@ -1105,9 +1174,12 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
       ),
-      child: Text(message, style: const TextStyle(color: Colors.white54)),
+      child: Text(
+        message,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+      ),
     );
   }
 
@@ -1145,10 +1217,10 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                     height: 1.15,
                   ),
                   maxLines: 2,
@@ -1159,7 +1231,10 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
           const SizedBox(height: 2),
           Text(
             title,
-            style: const TextStyle(fontSize: 11.5, color: Colors.white60),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1185,7 +1260,8 @@ class _WeeklyBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratio = maxValue <= 0 ? 0.0 : value / maxValue;
-    final color = isToday ? Colors.redAccent : Colors.blueAccent;
+    final colorScheme = Theme.of(context).colorScheme;
+    final color = isToday ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.45);
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -1193,7 +1269,9 @@ class _WeeklyBar extends StatelessWidget {
         Text(
           '$value',
           style: TextStyle(
-            color: value > 0 ? Colors.white : Colors.white30,
+            color: value > 0
+                ? Theme.of(context).colorScheme.onSurface
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
             fontSize: 11,
             fontWeight: FontWeight.w700,
           ),
@@ -1208,7 +1286,7 @@ class _WeeklyBar extends StatelessWidget {
                 width: 18,
                 height: 140,
                 decoration: BoxDecoration(
-                  color: Colors.white10,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
@@ -1228,7 +1306,9 @@ class _WeeklyBar extends StatelessWidget {
         Text(
           label,
           style: TextStyle(
-            color: isToday ? Colors.white : Colors.white60,
+            color: isToday
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
             fontSize: 12,
             fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
           ),
@@ -1286,7 +1366,9 @@ class _MonthlyBar extends StatelessWidget {
                 ? '$dayNumber'
                 : '',
             style: TextStyle(
-              color: isToday ? Colors.redAccent : Colors.white38,
+              color: isToday
+                  ? Colors.redAccent
+                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
               fontSize: 8.5,
               fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
             ),
@@ -1341,7 +1423,10 @@ class _GenreRow extends StatelessWidget {
                   ),
                   Text(
                     '$value truyện',
-                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -1352,7 +1437,7 @@ class _GenreRow extends StatelessWidget {
                   value: ratio,
                   minHeight: 7,
                   color: color,
-                  backgroundColor: Colors.white10,
+                  backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                 ),
               ),
             ],
@@ -1466,8 +1551,8 @@ class _RecentReadRow extends StatelessWidget {
                       item.chapterTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                         fontSize: 12,
                       ),
                     ),
@@ -1477,10 +1562,17 @@ class _RecentReadRow extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 _formatRelativeDate(item.updatedAt),
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                  fontSize: 11,
+                ),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right, size: 16, color: Colors.white24),
+              Icon(
+                Icons.chevron_right,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+              ),
             ],
           ),
         ),

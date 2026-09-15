@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../data/content_type.dart';
 import '../data/database_helper.dart';
 import '../data/models.dart';
+import 'download_cache.dart';
 import 'folder_service.dart';
 import 'library_service.dart';
 import 'novel_service.dart';
@@ -206,8 +207,9 @@ class ExternalFileService {
         // Tự động trích xuất ảnh bìa cho truyện tranh nếu chưa có
         final coverFile = File('$mangaDir/cover.jpg');
         if (!await coverFile.exists() && (info.fileType == 'cbz' || info.fileType == 'zip' || info.fileType == 'cbt' || info.fileType == 'tar' || info.fileType == 'cbr')) {
+          InputFileStream? inputStream;
           try {
-            var inputStream = InputFileStream(targetPath);
+            inputStream = InputFileStream(targetPath);
             Archive? archive;
             try {
               archive = ZipDecoder().decodeBuffer(inputStream);
@@ -244,8 +246,10 @@ class ExternalFileService {
                 }
               }
             }
-            inputStream.close();
-          } catch (_) {}
+          } catch (_) {
+          } finally {
+            inputStream?.close();
+          }
         }
 
         final mangaId = 'local_${safeSeriesTitle.hashCode}';
@@ -273,6 +277,7 @@ class ExternalFileService {
               ? await targetFile.length()
               : info.fileSize,
         );
+        await DownloadCache.instance.addChapter(chapterId, mangaId);
 
         try {
           await LibraryService.instance.addToCategory(mangaId, 'Mặc định');
@@ -503,13 +508,16 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFF7043), Color(0xFFFF9800)],
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.primary,
+                        theme.colorScheme.primary.withValues(alpha: 0.8),
+                      ],
                     ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFFF7043).withValues(alpha: 0.35),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.35),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -519,7 +527,7 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
-                      foregroundColor: Colors.white,
+                      foregroundColor: theme.colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),

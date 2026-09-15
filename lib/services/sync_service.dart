@@ -26,7 +26,10 @@ class SyncService {
       final unsynced = await DatabaseHelper.instance.getUnsyncedHistory(
         user.uid,
       );
-      if (unsynced.isEmpty) return;
+      if (unsynced.isEmpty) {
+        _isSyncing = false;
+        return;
+      }
       debugPrint(
         '🔄 SyncService: Found ${unsynced.length} pending items. Syncing...',
       );

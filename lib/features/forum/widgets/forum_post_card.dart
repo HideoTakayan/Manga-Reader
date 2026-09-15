@@ -425,9 +425,10 @@ class _ForumPostCardState extends State<ForumPostCard> {
           isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
           _likeCount.toString(),
           color: isLiked
-              ? const Color(0xFFFF5252)
+              ? const Color(0xFF1877F2)
               : _inactiveActionColor(context),
           onTap: () async {
+            HapticFeedback.selectionClick();
             setState(() {
               if (isLiked) {
                 _likeCount = (_likeCount > 0) ? _likeCount - 1 : 0;
@@ -463,7 +464,12 @@ class _ForumPostCardState extends State<ForumPostCard> {
     VoidCallback? onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: onTap != null
+          ? () {
+              HapticFeedback.selectionClick();
+              onTap();
+            }
+          : null,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -563,10 +569,18 @@ class _ForumPostCardState extends State<ForumPostCard> {
                       builder: (dialogContext) => AlertDialog(
                         backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        title: const Text('Xác nhận xóa', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        content: const Text(
+                        title: Text(
+                          'Xác nhận xóa',
+                          style: TextStyle(
+                            color: Theme.of(dialogContext).colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        content: Text(
                           'Bạn có chắc muốn xóa bài viết này?',
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(
+                            color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
                         ),
                         actions: [
                           TextButton(

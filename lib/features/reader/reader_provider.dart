@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,10 +24,11 @@ import '../../data/drive_service.dart';
 import '../../data/database_helper.dart';
 import '../../data/models.dart';
 import '../catalog/catalog_cache_service.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
-enum ReadingMode { vertical, horizontal }
+enum ReadingMode { vertical, verticalGap, horizontal }
 
-enum ReaderImageFit { width, screen, original }
+enum ReaderImageFit { width, height, screen, original, smart }
 
 enum ReaderDirection { ltr, rtl }
 
@@ -36,7 +39,16 @@ enum ReaderTapZone {
   default3Cols, // Mặc định: Trái lùi, Giữa menu, Phải tiến (hoặc ngược lại nếu RTL)
   oneHanded,    // Đọc 1 tay (L-Shape): 70% vùng dưới tiến, đỉnh lùi, tâm menu
   leftHanded,   // Thuận tay trái: Trái tiến, Phải lùi, Giữa menu
+  kindle,       // Kindle-style: Nửa phải tiến, Nửa trái lùi (chạm 2 nửa, không cần vùng menu)
   swipeOnly,    // Chỉ vuốt: Chạm chỉ mở menu, chuyển trang bằng cách vuốt
+}
+
+/// Tuỳ chọn đảo ngược vùng chạm lật trang
+enum ReaderTapZoneInvert {
+  none,
+  horizontal,
+  vertical,
+  both,
 }
 
 /// Chế độ đọc 2 trang song song (Dual-Page Spread) khi đọc ngang / màn hình tablet
@@ -44,6 +56,22 @@ enum ReaderDualPageMode {
   off,        // Trang đơn (Mặc định)
   dual,       // Trang đôi (Ghép Trang 1+2, 3+4, ...)
   dualCover,  // Trang đôi với Trang 1 làm bìa đơn (Trang 1, 2+3, 4+5, ...)
+}
+
+/// Khóa xoay màn hình
+enum ReaderOrientation {
+  auto,           // Tự do xoay theo thiết bị
+  portrait,       // Khóa dọc
+  landscape,      // Khóa ngang
+  reversePortrait,// Khóa dọc ngược
+}
+
+/// Vị trí bắt đầu phóng to
+enum ReaderZoomStart {
+  auto,
+  left,
+  center,
+  right,
 }
 
 class ReaderState {
@@ -72,10 +100,13 @@ class ReaderState {
   final ReaderDirection direction;
   final ReaderBackground background;
   final ReaderTapZone tapZone;
+  final ReaderTapZoneInvert tapZoneInvert;
   final ReaderDualPageMode dualPageMode;
   final bool
   isNovel; // Cờ xác định đây là truyện chữ (EPUB) hay truyện tranh (Ảnh)
   final bool isPdf; // Cờ xác định đây là định dạng PDF
+  final ReaderOrientation orientation;
+  final ReaderZoomStart zoomStart;
 
   // ===== BỘ LỌC ẢNH BAN ĐÊM =====
   /// Mức giảm sáng: 0.0 (tắt) → 0.85 (rất tối)
@@ -94,6 +125,10 @@ class ReaderState {
   final bool volumePageTurn;
   /// Đảo ngược chiều phím Âm lượng (Volume Up: tiếp theo, Volume Down: quay lại)
   final bool invertVolumeKeys;
+  /// Xoay ảnh ngang 90 độ
+  final bool rotateLandscapeImages;
+  /// Áp dụng cài đặt riêng cho truyện hiện tại thay vì cài đặt chung
+  final bool isPerMangaSettings;
 
   const ReaderState({
     this.isLoading = true,
@@ -121,6 +156,7 @@ class ReaderState {
     this.direction = ReaderDirection.ltr,
     this.background = ReaderBackground.black,
     this.tapZone = ReaderTapZone.default3Cols,
+    this.tapZoneInvert = ReaderTapZoneInvert.none,
     this.dualPageMode = ReaderDualPageMode.off,
     this.isNovel = false,
     this.isPdf = false,
@@ -132,7 +168,14 @@ class ReaderState {
     this.isIncognito = false,
     this.volumePageTurn = true,
     this.invertVolumeKeys = false,
+    this.rotateLandscapeImages = false,
+    this.orientation = ReaderOrientation.auto,
+    this.zoomStart = ReaderZoomStart.auto,
+    this.isPerMangaSettings = false,
   });
+
+  bool get isVerticalMode => readingMode == ReadingMode.vertical || readingMode == ReadingMode.verticalGap;
+  bool get isGapMode => readingMode == ReadingMode.verticalGap;
 
   ReaderState copyWith({
     bool? isLoading,
@@ -162,6 +205,7 @@ class ReaderState {
     ReaderDirection? direction,
     ReaderBackground? background,
     ReaderTapZone? tapZone,
+    ReaderTapZoneInvert? tapZoneInvert,
     ReaderDualPageMode? dualPageMode,
     bool? isNovel,
     bool? isPdf,
@@ -173,6 +217,10 @@ class ReaderState {
     bool? isIncognito,
     bool? volumePageTurn,
     bool? invertVolumeKeys,
+    bool? rotateLandscapeImages,
+    ReaderOrientation? orientation,
+    ReaderZoomStart? zoomStart,
+    bool? isPerMangaSettings,
   }) {
     return ReaderState(
       isLoading: isLoading ?? this.isLoading,
@@ -203,6 +251,7 @@ class ReaderState {
       direction: direction ?? this.direction,
       background: background ?? this.background,
       tapZone: tapZone ?? this.tapZone,
+      tapZoneInvert: tapZoneInvert ?? this.tapZoneInvert,
       dualPageMode: dualPageMode ?? this.dualPageMode,
       isNovel: isNovel ?? this.isNovel,
       isPdf: isPdf ?? this.isPdf,
@@ -214,6 +263,10 @@ class ReaderState {
       isIncognito: isIncognito ?? this.isIncognito,
       volumePageTurn: volumePageTurn ?? this.volumePageTurn,
       invertVolumeKeys: invertVolumeKeys ?? this.invertVolumeKeys,
+      rotateLandscapeImages: rotateLandscapeImages ?? this.rotateLandscapeImages,
+      orientation: orientation ?? this.orientation,
+      zoomStart: zoomStart ?? this.zoomStart,
+      isPerMangaSettings: isPerMangaSettings ?? this.isPerMangaSettings,
     );
   }
 }
@@ -322,29 +375,47 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       direction: state.direction,
       background: state.background,
       tapZone: state.tapZone,
+      tapZoneInvert: state.tapZoneInvert,
       dualPageMode: state.dualPageMode,
       dimLevel: state.dimLevel,
       tintLevel: state.tintLevel,
       invertColors: state.invertColors,
       cropBorders: state.cropBorders,
+      showBatteryAndClock: state.showBatteryAndClock,
+      volumePageTurn: state.volumePageTurn,
+      invertVolumeKeys: state.invertVolumeKeys,
+      rotateLandscapeImages: state.rotateLandscapeImages,
+      orientation: state.orientation,
+      zoomStart: state.zoomStart,
+      isPerMangaSettings: state.isPerMangaSettings,
       isIncognito: state.isIncognito, // Giữ lại trạng thái Ẩn danh khi chuyển chương
     );
 
     // Load chế độ đọc đã lưu từ SharedPreferences
     final prefs = await _getPrefs();
-    final savedMode = prefs.getString('reading_mode');
-    final savedImageFit = prefs.getString('reader_image_fit');
-    final savedDirection = prefs.getString('reader_direction');
-    final savedBackground = prefs.getString('reader_background');
-    final savedTapZone = prefs.getString('reader_tap_zone');
-    final savedDimLevel = prefs.getDouble('reader_dim_level') ?? 0.0;
-    final savedTintLevel = prefs.getDouble('reader_tint_level') ?? 0.0;
-    final savedInvertColors = prefs.getBool('reader_invert_colors') ?? false;
-    final savedCropBorders = prefs.getBool('reader_crop_borders') ?? false;
-    final savedShowBatteryAndClock = prefs.getBool('reader_show_battery_and_clock') ?? true;
-    final savedVolumePageTurn = prefs.getBool('reader_volume_page_turn') ?? true;
-    final savedInvertVolumeKeys = prefs.getBool('reader_invert_volume_keys') ?? false;
-    final savedDualPageMode = prefs.getString('reader_dual_page_mode');
+    
+    // Kiểm tra xem manga này có dùng cài đặt riêng không
+    final isPerManga = mangaId != null && (prefs.getBool('manga_setting_${mangaId}_is_per_manga') ?? false);
+    final prefix = isPerManga ? 'manga_setting_${mangaId}_' : 'reader_';
+
+    final savedMode = prefs.getString('${prefix}reading_mode') ?? prefs.getString('reader_reading_mode') ?? prefs.getString('reading_mode');
+    final savedImageFit = prefs.getString('${prefix}image_fit') ?? prefs.getString('reader_image_fit');
+    final savedDirection = prefs.getString('${prefix}direction') ?? prefs.getString('reader_direction');
+    final savedBackground = prefs.getString('${prefix}background') ?? prefs.getString('reader_background');
+    final savedTapZone = prefs.getString('${prefix}tap_zone') ?? prefs.getString('reader_tap_zone');
+    final savedTapZoneInvert = prefs.getString('${prefix}tap_zone_invert') ?? prefs.getString('reader_tap_zone_invert');
+    final savedDimLevel = prefs.getDouble('${prefix}dim_level') ?? prefs.getDouble('reader_dim_level') ?? 0.0;
+    final savedTintLevel = prefs.getDouble('${prefix}tint_level') ?? prefs.getDouble('reader_tint_level') ?? 0.0;
+    final savedInvertColors = prefs.getBool('${prefix}invert_colors') ?? prefs.getBool('reader_invert_colors') ?? false;
+    final savedCropBorders = prefs.getBool('${prefix}crop_borders') ?? prefs.getBool('reader_crop_borders') ?? false;
+    final savedShowBatteryAndClock = prefs.getBool('${prefix}show_battery_and_clock') ?? prefs.getBool('reader_show_battery_and_clock') ?? true;
+    final savedVolumePageTurn = prefs.getBool('${prefix}volume_page_turn') ?? prefs.getBool('reader_volume_page_turn') ?? true;
+    final savedInvertVolumeKeys = prefs.getBool('${prefix}invert_volume_keys') ?? prefs.getBool('reader_invert_volume_keys') ?? false;
+    final savedRotateLandscapeImages = prefs.getBool('${prefix}rotate_landscape_images') ?? prefs.getBool('reader_rotate_landscape_images') ?? false;
+    final savedDualPageMode = prefs.getString('${prefix}dual_page_mode') ?? prefs.getString('reader_dual_page_mode');
+    final savedOrientation = prefs.getString('${prefix}orientation') ?? prefs.getString('reader_orientation');
+    final savedZoomStart = prefs.getString('${prefix}zoom_start') ?? prefs.getString('reader_zoom_start');
+
     final mode =
         ReadingMode.values.firstWhereOrNull((m) => m.name == savedMode) ??
         ReadingMode.vertical;
@@ -368,17 +439,33 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           (zone) => zone.name == savedTapZone,
         ) ??
         ReaderTapZone.default3Cols;
+    final tapZoneInvert =
+        ReaderTapZoneInvert.values.firstWhereOrNull(
+          (zone) => zone.name == savedTapZoneInvert,
+        ) ??
+        ReaderTapZoneInvert.none;
     final dualPageMode =
         ReaderDualPageMode.values.firstWhereOrNull(
           (m) => m.name == savedDualPageMode,
         ) ??
         ReaderDualPageMode.off;
+    final orientation =
+        ReaderOrientation.values.firstWhereOrNull(
+          (o) => o.name == savedOrientation,
+        ) ??
+        ReaderOrientation.auto;
+    final zoomStart =
+        ReaderZoomStart.values.firstWhereOrNull(
+          (z) => z.name == savedZoomStart,
+        ) ??
+        ReaderZoomStart.auto;
     state = state.copyWith(
       readingMode: mode,
       imageFit: imageFit,
       direction: direction,
       background: background,
       tapZone: tapZone,
+      tapZoneInvert: tapZoneInvert,
       dualPageMode: dualPageMode,
       dimLevel: savedDimLevel,
       tintLevel: savedTintLevel,
@@ -387,6 +474,10 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       showBatteryAndClock: savedShowBatteryAndClock,
       volumePageTurn: savedVolumePageTurn,
       invertVolumeKeys: savedInvertVolumeKeys,
+      rotateLandscapeImages: savedRotateLandscapeImages,
+      orientation: orientation,
+      zoomStart: zoomStart,
+      isPerMangaSettings: isPerManga,
       clearErrorMessage: true,
     );
 
@@ -588,9 +679,42 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
       debugPrint('✅ Đã đọc file đường dẫn ($localPath)');
 
-      // 3. Phát hiện loại tệp từ phần mở rộng
+      // 3. Phát hiện loại tệp từ phần mở rộng + Magic Bytes
       final ext = localPath.toLowerCase();
-      final fileType = _fileTypeFromName(ext);
+      var fileType = _fileTypeFromName(ext);
+
+      // Magic Bytes check để đảm bảo 100% chính xác kể cả khi tên file bị sai
+      if (fileType == 'cbz' || fileType == 'zip' || fileType.isEmpty) {
+        try {
+          final headerBytes = await file.openRead(0, 8).first;
+          if (headerBytes.length >= 4) {
+            if (headerBytes[0] == 0x25 && headerBytes[1] == 0x50 &&
+                headerBytes[2] == 0x44 && headerBytes[3] == 0x46) {
+              fileType = 'pdf';
+              debugPrint('🔍 Offline: Auto-detected PDF from magic bytes: $chapterId');
+            } else if (headerBytes[0] == 0x50 && headerBytes[1] == 0x4B) {
+              try {
+                final zipBytes = await file.readAsBytes();
+                final archive = ZipDecoder().decodeBytes(zipBytes);
+                final mimeEntry = archive.findFile('mimetype');
+                if (mimeEntry != null) {
+                  final mimeContent = utf8.decode(
+                    mimeEntry.content is List<int>
+                        ? Uint8List.fromList(mimeEntry.content as List<int>)
+                        : mimeEntry.content as Uint8List,
+                    allowMalformed: true,
+                  ).trim();
+                  if (mimeContent.contains('epub')) {
+                    fileType = 'epub';
+                    debugPrint('🔍 Offline: Auto-detected EPUB from mimetype: $chapterId');
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
       final savedProgress = await _loadSavedProgress(mangaId, chapterId);
 
       // 3. Tải thông tin các chương offline và metadata truyện
@@ -795,11 +919,17 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
     final downloadFuture = hasTempCache
         ? Future.value(true)
-        : DriveService.instance.downloadFileToFile(chapterId, tempFile);
+        : DriveService.instance.downloadFileToFile(chapterId, tempFile).catchError((e) {
+            debugPrint('⚠️ Error downloading chapter to temp: $e');
+            return false;
+          });
 
-    final metaFuture = (knownChapter != null || (mangaId != null && mangaId.isNotEmpty))
+    final metaFuture = knownChapter != null
         ? Future<Map<String, dynamic>?>.value(null)
-        : DriveService.instance.getFile(chapterId);
+        : DriveService.instance.getFile(chapterId).catchError((e) {
+            debugPrint('⚠️ Error getting file metadata: $e');
+            return null;
+          });
 
     final results = await Future.wait([downloadFuture, metaFuture]);
     final downloadSuccess = results[0] as bool;
@@ -831,20 +961,71 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
     final localPath = tempFile.path;
 
-    // Tạo thông tin chương
+    // Tạo thông tin chương và nhận diện định dạng chuẩn xác
     final fileName = fileMeta == null ? '' : _readString(fileMeta, 'name');
-    final currentChapter = knownChapter ??
+    String detectedType = knownChapter?.fileType ?? '';
+    if (detectedType.isEmpty || detectedType == 'zip' || detectedType == 'cbz') {
+      final fromName = _fileTypeFromName(fileName);
+      if (fromName != 'zip') {
+        detectedType = fromName;
+      } else if (knownChapter != null) {
+        final fromTitle = _fileTypeFromName(knownChapter.title);
+        if (fromTitle != 'zip') {
+          detectedType = fromTitle;
+        }
+      }
+    }
+    if (detectedType.isEmpty) detectedType = 'zip';
+
+    // Kiểm tra Magic Bytes nhị phân đầu file để đảm bảo 100% không nhầm lẫn PDF/EPUB thành CBZ/ZIP
+    if (detectedType == 'cbz' || detectedType == 'zip') {
+      try {
+        final headerBytes = await tempFile.openRead(0, 8).first;
+        if (headerBytes.length >= 4) {
+          // %PDF -> % (0x25), P (0x50), D (0x44), F (0x46)
+          if (headerBytes[0] == 0x25 &&
+              headerBytes[1] == 0x50 &&
+              headerBytes[2] == 0x44 &&
+              headerBytes[3] == 0x46) {
+            detectedType = 'pdf';
+            debugPrint('🔍 Auto-detected PDF from magic bytes for chapter: $chapterId');
+          } else if (headerBytes[0] == 0x50 && headerBytes[1] == 0x4B) {
+            // PK header -> đây là ZIP-based format (có thể là EPUB)
+            // Kiểm tra entry 'mimetype' để phân biệt EPUB với CBZ
+            try {
+              final zipBytes = await tempFile.readAsBytes();
+              final archive = ZipDecoder().decodeBytes(zipBytes);
+              final mimeEntry = archive.findFile('mimetype');
+              if (mimeEntry != null) {
+                final mimeContent = utf8.decode(
+                  mimeEntry.content is List<int>
+                      ? Uint8List.fromList(mimeEntry.content as List<int>)
+                      : mimeEntry.content as Uint8List,
+                  allowMalformed: true,
+                ).trim();
+                if (mimeContent.contains('epub')) {
+                  detectedType = 'epub';
+                  debugPrint('🔍 Auto-detected EPUB from mimetype entry for chapter: $chapterId');
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    final currentChapter = knownChapter?.copyWith(fileType: detectedType) ??
         CloudChapter(
           id: chapterId,
           title: fileName.isEmpty ? 'Chương hiện tại' : fileName,
           fileId: chapterId,
-          fileType: _fileTypeFromName(fileName),
+          fileType: detectedType,
           sizeBytes: fileMeta == null ? 0 : _readInt(fileMeta, 'size'),
           uploadedAt: DateTime.now(),
         );
 
     // Giai đoạn 3: Xử lý nội dung theo loại file
-    final fileType = currentChapter.fileType;
+    final fileType = detectedType;
     final savedProgress = await _loadSavedProgress(mangaId ?? '', chapterId);
 
     // Cập nhật State NGAY LẬP TỨC để UI mở ra (không cần đợi Metadata)
@@ -1039,14 +1220,18 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     
     final fileType = chapter.fileType;
     
-    if (fileType == 'pdf' || fileType == 'epub') {
+    // BUG-05 fix: skip EPUB prefetch — temp file path is not reused by the
+    // EPUB reader flow, so downloading it here wastes bandwidth with no benefit.
+    if (fileType == 'epub') return;
+    
+    if (fileType == 'pdf') {
       getTemporaryDirectory().then((tempDir) async {
         final tempFile = File('${tempDir.path}/temp_online_$chapterId');
         if (await tempFile.exists() && await tempFile.length() > 0) {
-          debugPrint('✅ $fileType chapter already in fast cache: $chapterId');
+          debugPrint('✅ pdf chapter already in fast cache: $chapterId');
         } else {
           DriveService.instance.downloadFileToFile(chapterId, tempFile).then((success) {
-            if (success) debugPrint('✅ Prefetched $fileType chapter: $chapterId');
+            if (success) debugPrint('✅ Prefetched pdf chapter: $chapterId');
           }).catchError((_) {});
         }
       });
@@ -1097,91 +1282,159 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     }
   }
 
+  Future<void> _saveSetting(String baseKey, dynamic value) async {
+    final prefs = await _getPrefs();
+    final String key;
+    if (state.isPerMangaSettings && state.mangaId != null) {
+      // Tạo per-manga key bằng cách strip prefix 'reader_' nếu có
+      final stripped = baseKey.startsWith('reader_') ? baseKey.substring(7) : baseKey;
+      key = 'manga_setting_${state.mangaId}_$stripped';
+    } else {
+      key = baseKey;
+    }
+
+    if (value is String) {
+      await prefs.setString(key, value);
+    } else if (value is bool) {
+      await prefs.setBool(key, value);
+    } else if (value is double) {
+      await prefs.setDouble(key, value);
+    } else if (value is int) {
+      await prefs.setInt(key, value);
+    }
+  }
+
+  void setPerMangaSettings(bool isPerManga) async {
+    state = state.copyWith(isPerMangaSettings: isPerManga);
+    if (state.mangaId != null) {
+      final prefs = await _getPrefs();
+      await prefs.setBool('manga_setting_${state.mangaId}_is_per_manga', isPerManga);
+      if (isPerManga) {
+        // Copy current global settings to per-manga
+        await _saveSetting('reader_reading_mode', state.readingMode.name);
+        await _saveSetting('reader_image_fit', state.imageFit.name);
+        await _saveSetting('reader_direction', state.direction.name);
+        await _saveSetting('reader_orientation', state.orientation.name);
+        await _saveSetting('reader_zoom_start', state.zoomStart.name);
+        await _saveSetting('reader_background', state.background.name);
+        await _saveSetting('reader_tap_zone', state.tapZone.name);
+        await _saveSetting('reader_tap_zone_invert', state.tapZoneInvert.name);
+        await _saveSetting('reader_dual_page_mode', state.dualPageMode.name);
+        await _saveSetting('reader_dim_level', state.dimLevel);
+        await _saveSetting('reader_tint_level', state.tintLevel);
+        await _saveSetting('reader_invert_colors', state.invertColors);
+        await _saveSetting('reader_crop_borders', state.cropBorders);
+        // NOTE: showBatteryAndClock, volumePageTurn, invertVolumeKeys cũng cần copy
+        await _saveSetting('reader_show_battery_and_clock', state.showBatteryAndClock);
+        await _saveSetting('reader_volume_page_turn', state.volumePageTurn);
+        await _saveSetting('reader_invert_volume_keys', state.invertVolumeKeys);
+        await _saveSetting('reader_rotate_landscape_images', state.rotateLandscapeImages);
+      } else {
+        // Clear all per-manga keys for this manga to avoid bloat
+        final keys = prefs.getKeys().where((k) => k.startsWith('manga_setting_${state.mangaId}_'));
+        for (final k in keys) {
+          if (k != 'manga_setting_${state.mangaId}_is_per_manga') await prefs.remove(k);
+        }
+        // Restore global settings by calling init again
+        if (state.currentChapter != null) {
+          await init(state.currentChapter!.id, mangaId: state.mangaId, initialPageIndex: state.currentPageIndex);
+        }
+      }
+    }
+  }
+
   /// Cập nhật chế độ đọc và persist vào SharedPreferences để nhớ qua các lần mở app.
   void setReadingMode(ReadingMode mode) async {
     state = state.copyWith(readingMode: mode);
-    final prefs = await _getPrefs();
-    await prefs.setString('reading_mode', mode.name);
+    await _saveSetting('reader_reading_mode', mode.name);
   }
 
   void setImageFit(ReaderImageFit fit) async {
     state = state.copyWith(imageFit: fit);
-    final prefs = await _getPrefs();
-    await prefs.setString('reader_image_fit', fit.name);
+    await _saveSetting('reader_image_fit', fit.name);
   }
 
   void setDirection(ReaderDirection direction) async {
     state = state.copyWith(direction: direction);
-    final prefs = await _getPrefs();
-    await prefs.setString('reader_direction', direction.name);
+    await _saveSetting('reader_direction', direction.name);
+  }
+
+  void setOrientation(ReaderOrientation orientation) async {
+    state = state.copyWith(orientation: orientation);
+    await _saveSetting('reader_orientation', orientation.name);
+  }
+
+  void setZoomStart(ReaderZoomStart zoomStart) async {
+    state = state.copyWith(zoomStart: zoomStart);
+    await _saveSetting('reader_zoom_start', zoomStart.name);
   }
 
   void setBackground(ReaderBackground background) async {
     state = state.copyWith(background: background);
-    final prefs = await _getPrefs();
-    await prefs.setString('reader_background', background.name);
+    await _saveSetting('reader_background', background.name);
   }
 
   /// Giảm sáng tổng thể: 0.0 (tắt) → 0.85 (rất tối)
   void setDimLevel(double level) async {
     final clamped = level.clamp(0.0, 0.85);
     state = state.copyWith(dimLevel: clamped);
-    final prefs = await _getPrefs();
-    await prefs.setDouble('reader_dim_level', clamped);
+    await _saveSetting('reader_dim_level', clamped);
   }
 
   /// Lọc ánh sáng xanh: 0.0 (tắt) → 0.5 (vàng ấm mạnh)
   void setTintLevel(double level) async {
     final clamped = level.clamp(0.0, 0.5);
     state = state.copyWith(tintLevel: clamped);
-    final prefs = await _getPrefs();
-    await prefs.setDouble('reader_tint_level', clamped);
+    await _saveSetting('reader_tint_level', clamped);
   }
 
   /// Đảo màu ảnh – hữu ích cho manga nền trắng khi đọc ban đêm
   void setInvertColors(bool value) async {
     state = state.copyWith(invertColors: value);
-    final prefs = await _getPrefs();
-    await prefs.setBool('reader_invert_colors', value);
+    await _saveSetting('reader_invert_colors', value);
   }
 
   /// Tùy chỉnh sơ đồ vùng chạm lật trang
   void setTapZone(ReaderTapZone zone) async {
     state = state.copyWith(tapZone: zone);
-    final prefs = await _getPrefs();
-    await prefs.setString('reader_tap_zone', zone.name);
+    await _saveSetting('reader_tap_zone', zone.name);
+  }
+
+  void setTapZoneInvert(ReaderTapZoneInvert invert) async {
+    state = state.copyWith(tapZoneInvert: invert);
+    await _saveSetting('reader_tap_zone_invert', invert.name);
   }
 
   /// Tùy chỉnh chế độ đọc 2 trang song song (Dual-Page Spread)
   void setDualPageMode(ReaderDualPageMode mode) async {
     state = state.copyWith(dualPageMode: mode);
-    final prefs = await _getPrefs();
-    await prefs.setString('reader_dual_page_mode', mode.name);
+    await _saveSetting('reader_dual_page_mode', mode.name);
   }
 
   /// Tự động cắt viền trắng/khoảng lề thừa của trang truyện tranh
   Future<void> setCropBorders(bool crop) async {
     state = state.copyWith(cropBorders: crop);
-    final prefs = await _getPrefs();
-    await prefs.setBool('reader_crop_borders', crop);
+    await _saveSetting('reader_crop_borders', crop);
   }
 
   Future<void> setShowBatteryAndClock(bool show) async {
     state = state.copyWith(showBatteryAndClock: show);
-    final prefs = await _getPrefs();
-    await prefs.setBool('reader_show_battery_and_clock', show);
+    await _saveSetting('reader_show_battery_and_clock', show);
   }
 
   Future<void> setVolumePageTurn(bool enabled) async {
     state = state.copyWith(volumePageTurn: enabled);
-    final prefs = await _getPrefs();
-    await prefs.setBool('reader_volume_page_turn', enabled);
+    await _saveSetting('reader_volume_page_turn', enabled);
   }
 
   Future<void> setInvertVolumeKeys(bool invert) async {
     state = state.copyWith(invertVolumeKeys: invert);
-    final prefs = await _getPrefs();
-    await prefs.setBool('reader_invert_volume_keys', invert);
+    await _saveSetting('reader_invert_volume_keys', invert);
+  }
+
+  Future<void> setRotateLandscapeImages(bool rotate) async {
+    state = state.copyWith(rotateLandscapeImages: rotate);
+    await _saveSetting('reader_rotate_landscape_images', rotate);
   }
 
   void toggleIncognito() {
@@ -1235,7 +1488,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           ? 0.0
           : currentPage / (pageCount - 1);
       final resolvedScrollOffset = scrollOffset ?? state.scrollOffset;
-      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+      final userId = AuthService.safeUid;
 
       final futures = <Future<dynamic>>[];
 
@@ -1388,6 +1641,11 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
 
   Future<void> deleteBookmark(String id) async {
     await DatabaseHelper.instance.deleteBookmark(id);
+    await _refreshBookmarkState();
+  }
+
+  Future<void> restoreBookmark(ReaderBookmark bookmark) async {
+    await DatabaseHelper.instance.saveBookmark(bookmark);
     await _refreshBookmarkState();
   }
 
@@ -1596,11 +1854,59 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         (c) => c.id == targetChapterId,
       );
 
+      // Nhận diện định dạng chương chuẩn xác cho chương liền kề
+      var detectedFileType = targetChapter?.fileType ?? 'zip';
+      if (targetChapter != null) {
+        final lowerTitle = targetChapter.title.toLowerCase();
+        if (lowerTitle.endsWith('.epub')) {
+          detectedFileType = 'epub';
+        } else if (lowerTitle.endsWith('.pdf')) {
+          detectedFileType = 'pdf';
+        }
+      }
+
+      // Kiểm tra Magic Bytes nhị phân đầu file nếu chưa xác định chắc chắn
+      if (detectedFileType == 'cbz' || detectedFileType == 'zip' || detectedFileType.isEmpty) {
+        try {
+          final headerBytes = await File(localPath).openRead(0, 8).first;
+          if (headerBytes.length >= 4) {
+            // %PDF -> % (0x25), P (0x50), D (0x44), F (0x46)
+            if (headerBytes[0] == 0x25 &&
+                headerBytes[1] == 0x50 &&
+                headerBytes[2] == 0x44 &&
+                headerBytes[3] == 0x46) {
+              detectedFileType = 'pdf';
+              debugPrint('🔍 Auto-detected PDF from magic bytes for adjacent chapter: $targetChapterId');
+            } else if (headerBytes[0] == 0x50 && headerBytes[1] == 0x4B) {
+              // PK header -> đây là ZIP-based format (có thể là EPUB)
+              try {
+                final zipBytes = await File(localPath).readAsBytes();
+                final archive = ZipDecoder().decodeBytes(zipBytes);
+                final mimeEntry = archive.findFile('mimetype');
+                if (mimeEntry != null) {
+                  final mimeContent = utf8.decode(
+                    mimeEntry.content is List<int>
+                        ? Uint8List.fromList(mimeEntry.content as List<int>)
+                        : mimeEntry.content as Uint8List,
+                    allowMalformed: true,
+                  ).trim();
+                  if (mimeContent.contains('epub')) {
+                    detectedFileType = 'epub';
+                    debugPrint('🔍 Auto-detected EPUB from mimetype for adjacent chapter: $targetChapterId');
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+
+      final resolvedTargetChapter = targetChapter?.copyWith(fileType: detectedFileType);
+
       // --- Trường hợp EPUB (Truyện chữ) ---
-      final fileType = targetChapter?.fileType ?? 'zip';
-      if (fileType == 'epub') {
+      if (detectedFileType == 'epub') {
         state = state.copyWith(
-          currentChapter: targetChapter,
+          currentChapter: resolvedTargetChapter,
           localFilePath: localPath,
           clearLocalFilePath: false,
           clearErrorMessage: true,
@@ -1617,19 +1923,19 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
         resetLoadingState();
         _saveProgress();
         _refreshBookmarkState();
-        if (state.mangaId != null && targetChapter != null) {
+        if (state.mangaId != null && resolvedTargetChapter != null) {
           InteractionService.instance.incrementChapterView(
             state.mangaId!,
-            targetChapter.id,
+            resolvedTargetChapter.id,
           );
         }
         return;
       }
 
       // --- Trường hợp Manga (Truyện tranh: PDF / ZIP / CBZ) ---
-      if (fileType == 'pdf') {
+      if (detectedFileType == 'pdf') {
         state = state.copyWith(
-          currentChapter: targetChapter,
+          currentChapter: resolvedTargetChapter,
           pages: const [],
           isNovel: false,
           isPdf: true,
@@ -1644,6 +1950,8 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           hasReachedStart: !isNext ? false : state.hasReachedStart,
         );
         resetLoadingState();
+        // fall through to shared: _saveProgress / _refreshBookmarkState /
+        // _prefetchAdjacentChapters / incrementChapterView
       } else {
         final images = await ArchiveImageExtractor.extract(localPath, targetChapterId);
         if (images.isEmpty) {
@@ -1651,7 +1959,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           return;
         }
         state = state.copyWith(
-          currentChapter: targetChapter,
+          currentChapter: resolvedTargetChapter,
           pages: images,
           isNovel: false,
           isPdf: false,

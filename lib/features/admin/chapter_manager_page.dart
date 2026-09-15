@@ -119,16 +119,16 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Text(
+            title: Text(
               'Thay đổi chưa lưu',
               style: TextStyle(
-                color: Colors.white,
+                color: Theme.of(ctx).colorScheme.onSurface,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            content: const Text(
+            content: Text(
               'Bạn đã thay đổi thứ tự chương nhưng chưa bấm "Lưu Thứ Tự". Bạn có chắc muốn rời đi không?',
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
             ),
             actions: [
               TextButton(
@@ -137,8 +137,8 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
+                  backgroundColor: Theme.of(ctx).colorScheme.primary,
+                  foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () => Navigator.pop(ctx, true),
@@ -181,7 +181,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.white,
+                        color: Colors.orange,
                       ),
                     )
                   : const Icon(Icons.save, color: Colors.orange),
@@ -214,30 +214,30 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.blueAccent.withValues(alpha: 0.1),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.library_books_rounded,
                         size: 54,
-                        color: Colors.blueAccent,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     const SizedBox(height: 18),
                     Text(
                       'Chưa có ${_unitLabel.toLowerCase()} nào',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Bấm nút "Thêm $_unitLabel" bên dưới để tải lên các file chương cho bộ truyện này.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                         fontSize: 13,
                         height: 1.4,
                       ),
@@ -285,14 +285,14 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                         ),
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          leading: const Icon(
+                          leading: Icon(
                             Icons.drag_indicator,
-                            color: Colors.white54,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                           ),
                           title: Text(
                             chapter.title,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                             ),
@@ -302,7 +302,10 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                             padding: const EdgeInsets.only(top: 4.0),
                             child: Text(
                               '${chapter.fileType.toUpperCase()} • ${(chapter.sizeBytes / 1024 / 1024).toStringAsFixed(2)} MB',
-                              style: const TextStyle(color: Colors.white54, fontSize: 13),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                           trailing: IconButton(
@@ -317,13 +320,18 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                 builder: (ctx) => AlertDialog(
                                   backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                  title: const Text(
+                                  title: Text(
                                     'Xác nhận xóa',
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Theme.of(ctx).colorScheme.onSurface,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   content: Text(
                                     'Bạn có chắc muốn xóa "${chapter.title}"?',
-                                    style: const TextStyle(color: Colors.white70),
+                                    style: TextStyle(
+                                      color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+                                    ),
                                   ),
                                   actions: [
                                     TextButton(
@@ -460,18 +468,21 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  const Text(
+                  Text(
                     'Tất cả chapter đều hợp lệ',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Không phát hiện lỗi cấu trúc hay thiếu trang',
-                    style: TextStyle(fontSize: 13, color: Colors.white54),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -546,7 +557,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           : ['zip', 'cbz', 'pdf'],
       allowMultiple: true,
     );
-    if (result != null && result.files.isNotEmpty) {
+    if (result != null && result.files.isNotEmpty && mounted) {
       setState(() {
         _files
           ..clear()
@@ -626,19 +637,20 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     }
   }
 
-  InputDecoration _inputDeco(String label) {
+  InputDecoration _inputDeco(BuildContext context, String label) {
+    final theme = Theme.of(context);
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white70),
+      labelStyle: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.05),
+      fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+        borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
     );
@@ -656,7 +668,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           widget.contentType.isNovel
               ? 'Thêm EPUB Mới (Drive)'
               : 'Thêm Chapter Mới (Drive)',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
         ),
       content: SingleChildScrollView(
         child: Column(
@@ -664,11 +676,12 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           children: [
             TextField(
               controller: _titleController,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.done,
               textCapitalization: TextCapitalization.sentences,
               onSubmitted: (_) => _isUploading ? null : _submit(),
               decoration: _inputDeco(
+                context,
                 widget.contentType.isNovel
                     ? 'Tên tập (VD: Tập 1)'
                     : 'Tên Chapter (VD: Chap 1)',
@@ -685,9 +698,9 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 decoration: BoxDecoration(
                   color: _files.isNotEmpty 
                       ? Colors.green.withValues(alpha: 0.1) 
-                      : Colors.white.withValues(alpha: 0.03),
+                      : theme.colorScheme.onSurface.withValues(alpha: 0.03),
                   border: Border.all(
-                    color: _files.isNotEmpty ? Colors.green : Colors.white24,
+                    color: _files.isNotEmpty ? Colors.green : theme.dividerColor,
                     width: 1,
                   ),
                   borderRadius: BorderRadius.circular(16),
@@ -697,7 +710,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                   children: [
                     Icon(
                       _files.isEmpty ? Icons.file_upload : Icons.check_circle,
-                      color: _files.isEmpty ? Colors.orange : Colors.green,
+                      color: _files.isEmpty ? theme.colorScheme.primary : Colors.green,
                       size: 28,
                     ),
                     const SizedBox(width: 12),
@@ -711,7 +724,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                             ? path.basename(_files.first.path)
                             : 'Đã chọn ${_files.length} file',
                         style: TextStyle(
-                          color: _files.isNotEmpty ? Colors.green : Colors.white70,
+                          color: _files.isNotEmpty ? Colors.green : theme.colorScheme.onSurface.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w600,
                         ),
                         overflow: TextOverflow.ellipsis,
@@ -721,15 +734,14 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
                 ),
               ),
             ),
-            // LinearProgressIndicator thay vì CircularProgressIndicator để tiết kiệm không gian
             if (_isUploading)
-              const Padding(
-                padding: EdgeInsets.only(top: 24),
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.all(Radius.circular(8)),
+                  borderRadius: const BorderRadius.all(Radius.circular(8)),
                   child: LinearProgressIndicator(
-                    color: Colors.orange,
-                    backgroundColor: Colors.white24,
+                    color: theme.colorScheme.primary,
+                    backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
                     minHeight: 6,
                   ),
                 ),
@@ -744,10 +756,10 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(
-          onPressed: _isUploading ? null : _submit, // Disable khi đang upload
+          onPressed: _isUploading ? null : _submit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange,
-            foregroundColor: Colors.white,
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),

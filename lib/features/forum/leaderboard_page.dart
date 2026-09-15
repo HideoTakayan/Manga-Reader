@@ -144,20 +144,20 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                                 ),
                               ),
                               const SizedBox(height: 18),
-                              const Text(
+                              Text(
                                 'Bảng xếp hạng đang cập nhật',
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
+                              Text(
                                 'Hãy đọc truyện và tham gia diễn đàn để nhận điểm EXP và trở thành độc giả đầu tiên ghi danh trên bảng vàng!',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: Colors.white54,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                                   fontSize: 13,
                                   height: 1.4,
                                 ),
@@ -531,9 +531,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                     ),
                     if (isMe) ...[
                       const SizedBox(width: 4),
-                      const Text(
+                      Text(
                         '(Tôi)',
-                        style: TextStyle(color: Colors.blueAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ],
@@ -630,10 +630,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
               children: [
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Hạng của bạn',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
                       ),
@@ -646,7 +646,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                   _selectedCategory == 0
                       ? '$localExp EXP • ${levelInfo.title}'
                       : '~${(localExp / 10).floor()} chương đã cày',
-                  style: const TextStyle(color: Colors.white60, fontSize: 11),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),

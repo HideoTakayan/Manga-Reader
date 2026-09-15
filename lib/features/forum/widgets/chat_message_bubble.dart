@@ -243,21 +243,41 @@ class ChatMessageBubble extends StatelessWidget {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: message.imageUrl!,
-                              width: 200,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                height: 150,
-                                width: 200,
-                                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) =>
-                                  const Icon(Icons.error),
-                            ),
+                            child: _isGifUrl(message.imageUrl!)
+                                // GIF từ máy: dùng Image.network để giữ animation
+                                ? Image.network(
+                                    message.imageUrl!,
+                                    width: 200,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                    loadingBuilder: (context, child, progress) {
+                                      if (progress == null) return child;
+                                      return Container(
+                                        height: 150,
+                                        width: 200,
+                                        color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                        child: const Center(child: CircularProgressIndicator()),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, _) =>
+                                        const Icon(Icons.gif, size: 40, color: Colors.grey),
+                                  )
+                                // Ảnh tĩnh: dùng CachedNetworkImage
+                                : CachedNetworkImage(
+                                    imageUrl: message.imageUrl!,
+                                    width: 200,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) => Container(
+                                      height: 150,
+                                      width: 200,
+                                      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    ),
+                                    errorWidget: (context, url, error) =>
+                                        const Icon(Icons.error),
+                                  ),
                           ),
                         ),
                       if (message.gifUrl != null && !message.isDeleted)
@@ -267,22 +287,22 @@ class ChatMessageBubble extends StatelessWidget {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: message.gifUrl!,
-                              width: 150,
+                            child: Image.network(
+                              message.gifUrl!,
+                              width: 180,
                               fit: BoxFit.contain,
-                              placeholder: (context, url) => Container(
-                                height: 100,
-                                width: 150,
-                                color: Theme.of(
-                                  context,
-                                ).dividerColor.withValues(alpha: 0.1),
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) =>
-                                  const Icon(Icons.error),
+                              gaplessPlayback: true, // Giữ ảnh cũ khi reload
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  height: 120,
+                                  width: 180,
+                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                  child: const Center(child: CircularProgressIndicator()),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(Icons.gif, size: 40, color: Colors.grey),
                             ),
                           ),
                         ),
@@ -611,5 +631,11 @@ class ChatMessageBubble extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Kiểm tra URL có phải là GIF không (theo extension)
+  static bool _isGifUrl(String url) {
+    final lower = url.toLowerCase().split('?').first; // Bỏ query params
+    return lower.endsWith('.gif');
   }
 }

@@ -334,7 +334,7 @@ class ReadingHistory {
 
   factory ReadingHistory.fromMap(Map<String, dynamic> map) {
     return ReadingHistory(
-      userId: map['userId']?.toString() ?? 'guest',
+      userId: map['userId']?.toString() ?? '',
       mangaId: (map['mangaId'] ?? map['comicId'])?.toString() ?? '',
       chapterId: map['chapterId']?.toString() ?? '',
       chapterTitle: map['chapterTitle']?.toString(),
@@ -484,7 +484,7 @@ class ReadingActivity {
   factory ReadingActivity.fromMap(Map<String, dynamic> map) {
     return ReadingActivity(
       id: map['id']?.toString() ?? '',
-      userId: map['userId']?.toString() ?? 'guest',
+      userId: map['userId']?.toString() ?? '',
       mangaId: map['mangaId']?.toString() ?? '',
       chapterId: map['chapterId']?.toString() ?? '',
       chapterTitle: map['chapterTitle']?.toString(),

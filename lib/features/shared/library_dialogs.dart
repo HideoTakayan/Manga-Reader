@@ -30,10 +30,10 @@ class LibraryDialogs {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  title: const Text(
+                  title: Text(
                     'Đặt danh mục',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Theme.of(ctx).colorScheme.onSurface,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -54,11 +54,13 @@ class LibraryDialogs {
                               return CheckboxListTile(
                                 title: Text(
                                   cat,
-                                  style: const TextStyle(color: Colors.white70),
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.87),
+                                  ),
                                 ),
                                 value: isChecked,
-                                activeColor: Colors.redAccent,
-                                checkColor: Colors.white,
+                                activeColor: Theme.of(ctx).colorScheme.primary,
+                                checkColor: Theme.of(ctx).colorScheme.onPrimary,
                                 controlAffinity:
                                     ListTileControlAffinity.leading,
                                 onChanged: (val) {
@@ -101,8 +103,8 @@ class LibraryDialogs {
                         if (ctx.mounted) Navigator.pop(ctx, true);
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
+                        backgroundColor: Theme.of(ctx).colorScheme.primary,
+                        foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),

@@ -81,7 +81,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           action: SnackBarAction(
             label: 'Xem ngay',
-            textColor: Colors.orangeAccent,
+            textColor: Theme.of(context).colorScheme.primary,
             onPressed: () {
               context.push('/forum?tab=1');
             },
@@ -106,13 +106,15 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
   Widget build(BuildContext context) {
     final manga = widget.manga;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return PopScope(
       canPop: !_isSharing,
       child: Container(
         padding: EdgeInsets.only(bottom: bottomInset),
         decoration: BoxDecoration(
-          color: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
+          color: theme.dialogTheme.backgroundColor ?? theme.cardColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
       child: SafeArea(
@@ -130,7 +132,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: colorScheme.onSurface.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -143,35 +145,38 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.primary.withValues(alpha: 0.75),
+                          ],
                         ),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.share_rounded,
-                        color: Colors.white,
+                        color: colorScheme.onPrimary,
                         size: 20,
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'Chia Sẻ Lên Diễn Đàn',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: colorScheme.onSurface,
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
                             'Bài viết sẽ xuất hiện trong tab "Chia sẻ truyện"',
                             style: TextStyle(
-                              color: Colors.white54,
+                              color: colorScheme.onSurface.withValues(alpha: 0.6),
                               fontSize: 12,
                             ),
                           ),
@@ -186,10 +191,10 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: colorScheme.onSurface.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
+                      color: colorScheme.onSurface.withValues(alpha: 0.1),
                     ),
                   ),
                   child: Row(
@@ -212,8 +217,8 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                           children: [
                             Text(
                               manga.title,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: colorScheme.onSurface,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
                               ),
@@ -224,8 +229,8 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                             if (manga.author.isNotEmpty)
                               Text(
                                 manga.author,
-                                style: const TextStyle(
-                                  color: Colors.white60,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface.withValues(alpha: 0.65),
                                   fontSize: 12,
                                 ),
                                 maxLines: 1,
@@ -238,13 +243,13 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.orangeAccent.withValues(alpha: 0.2),
+                                color: colorScheme.primary.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 manga.contentType.label,
-                                style: const TextStyle(
-                                  color: Colors.orangeAccent,
+                                style: TextStyle(
+                                  color: colorScheme.primary,
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -265,24 +270,24 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                   maxLength: 2000,
                   textInputAction: TextInputAction.done,
                   textCapitalization: TextCapitalization.sentences,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  style: TextStyle(color: colorScheme.onSurface, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Nhập cảm nghĩ hoặc lý do bạn muốn giới thiệu bộ truyện này (không bắt buộc)...',
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    hintStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38), fontSize: 13),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.05),
-                    counterStyle: const TextStyle(color: Colors.white38),
+                    fillColor: colorScheme.onSurface.withValues(alpha: 0.04),
+                    counterStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.38)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      borderSide: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.1)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+                      borderSide: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.1)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: Color(0xFF8B5CF6)),
+                      borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
                     ),
                   ),
                 ),
@@ -294,8 +299,8 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                     Expanded(
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                          foregroundColor: colorScheme.onSurface.withValues(alpha: 0.7),
+                          side: BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.2)),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -311,12 +316,15 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                       child: Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                          gradient: LinearGradient(
+                            colors: [
+                              colorScheme.primary,
+                              colorScheme.primary.withValues(alpha: 0.85),
+                            ],
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                              color: colorScheme.primary.withValues(alpha: 0.35),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -326,7 +334,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.transparent,
                             shadowColor: Colors.transparent,
-                            foregroundColor: Colors.white,
+                            foregroundColor: colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -334,12 +342,12 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                           ),
                           onPressed: _isSharing ? null : _share,
                           child: _isSharing
-                              ? const SizedBox(
+                              ? SizedBox(
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Colors.white,
+                                    color: colorScheme.onPrimary,
                                   ),
                                 )
                               : const Row(

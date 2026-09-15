@@ -40,7 +40,12 @@ class FollowService {
 
     await _db.runTransaction((transaction) async {
       final doc = await transaction.get(ref);
-      if (doc.exists) return;
+      if (doc.exists) {
+        transaction.update(ref, {
+          'followedAt': Timestamp.now(),
+        });
+        return;
+      }
 
       transaction.set(ref, {
         'mangaId': mangaId,
@@ -69,10 +74,12 @@ class FollowService {
       final doc = await transaction.get(ref);
       if (!doc.exists) return;
 
+      final mangaDoc = await transaction.get(mangaRef);
+      final currentLikes = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
+
       transaction.delete(ref);
-      // FieldValue.increment(-1) là atomic server-side, không cần đọc rồi kiểm tra > 0
       transaction.set(mangaRef, {
-        'likeCount': FieldValue.increment(-1),
+        'likeCount': currentLikes > 0 ? currentLikes - 1 : 0,
       }, SetOptions(merge: true));
     });
   }
@@ -102,10 +109,12 @@ class FollowService {
         final followDoc = await transaction.get(ref);
         if (!followDoc.exists) return;
 
+        final mangaDoc = await transaction.get(mangaRef);
+        final currentLikes = (mangaDoc.data()?['likeCount'] as num?)?.toInt() ?? 0;
+
         transaction.delete(ref);
-        // FieldValue.increment(-1) là atomic, không cần đọc likeCount rồi check > 0
         transaction.set(mangaRef, {
-          'likeCount': FieldValue.increment(-1),
+          'likeCount': currentLikes > 0 ? currentLikes - 1 : 0,
         }, SetOptions(merge: true));
       });
     } else {

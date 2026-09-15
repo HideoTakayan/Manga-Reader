@@ -347,6 +347,7 @@ class NotificationService {
     var dismissedIds = <String>{};
 
     void emitMerged() {
+      if (controller.isClosed) return;
       final merged = [
         ...globalNotifs,
         ...forumNotifs,
@@ -698,6 +699,8 @@ class NotificationService {
 
     await _db.collection('users').doc(userId).set({
       'dismissedNotificationIds': FieldValue.arrayUnion([note.id]),
+      // Also remove from readNotificationIds to keep the array bounded
+      'readNotificationIds': FieldValue.arrayRemove([note.id]),
     }, SetOptions(merge: true));
   }
 
@@ -740,6 +743,8 @@ class NotificationService {
     if (dismissedIds.isNotEmpty) {
       await _db.collection('users').doc(userId).set({
         'dismissedNotificationIds': FieldValue.arrayUnion(dismissedIds),
+        // Clean up readNotificationIds simultaneously to prevent document bloat
+        'readNotificationIds': FieldValue.arrayRemove(dismissedIds),
       }, SetOptions(merge: true));
     }
   }
@@ -747,10 +752,13 @@ class NotificationService {
   final Set<String> _processedIds = {};
   DateTime _startTime = DateTime.now();
   StreamSubscription? _subscription;
+  StreamSubscription? _authSubscription;
 
   Future<void> initialize() async {
     await initLocalNotifications();
-    _auth.authStateChanges().listen((user) {
+    // Guard: nếu đã initialize() rồi (e.g. hot restart), hủy sub cũ trước
+    await _authSubscription?.cancel();
+    _authSubscription = _auth.authStateChanges().listen((user) {
       if (user != null) {
         _startListening();
       } else {
@@ -895,7 +903,13 @@ class NotificationService {
       for (final manga in mangas.where(
         (manga) => targetMangaIds.contains(manga.id),
       )) {
-        final chapterCount = manga.chapterOrder.length;
+        int chapterCount = manga.chapterOrder.length;
+        if (chapterCount <= 0) {
+          try {
+            final chapters = await DriveService.instance.getChapters(manga.id);
+            chapterCount = chapters.length;
+          } catch (_) {}
+        }
         if (chapterCount <= 0) continue;
 
         final key = 'last_notified_chapter_count_${manga.id}';

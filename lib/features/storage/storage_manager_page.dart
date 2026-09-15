@@ -176,10 +176,18 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa chapter lỗi?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Xóa chapter lỗi?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(
           'Xóa ${broken.length} chapter bị mất file hoặc file 0 byte khỏi máy và database local?',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -206,7 +214,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => const _LoadingProgressDialog(message: 'Đang dọn dẹp các chapter lỗi...'),
     );
 
     try {
@@ -300,10 +308,18 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa chapter đã đọc xong?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Xóa chapter đã đọc xong?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(
           'Xóa ${deletable.length} chapter có tiến độ đọc từ 95% trở lên khỏi bộ nhớ máy?',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -330,7 +346,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => const _LoadingProgressDialog(message: 'Đang xóa các chapter đã đọc...'),
     );
 
     try {
@@ -440,10 +456,18 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa tải xuống?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Xóa tải xuống?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(
           'Xóa toàn bộ ${group.chapterCount} chapter đã tải của "${group.mangaTitle}"?',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -470,7 +494,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      builder: (_) => _LoadingProgressDialog(message: 'Đang xóa dữ liệu của ${group.mangaTitle}...'),
     );
 
     try {
@@ -532,19 +556,22 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Không thể tải dữ liệu bộ nhớ',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       '${snapshot.error}',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, color: Colors.white54),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
@@ -552,8 +579,8 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                       icon: const Icon(Icons.refresh_rounded, size: 16),
                       label: const Text('Thử lại'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        foregroundColor: theme.colorScheme.onSurface,
+                        side: BorderSide(color: theme.dividerColor),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
@@ -589,14 +616,14 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                 if (data.groups.isEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      vertical: 36,
-                      horizontal: 20,
+                      vertical: 40,
+                      horizontal: 24,
                     ),
                     decoration: BoxDecoration(
                       color: theme.cardColor,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.06),
+                        color: theme.dividerColor,
                       ),
                     ),
                     child: Column(
@@ -614,20 +641,20 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Chưa có truyện nào được tải về',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: theme.colorScheme.onSurface,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
+                        Text(
                           'Tải các chương truyện yêu thích để đọc ngoại tuyến bất cứ khi nào không có mạng.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white54,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                             fontSize: 12.5,
                             height: 1.4,
                           ),
@@ -643,8 +670,8 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                               icon: const Icon(Icons.download_rounded, size: 16),
                               label: const Text('Hàng đợi tải'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white70,
-                                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                                foregroundColor: theme.colorScheme.onSurface,
+                                side: BorderSide(color: theme.dividerColor),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
@@ -850,7 +877,7 @@ class _StorageSummaryCard extends StatelessWidget {
                 _MetricChip(
                   icon: Icons.photo_library_outlined,
                   label: 'Bộ nhớ đệm: ${_formatBytes(snapshot.totalCacheBytes)}',
-                  color: snapshot.totalCacheBytes > 0 ? Colors.orange : Colors.blueAccent,
+                  color: snapshot.totalCacheBytes > 0 ? Colors.orange : Theme.of(context).colorScheme.primary,
                 ),
                 _MetricChip(
                   icon: snapshot.brokenCount == 0
@@ -879,25 +906,21 @@ class _StorageSummaryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   if (snapshot.cacheBytes > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _MetricChip(
-                        icon: Icons.image_outlined,
-                        label: 'Reader: ${_formatBytes(snapshot.cacheBytes)}',
-                        color: Colors.orange,
-                      ),
+                    _MetricChip(
+                      icon: Icons.image_outlined,
+                      label: 'Reader: ${_formatBytes(snapshot.cacheBytes)}',
+                      color: Colors.orange,
                     ),
                   if (snapshot.tempCacheBytes > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: _MetricChip(
-                        icon: Icons.folder_open,
-                        label: 'Temp: ${_formatBytes(snapshot.tempCacheBytes)}',
-                        color: Colors.orange,
-                      ),
+                    _MetricChip(
+                      icon: Icons.folder_open,
+                      label: 'Temp: ${_formatBytes(snapshot.tempCacheBytes)}',
+                      color: Colors.orange,
                     ),
                   if (snapshot.externalCacheBytes > 0)
                     _MetricChip(
@@ -1152,4 +1175,43 @@ String _formatDate(DateTime value) {
   if (diff.inHours > 0) return '${diff.inHours} giờ trước';
   if (diff.inMinutes > 0) return '${diff.inMinutes} phút trước';
   return 'Mới đây';
+}
+
+class _LoadingProgressDialog extends StatelessWidget {
+  final String message;
+  const _LoadingProgressDialog({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Dialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Flexible(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

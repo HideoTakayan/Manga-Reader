@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/tenor_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -66,6 +67,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
     }
 
     _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (!mounted) return;
       setState(() {
         _isLoading = true;
         _error = null;
@@ -95,9 +97,12 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.72,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      height: MediaQuery.of(context).size.height * 0.72 + bottomInset,
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomPadding + bottomInset),
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -110,7 +115,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -119,18 +124,25 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.gif_box_rounded, color: Color(0xFFFF7043), size: 24),
-                  SizedBox(width: 8),
+                  const Icon(Icons.gif_box_rounded, color: Color(0xFFFF7043), size: 24),
+                  const SizedBox(width: 8),
                   Text(
                     'Chọn ảnh động (GIF)',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                icon: Icon(
+                  Icons.close_rounded,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -138,15 +150,26 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
           const SizedBox(height: 8),
           TextField(
             controller: _searchController,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: theme.colorScheme.onSurface),
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
               hintText: 'Tìm kiếm GIF trên Tenor...',
-              hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-              prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 20),
+              hintStyle: TextStyle(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                fontSize: 14,
+              ),
+              prefixIcon: Icon(
+                Icons.search,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+                size: 20,
+              ),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear, size: 16, color: Colors.white54),
+                      icon: Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+                      ),
                       onPressed: () {
                         _searchController.clear();
                         _onSearchChanged('');
@@ -169,7 +192,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
           const SizedBox(height: 14),
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.orangeAccent))
+                ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
                 : _error != null
                     ? Center(
                         child: Column(
@@ -177,7 +200,10 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                           children: [
                             const Icon(Icons.wifi_off_rounded, size: 40, color: Colors.redAccent),
                             const SizedBox(height: 10),
-                            Text('Lỗi tải GIF: $_error', style: const TextStyle(color: Colors.white70)),
+                            Text(
+                              'Lỗi tải GIF: $_error',
+                              style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
+                            ),
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
                               onPressed: _loadTrending,
@@ -196,14 +222,21 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: Colors.white.withValues(alpha: 0.05),
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                                   ),
-                                  child: const Icon(Icons.search_off_rounded, size: 40, color: Colors.white38),
+                                  child: Icon(
+                                    Icons.search_off_rounded,
+                                    size: 40,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                                  ),
                                 ),
                                 const SizedBox(height: 12),
-                                const Text(
+                                Text(
                                   'Không tìm thấy GIF phù hợp',
-                                  style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
@@ -220,7 +253,10 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                               final gifUrl = _gifs[index];
                               return InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: () => Navigator.of(context).pop(gifUrl),
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  Navigator.of(context).pop(gifUrl);
+                                },
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
                                   child: CachedNetworkImage(
@@ -228,17 +264,20 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                                     fit: BoxFit.cover,
                                     placeholder: (context, url) => Container(
                                       color: theme.cardColor,
-                                      child: const Center(
+                                      child: Center(
                                         child: SizedBox(
                                           width: 24,
                                           height: 24,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orangeAccent),
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
                                         ),
                                       ),
                                     ),
                                     errorWidget: (context, url, error) => Container(
-                                      color: Colors.white10,
-                                      child: const Icon(Icons.broken_image_rounded, color: Colors.white38),
+                                      color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
+                                      child: Icon(
+                                        Icons.broken_image_rounded,
+                                        color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                                      ),
                                     ),
                                   ),
                                 ),

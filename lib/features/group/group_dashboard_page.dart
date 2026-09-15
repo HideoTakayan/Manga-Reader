@@ -70,8 +70,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         stream: GroupService.instance.currentGroupStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.blueAccent),
+            return Center(
+              child: CircularProgressIndicator(color: theme.colorScheme.primary),
             );
           }
           if (snapshot.hasError) {
@@ -138,7 +138,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
           return RefreshIndicator(
             onRefresh: _loadGroupStats,
-            color: Colors.blueAccent,
+            color: theme.colorScheme.primary,
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
@@ -199,6 +199,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
     int totalLikes,
   ) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
     final isDark = theme.brightness == Brightness.dark;
 
     return SliverAppBar(
@@ -235,7 +236,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 height: 160,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.blueAccent.withValues(alpha: isDark ? 0.15 : 0.08),
+                  color: primary.withValues(alpha: isDark ? 0.15 : 0.08),
                 ),
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
@@ -264,19 +265,19 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                             shape: BoxShape.circle,
                             color: theme.cardColor,
                             border: Border.all(
-                              color: Colors.blueAccent.withValues(alpha: 0.6),
+                              color: primary.withValues(alpha: 0.6),
                               width: 2,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.blueAccent.withValues(alpha: 0.2),
+                                color: primary.withValues(alpha: 0.2),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
                             ],
                           ),
-                          child: const Center(
-                            child: Icon(Icons.groups_rounded, color: Colors.blueAccent, size: 30),
+                          child: Center(
+                            child: Icon(Icons.groups_rounded, color: primary, size: 30),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -363,7 +364,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(child: _buildMetricItem('Truyện', _isLoadingMangas ? '...' : '$mangaCount', Icons.auto_stories_rounded, Colors.blueAccent)),
+                          Expanded(child: _buildMetricItem('Truyện', _isLoadingMangas ? '...' : '$mangaCount', Icons.auto_stories_rounded, primary)),
                           _buildVerticalDivider(),
                           Expanded(child: _buildMetricItem('Thành viên', '${group.members.length}', Icons.people_alt_rounded, Colors.tealAccent)),
                           _buildVerticalDivider(),
@@ -429,15 +430,16 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
   Widget _buildMainActionBanner(BuildContext context, ScanlationGroup group, int mangaCount) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return Container(
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+        border: Border.all(color: primary.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
-            color: Colors.blueAccent.withValues(alpha: 0.08),
+            color: primary.withValues(alpha: 0.08),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -463,11 +465,11 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.15),
+                    color: primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                    border: Border.all(color: primary.withValues(alpha: 0.3)),
                   ),
-                  child: const Icon(Icons.library_books_rounded, color: Colors.blueAccent, size: 24),
+                  child: Icon(Icons.library_books_rounded, color: primary, size: 24),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -517,6 +519,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
   Widget _buildDriveStatusCard(BuildContext context, ScanlationGroup group) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
     final isConnected = _driveAccount != null;
     final email = isConnected ? _driveAccount!.email : null;
 
@@ -591,9 +594,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           const SizedBox(width: 8),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: isConnected ? Colors.white70 : Colors.blueAccent,
+              foregroundColor: isConnected ? Colors.white70 : primary,
               side: BorderSide(
-                color: isConnected ? Colors.white24 : Colors.blueAccent.withValues(alpha: 0.5),
+                color: isConnected ? Colors.white24 : primary.withValues(alpha: 0.5),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: const Size(0, 32),
@@ -652,6 +655,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   }
 
   void _showDriveRequestDialog(ScanlationGroup group) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
     final user = FirebaseAuth.instance.currentUser;
     // ✅ FIX: Khai báo controller ở ngoài để có thể dispose() khi dialog đóng
     final emailController = TextEditingController(text: user?.email ?? '');
@@ -678,7 +683,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
               textInputAction: TextInputAction.done,
               decoration: InputDecoration(
                 labelText: 'Email Google',
-                labelStyle: const TextStyle(color: Colors.blueAccent),
+                labelStyle: TextStyle(color: primary),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -690,8 +695,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: primary,
+              foregroundColor: theme.colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
@@ -846,6 +851,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
   Widget _buildMangaPreviewSection(BuildContext context, ScanlationGroup group, List<CloudManga> mangas) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -869,10 +875,10 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 32),
                 ),
-                icon: const Icon(Icons.chevron_right_rounded, color: Colors.blueAccent, size: 16),
-                label: const Text(
+                icon: Icon(Icons.chevron_right_rounded, color: primary, size: 16),
+                label: Text(
                   'Xem tất cả',
-                  style: TextStyle(color: Colors.blueAccent, fontSize: 12.5, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: primary, fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
               ),
           ],
@@ -899,8 +905,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blueAccent,
-                      side: BorderSide(color: Colors.blueAccent.withValues(alpha: 0.4)),
+                      foregroundColor: primary,
+                      side: BorderSide(color: primary.withValues(alpha: 0.4)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       minimumSize: const Size(0, 32),
@@ -1025,8 +1031,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   // ── 6. MEMBERS SECTION ───────────────────────────────────────────────────
 
   Widget _buildMembersSection(BuildContext context, ScanlationGroup group, String? currentUid, bool isLeader) {
-    return Column(
+    final primary = Theme.of(context).colorScheme.primary;
 
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -1039,12 +1046,12 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withValues(alpha: 0.15),
+                color: primary.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 '${group.members.length}',
-                style: const TextStyle(color: Colors.blueAccent, fontSize: 11.5, fontWeight: FontWeight.bold),
+                style: TextStyle(color: primary, fontSize: 11.5, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1157,6 +1164,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   // ── 8. NO GROUP STATE ────────────────────────────────────────────────────
 
   Widget _buildNoGroupState(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
@@ -1168,9 +1177,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
               height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.blueAccent.withValues(alpha: 0.12),
+                color: primary.withValues(alpha: 0.12),
               ),
-              child: const Icon(Icons.groups_outlined, size: 40, color: Colors.blueAccent),
+              child: Icon(Icons.groups_outlined, size: 40, color: primary),
             ),
             const SizedBox(height: 18),
             const Text(
@@ -1301,10 +1310,10 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                     decoration: BoxDecoration(
-                      color: Colors.blueAccent.withValues(alpha: 0.2),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Text('BẠN', style: TextStyle(color: Colors.blueAccent, fontSize: 8.5, fontWeight: FontWeight.w800)),
+                    child: Text('BẠN', style: TextStyle(color: theme.colorScheme.primary, fontSize: 8.5, fontWeight: FontWeight.w800)),
                   ),
                 ],
               ],

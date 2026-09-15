@@ -29,6 +29,8 @@ class PdfReaderViewState extends State<PdfReaderView> {
   bool _isLoading = true;
   String? _errorMessage;
   PdfDocument? _document;
+  // BUG-08 fix: track current page for vertical PDF to sync scrubber
+  int _lastReportedPage = -1;
 
   @override
   void initState() {
@@ -47,6 +49,9 @@ class PdfReaderViewState extends State<PdfReaderView> {
         _document = doc;
         widget.onDocumentLoaded?.call(doc.pagesCount);
         _initControllers(doc);
+      } else {
+        // Prevent native memory leak if the widget was updated/disposed before loading finished
+        doc.close();
       }
     }).catchError((e) {
       if (mounted && activePath == widget.pdfPath) {
@@ -83,6 +88,8 @@ class PdfReaderViewState extends State<PdfReaderView> {
       _pdfController?.dispose();
       _pdfPinchController = null;
       _pdfController = null;
+      _document?.close();
+      _document = null;
       _isLoading = true;
       _initPdf();
     } else if (oldWidget.scrollDirection != widget.scrollDirection) {
@@ -111,7 +118,11 @@ class PdfReaderViewState extends State<PdfReaderView> {
       final targetPage = (widget.initialPage + 1).clamp(1, pageCount > 0 ? pageCount : 1);
       if (widget.scrollDirection == Axis.vertical) {
         if (_pdfPinchController != null && _pdfPinchController!.page != targetPage) {
-          _pdfPinchController!.jumpToPage(targetPage);
+          _pdfPinchController!.animateToPage(
+            pageNumber: targetPage,
+            duration: Duration.zero,
+            curve: Curves.linear,
+          );
         }
       } else {
         if (_pdfController != null && _pdfController!.page != targetPage) {
@@ -125,32 +136,111 @@ class PdfReaderViewState extends State<PdfReaderView> {
   void dispose() {
     _pdfPinchController?.dispose();
     _pdfController?.dispose();
+    _document?.close();
     super.dispose();
   }
 
+  void jumpToPage(int pageIndex) {
+    if (_isLoading || _document == null) return;
+    final pageCount = _document?.pagesCount ?? 1;
+    final targetPage = (pageIndex + 1).clamp(1, pageCount > 0 ? pageCount : 1);
+    if (widget.scrollDirection == Axis.vertical) {
+      if (_pdfPinchController != null) {
+        _pdfPinchController!.animateToPage(
+          pageNumber: targetPage,
+          duration: Duration.zero,
+          curve: Curves.linear,
+        );
+      }
+    } else {
+      if (_pdfController != null) {
+        _pdfController!.jumpToPage(targetPage);
+      }
+    }
+  }
+
+  void nextPage() {
+    if (widget.scrollDirection == Axis.horizontal && _pdfController != null) {
+      try {
+        _pdfController!.nextPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } catch (_) {}
+    } else if (widget.scrollDirection == Axis.vertical && _pdfPinchController != null) {
+      try {
+        _pdfPinchController!.nextPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } catch (_) {}
+    }
+  }
+
+  void previousPage() {
+    if (widget.scrollDirection == Axis.horizontal && _pdfController != null) {
+      try {
+        _pdfController!.previousPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } catch (_) {}
+    } else if (widget.scrollDirection == Axis.vertical && _pdfPinchController != null) {
+      try {
+        _pdfPinchController!.previousPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } catch (_) {}
+    }
+  }
+
+  // BUG-01 fix: replaced broken matrix-hack with proper page-based scroll.
+  // PdfControllerPinch manages its own internal pan/zoom state — mutating
+  // its transformation matrix directly was unreliable when zoomed in.
   bool scrollBy(double deltaPixels) {
     if (widget.scrollDirection == Axis.vertical && _pdfPinchController != null) {
-      if (_pdfPinchController!.documentProgress >= 0.999) {
+      try {
+        final progress = _pdfPinchController!.documentProgress;
+        if (deltaPixels > 0 && progress >= 0.999) return false;
+        if (deltaPixels < 0 && progress <= 0.001) return false;
+        if (deltaPixels > 0) {
+          _pdfPinchController!.nextPage(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          );
+        } else {
+          _pdfPinchController!.previousPage(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          );
+        }
+        return true;
+      } catch (_) {
         return false;
       }
-      final matrix = _pdfPinchController!.value.clone();
-      final currentY = matrix.row1[3];
-      matrix.setTranslationRaw(matrix.row0[3], currentY - deltaPixels, matrix.row2[3]);
-      _pdfPinchController!.value = matrix;
-      return true;
     }
     return false;
   }
 
-  void autoScrollNext() {
-    if (widget.scrollDirection == Axis.horizontal) {
-      if (_pdfController != null) {
+  bool autoScrollNext() {
+    if (widget.scrollDirection == Axis.horizontal && _pdfController != null) {
+      final currentPage = _pdfController!.page;
+      final pageCount = _document?.pagesCount ?? 1;
+      if (currentPage >= pageCount) {
+        return false;
+      }
+      try {
         _pdfController!.nextPage(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeIn,
         );
+        return true;
+      } catch (_) {
+        return false;
       }
     }
+    return false;
   }
 
   @override
@@ -197,50 +287,58 @@ class PdfReaderViewState extends State<PdfReaderView> {
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onTap: widget.onToggleControls,
       child: widget.scrollDirection == Axis.vertical
-          ? PdfViewPinch(
-              controller: _pdfPinchController!,
-              scrollDirection: Axis.vertical,
-              onPageChanged: (page) {
-                if (widget.onPageChanged != null) {
-                  widget.onPageChanged!(page - 1);
-                }
-              },
-              builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
-                options: const DefaultBuilderOptions(),
-                documentLoaderBuilder: (_) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                pageLoaderBuilder: (_) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                errorBuilder: (_, error) => Center(
-                  child: Text('Lỗi: $error', style: const TextStyle(color: Colors.red)),
-                ),
-              ),
-            )
-          : PdfView(
-              controller: _pdfController!,
-              scrollDirection: Axis.horizontal,
-              onPageChanged: (page) {
-                if (widget.onPageChanged != null) {
-                  widget.onPageChanged!(page - 1);
-                }
-              },
-              builders: PdfViewBuilders<DefaultBuilderOptions>(
-                options: const DefaultBuilderOptions(),
-                documentLoaderBuilder: (_) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                pageLoaderBuilder: (_) => const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-                errorBuilder: (_, error) => Center(
-                  child: Text('Lỗi: $error', style: const TextStyle(color: Colors.red)),
-                ),
-              ),
-            ),
+          ? (_pdfPinchController != null
+              ? PdfViewPinch(
+                  controller: _pdfPinchController!,
+                  scrollDirection: Axis.vertical,
+                  onPageChanged: (page) {
+                    // BUG-08 fix: deduplicate onPageChanged to prevent double-fires
+                    final zeroPage = page - 1;
+                    if (_lastReportedPage != zeroPage) {
+                      _lastReportedPage = zeroPage;
+                      widget.onPageChanged?.call(zeroPage);
+                    }
+                  },
+                  builders: PdfViewPinchBuilders<DefaultBuilderOptions>(
+                    options: const DefaultBuilderOptions(),
+                    documentLoaderBuilder: (_) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    pageLoaderBuilder: (_) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorBuilder: (_, error) => Center(
+                      child: Text('Lỗi: $error', style: const TextStyle(color: Colors.red)),
+                    ),
+                  ),
+                )
+              : const Center(child: CircularProgressIndicator(color: Colors.white)))
+          : (_pdfController != null
+              ? PdfView(
+                  controller: _pdfController!,
+                  scrollDirection: Axis.horizontal,
+                  onPageChanged: (page) {
+                    if (widget.onPageChanged != null) {
+                      widget.onPageChanged!(page - 1);
+                    }
+                  },
+                  builders: PdfViewBuilders<DefaultBuilderOptions>(
+                    options: const DefaultBuilderOptions(),
+                    documentLoaderBuilder: (_) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    pageLoaderBuilder: (_) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorBuilder: (_, error) => Center(
+                      child: Text('Lỗi: $error', style: const TextStyle(color: Colors.red)),
+                    ),
+                  ),
+                )
+              : const Center(child: CircularProgressIndicator(color: Colors.white))),
     );
   }
 }

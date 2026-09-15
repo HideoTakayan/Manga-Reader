@@ -104,15 +104,13 @@ class DownloadCache {
     try {
       debugPrint('🔄 DownloadCache: Refreshing cache...');
 
-      // Xóa bộ nhớ đệm cũ
-      _cache.clear();
-
       // Lấy tất cả tải xuống từ cơ sở dữ liệu
       final downloads = await DatabaseHelper.instance.getAllDownloads();
 
       // Xác thực từng tải xuống (kiểm tra xem tệp có tồn tại không)
       final validDownloads = <Map<String, dynamic>>[];
       final invalidChapterIds = <String>[];
+      final newCache = <String, Set<String>>{};
 
       for (final download in downloads) {
         final chapterId = _readString(download, 'chapterId');
@@ -128,14 +126,19 @@ class DownloadCache {
         if (await file.exists()) {
           validDownloads.add(download);
 
-          // Thêm vào bộ nhớ đệm
-          _cache.putIfAbsent(mangaId, () => {});
-          _cache[mangaId]!.add(chapterId);
+          // Thêm vào bộ nhớ đệm tạm thời
+          newCache.putIfAbsent(mangaId, () => {});
+          newCache[mangaId]!.add(chapterId);
         } else {
           // Tệp không tồn tại -> không hợp lệ
           _markInvalid(invalidChapterIds, chapterId);
         }
       }
+
+      // Cập nhật bộ nhớ đệm nguyên tử (atomic swap) để tránh UI bị chớp (flicker)
+      _cache
+        ..clear()
+        ..addAll(newCache);
 
       // Dọn dẹp các mục không hợp lệ từ cơ sở dữ liệu
       if (invalidChapterIds.isNotEmpty) {
@@ -241,7 +244,9 @@ class DownloadCache {
   }
 
   void _notifyChanges() {
-    _changesController.add(null);
+    if (!_changesController.isClosed) {
+      _changesController.add(null);
+    }
   }
 
   String _readString(Map<String, dynamic> data, String key) {

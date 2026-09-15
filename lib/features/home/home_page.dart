@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:ui';
 
@@ -197,8 +198,8 @@ class _HomeContentState extends State<_HomeContent>
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(ctx).colorScheme.primary,
+                foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               ),
@@ -394,7 +395,7 @@ class _HomeContentState extends State<_HomeContent>
   Widget build(BuildContext context) {
     return RefreshIndicator(
       onRefresh: _refresh,
-      color: Colors.redAccent,
+      color: Theme.of(context).colorScheme.primary,
       backgroundColor: Theme.of(context).cardColor,
       // StreamBuilder ngoài cùng: lắng nghe trạng thái đăng nhập Drive OAuth.
       // Dùng để kiểm tra authSnapshot.data == null → hiện gợi ý "cần đăng nhập Admin"
@@ -526,8 +527,8 @@ class _HomeContentState extends State<_HomeContent>
                               const SizedBox(height: 20),
                               ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blueAccent,
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 ),
@@ -579,26 +580,33 @@ class _HomeContentState extends State<_HomeContent>
                     ),
                     elevation: 0,
                     title: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.auto_stories,
-                          color: Colors.redAccent,
-                          size: 30,
+                          color: Theme.of(context).colorScheme.primary,
+                          size: 28,
                         ),
                         const SizedBox(width: 8),
                         // ShaderMask: tô màu gradient cho text "MangaReader"
-                        ShaderMask(
-                          shaderCallback: (bounds) => const LinearGradient(
-                            colors: [Colors.redAccent, Colors.orangeAccent],
-                          ).createShader(bounds),
-                          child: Text(
-                            'MangaReader',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 20,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.titleLarge?.color,
+                        Flexible(
+                          child: ShaderMask(
+                            shaderCallback: (bounds) => LinearGradient(
+                              colors: [
+                                Theme.of(context).colorScheme.primary,
+                                Theme.of(context).colorScheme.secondary,
+                              ],
+                            ).createShader(bounds),
+                            child: Text(
+                              'MangaReader',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.titleLarge?.color,
+                              ),
                             ),
                           ),
                         ),
@@ -616,6 +624,7 @@ class _HomeContentState extends State<_HomeContent>
                             alignment: Alignment.center,
                             children: [
                               IconButton(
+                                visualDensity: VisualDensity.compact,
                                 tooltip: 'Thông báo',
                                 icon: Icon(
                                   Icons.notifications_none,
@@ -626,8 +635,8 @@ class _HomeContentState extends State<_HomeContent>
                               // Chấm đỏ nhỏ — Positioned chồng lên icon khi có unread
                               if (hasUnread)
                                 Positioned(
-                                  right: 12,
-                                  top: 12,
+                                  right: 8,
+                                  top: 8,
                                   child: Container(
                                     width: 10,
                                     height: 10,
@@ -642,10 +651,11 @@ class _HomeContentState extends State<_HomeContent>
                         },
                       ),
                       IconButton(
+                        visualDensity: VisualDensity.compact,
                         tooltip: 'Khám phá ngẫu nhiên',
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.casino_rounded,
-                          color: Colors.purpleAccent,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         onPressed: () {
                           RandomMangaDialog.show(
@@ -655,17 +665,63 @@ class _HomeContentState extends State<_HomeContent>
                           );
                         },
                       ),
-                      IconButton(
-                        tooltip: _selectedContentType.isManga
-                            ? 'Chuyển sang Novel'
-                            : 'Chuyển sang Truyện tranh',
-                        icon: Icon(
-                          Icons.swap_vert,
-                          color: Theme.of(context).iconTheme.color,
+                      Center(
+                        child: InkWell(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            _toggleContentType();
+                          },
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _selectedContentType.isManga
+                                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+                                  : Colors.amber.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _selectedContentType.isManga
+                                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)
+                                    : Colors.amber.withValues(alpha: 0.4),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _selectedContentType.isManga
+                                      ? Icons.auto_stories_rounded
+                                      : Icons.menu_book_rounded,
+                                  size: 13,
+                                  color: _selectedContentType.isManga
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Colors.amber,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  _selectedContentType.isManga
+                                      ? 'Manga'
+                                      : 'Novel',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: _selectedContentType.isManga
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.amber,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        onPressed: _toggleContentType,
                       ),
                       IconButton(
+                        visualDensity: VisualDensity.compact,
                         tooltip: 'Tìm kiếm',
                         icon: Icon(
                           Icons.search,
@@ -675,6 +731,7 @@ class _HomeContentState extends State<_HomeContent>
                           '/search-global?type=${_selectedContentType.name}',
                         ),
                       ),
+                      const SizedBox(width: 4),
                     ],
                   ),
 
@@ -719,6 +776,7 @@ class _HomeContentState extends State<_HomeContent>
                         : '🏆 Top Trending',
                   ),
                   SliverToBoxAdapter(child: _RankList(mangas: trending)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 36)),
                 ],
               );
             },
@@ -742,12 +800,25 @@ class _SectionTitle extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 18,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -934,13 +1005,13 @@ class _FollowButtonState extends State<_FollowButton> {
           child: InkWell(
             onTap: _isToggling ? null : () => _toggleFollow(isFollowing),
             child: SizedBox(
-              width: 30,
-              height: 30,
+              width: 44,
+              height: 44,
               child: Center(
                 child: _isToggling
                     ? const SizedBox(
-                        width: 14,
-                        height: 14,
+                        width: 16,
+                        height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           color: Colors.white,
@@ -948,7 +1019,9 @@ class _FollowButtonState extends State<_FollowButton> {
                       )
                     : Icon(
                         isFollowing ? Icons.favorite : Icons.favorite_border,
-                        color: isFollowing ? Colors.redAccent : Colors.white,
+                        color: isFollowing
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white,
                         size: 18,
                       ),
               ),
@@ -1074,6 +1147,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
     _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (!mounted) return;
       if (widget.mangas.isEmpty) return;
+      if (!_controller.hasClients) return;
       final nextPage = (_currentPage + 1) % widget.mangas.length;
       _controller.animateToPage(
         nextPage,
@@ -1101,7 +1175,10 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
           child: PageView.builder(
             controller: _controller,
             itemCount: widget.mangas.length,
-            onPageChanged: (i) => setState(() => _currentPage = i),
+            onPageChanged: (i) {
+              setState(() => _currentPage = i);
+              _startTimer();
+            },
             itemBuilder: (context, index) {
               final c = widget.mangas[index];
               return GestureDetector(
@@ -1200,7 +1277,7 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
               height: 6,
               decoration: BoxDecoration(
                 color: _currentPage == i
-                    ? Colors.redAccent
+                    ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).dividerColor,
                 borderRadius: BorderRadius.circular(3),
               ),

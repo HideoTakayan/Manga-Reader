@@ -74,6 +74,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     LibrarySortMode mode,
     StateSetter setModalState,
   ) async {
+    HapticFeedback.selectionClick();
     setState(() => _sortMode = mode);
     setModalState(() {});
     final prefs = await SharedPreferences.getInstance();
@@ -84,6 +85,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     LibraryViewMode mode,
     StateSetter setModalState,
   ) async {
+    HapticFeedback.selectionClick();
     setState(() => _viewMode = mode);
     setModalState(() {});
     final prefs = await SharedPreferences.getInstance();
@@ -212,6 +214,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return ClipRRect(
@@ -219,9 +222,13 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+              ),
               color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
               child: StatefulBuilder(
                 builder: (context, setModalState) {
+                  final primaryColor = Theme.of(context).colorScheme.primary;
                   return DefaultTabController(
                     length: 3,
                     child: Column(
@@ -239,19 +246,18 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const TabBar(
-                          indicatorColor: Colors.redAccent,
+                        TabBar(
+                          indicatorColor: primaryColor,
                           labelColor: Colors.white,
                           unselectedLabelColor: Colors.grey,
-                          tabs: [
+                          tabs: const [
                             Tab(text: 'Bộ lọc'),
                             Tab(text: 'Sắp xếp'),
                             Tab(text: 'Hiển thị'),
                           ],
                         ),
-                  SizedBox(
-                    height: 300,
-                    child: TabBarView(
+                        Expanded(
+                          child: TabBarView(
                       children: [
                         // Tab Bộ lọc: checkbox trạng thái
                         ListView(
@@ -301,7 +307,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                   return FilterChip(
                                     label: Text(tag),
                                     selected: selected,
-                                    selectedColor: Colors.redAccent,
+                                    selectedColor: primaryColor,
                                     checkmarkColor: Colors.white,
                                     labelStyle: TextStyle(
                                       color: selected
@@ -335,7 +341,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             CheckboxListTile(
                               dense: true,
                               contentPadding: EdgeInsets.zero,
-                              activeColor: Colors.redAccent,
+                              activeColor: primaryColor,
                               title: const Text(
                                 'Chỉ truyện đã tải về (Offline)',
                                 style: TextStyle(color: Colors.white, fontSize: 13),
@@ -432,7 +438,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     return CheckboxListTile(
       title: Text(title, style: const TextStyle(color: Colors.white)),
       value: isSelected,
-      activeColor: Colors.redAccent,
+      activeColor: Theme.of(context).colorScheme.primary,
       checkColor: Colors.white,
       onChanged: (val) {
         setState(() {
@@ -454,11 +460,12 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     StateSetter setModalState,
   ) {
     final selected = _sortMode == mode;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     return ListTile(
       title: Text(title, style: const TextStyle(color: Colors.white)),
-      leading: Icon(icon, color: selected ? Colors.redAccent : Colors.white70),
+      leading: Icon(icon, color: selected ? primaryColor : Colors.white70),
       trailing: selected
-          ? const Icon(Icons.check, color: Colors.redAccent)
+          ? Icon(Icons.check, color: primaryColor)
           : null,
       onTap: () => _setSortMode(mode, setModalState),
     );
@@ -471,11 +478,12 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     StateSetter setModalState,
   ) {
     final selected = _viewMode == mode;
+    final primaryColor = Theme.of(context).colorScheme.primary;
     return ListTile(
       title: Text(title, style: const TextStyle(color: Colors.white)),
-      leading: Icon(icon, color: selected ? Colors.redAccent : Colors.white70),
+      leading: Icon(icon, color: selected ? primaryColor : Colors.white70),
       trailing: selected
-          ? const Icon(Icons.check, color: Colors.redAccent)
+          ? Icon(Icons.check, color: primaryColor)
           : null,
       onTap: () => _setViewMode(mode, setModalState),
     );
@@ -492,7 +500,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
         style: const TextStyle(color: Colors.white),
       ),
       value: isSelected,
-      activeColor: Colors.redAccent,
+      activeColor: Theme.of(context).colorScheme.primary,
       checkColor: Colors.white,
       onChanged: (val) {
         setState(() {
@@ -609,8 +617,35 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (_) => const Center(
-                    child: CircularProgressIndicator(color: Colors.redAccent),
+                  builder: (_) => PopScope(
+                    canPop: false,
+                    child: Dialog(
+                      backgroundColor: Theme.of(context).cardColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 20),
+                            const Flexible(
+                              child: Text(
+                                'Đang xóa dữ liệu...',
+                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 );
 
@@ -712,6 +747,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     // StreamBuilder ngoài cùng: lắng nghe danh sách categories từ Firestore
     // Mỗi category → 1 Tab → 1 CategoryMangaList bên trong
     return StreamBuilder<List<String>>(
+      initialData: LibraryService.instance.currentCategories.isNotEmpty
+          ? LibraryService.instance.currentCategories
+          : null,
       stream: _categoriesStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
@@ -814,143 +852,158 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                           },
                         ),
                       ]
-                    : [
-                        IconButton(
-                          icon: const Icon(Icons.sync_outlined),
-                          tooltip: 'Quét truyện từ máy',
-                          onPressed: () async {
-                            final count = await LocalScanService.instance
-                                .scanAndImport();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Đã tìm thấy $count truyện từ bộ nhớ máy',
+                    : (_isSearching
+                        ? [
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: 'Đóng tìm kiếm',
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                setState(() {
+                                  _isSearching = false;
+                                  _searchQuery = '';
+                                  _searchController.clear();
+                                });
+                              },
+                            ),
+                          ]
+                        : [
+                            IconButton(
+                              icon: const Icon(Icons.sync_outlined),
+                              tooltip: 'Quét truyện từ máy',
+                              onPressed: () async {
+                                final count = await LocalScanService.instance
+                                    .scanAndImport();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Đã tìm thấy $count truyện từ bộ nhớ máy',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.search),
+                              tooltip: 'Tìm kiếm truyện',
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _isSearching = true;
+                                });
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.filter_list),
+                              tooltip: 'Bộ lọc & sắp xếp',
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                _showFilterBottomSheet();
+                              },
+                            ),
+                            // Menu 3 chấm — quản lý danh mục + nhập truyện
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert),
+                              color: Theme.of(context).cardColor,
+                              onSelected: (val) async {
+                                if (val == 'categories') {
+                                  context.push('/settings/categories');
+                                } else if (val == 'import_epub') {
+                                  _pickEpub();
+                                } else if (val == 'import_comic') {
+                                  _pickComic();
+                                } else if (val == 'scan_all') {
+                                  final count = await LocalScanService.instance.scanAndImport();
+                                  LibraryService.instance.notifyMappingChanged();
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Đã quét và đồng bộ $count truyện cục bộ'),
+                                      backgroundColor: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  );
+                                  setState(() {});
+                                }
+                              },
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(
+                                  value: 'import_epub',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.menu_book_outlined,
+                                        color: Colors.amber,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Nhập truyện chữ (EPUB)',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(_isSearching ? Icons.close : Icons.search),
-                          onPressed: () {
-                            setState(() {
-                              if (_isSearching) {
-                                _isSearching = false;
-                                _searchQuery = '';
-                                _searchController.clear();
-                              } else {
-                                _isSearching = true;
-                              }
-                            });
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.filter_list),
-                          onPressed: _showFilterBottomSheet,
-                        ),
-                        // Menu 3 chấm — quản lý danh mục + nhập truyện
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          color: Theme.of(context).cardColor,
-                          onSelected: (val) async {
-                            if (val == 'categories') {
-                              context.push('/settings/categories');
-                            } else if (val == 'import_epub') {
-                              _pickEpub();
-                            } else if (val == 'import_comic') {
-                              _pickComic();
-                            } else if (val == 'scan_all') {
-                              final count = await LocalScanService.instance.scanAndImport();
-                              LibraryService.instance.notifyMappingChanged();
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Đã quét và đồng bộ $count truyện cục bộ'),
-                                  backgroundColor: Colors.blueAccent,
+                                PopupMenuItem(
+                                  value: 'import_comic',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.auto_stories_outlined,
+                                        color: Theme.of(context).colorScheme.primary,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Nhập truyện tranh (CBZ, ZIP, PDF)',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              );
-                              setState(() {});
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                              value: 'import_epub',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.menu_book_outlined,
-                                    color: Colors.blueAccent,
-                                    size: 20,
+                                const PopupMenuItem(
+                                  value: 'scan_all',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.refresh_rounded,
+                                        color: Colors.tealAccent,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Quét lại bộ nhớ máy',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Nhập truyện chữ (EPUB)',
-                                    style: TextStyle(color: Colors.white),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'categories',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.folder_outlined,
+                                        color: Colors.white70,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 12),
+                                      Text(
+                                        'Quản lý danh mục',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                            const PopupMenuItem(
-                              value: 'import_comic',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.auto_stories_outlined,
-                                    color: Colors.orangeAccent,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Nhập truyện tranh (CBZ, ZIP, PDF)',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'scan_all',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.refresh_rounded,
-                                    color: Colors.tealAccent,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Quét lại bộ nhớ máy',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'categories',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.folder_outlined,
-                                    color: Colors.white70,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 12),
-                                  Text(
-                                    'Quản lý danh mục',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ]),
                 bottom: TabBar(
                   isScrollable: true,
                   indicatorSize: TabBarIndicatorSize.tab,
                   indicator: BoxDecoration(
-                    color: Colors.redAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     borderRadius: BorderRadius.circular(25),
                   ),
                   dividerColor: Colors.transparent,
@@ -1014,6 +1067,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                           children: [
                             // Nút di chuyển sang danh mục khác
                             IconButton(
+                              tooltip: 'Chuyển danh mục',
                               icon: const Icon(
                                 Icons.folder_outlined,
                                 color: Colors.white,
@@ -1038,6 +1092,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             ),
                             // Nút tải tất cả chapter của các truyện đã chọn
                             IconButton(
+                              tooltip: 'Tải các truyện đã chọn',
                               icon: const Icon(
                                 Icons.download_outlined,
                                 color: Colors.white,
@@ -1069,8 +1124,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                       ),
                                       ElevatedButton(
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green,
-                                          foregroundColor: Colors.white,
+                                          backgroundColor: Theme.of(ctx).colorScheme.primary,
+                                          foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                         ),
                                         onPressed: () =>
@@ -1086,9 +1141,34 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 showDialog(
                                   context: context,
                                   barrierDismissible: false,
-                                  builder: (_) => const Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.green,
+                                  builder: (_) => PopScope(
+                                    canPop: false,
+                                    child: Dialog(
+                                      backgroundColor: Theme.of(context).cardColor,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                color: Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 20),
+                                            const Flexible(
+                                              child: Text(
+                                                'Đang thêm vào hàng đợi tải...',
+                                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 );
@@ -1176,6 +1256,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                   ctx,
                                 );
                                 return IconButton(
+                                  tooltip: 'Xóa khỏi thư viện',
                                   icon: const Icon(
                                     Icons.delete_outline,
                                     color: Colors.redAccent,

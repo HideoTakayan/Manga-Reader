@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:go_router/go_router.dart';
-import 'edit_categories_page.dart';
 import 'following_page.dart';
 import 'history_page.dart';
 
@@ -28,13 +27,8 @@ class LibraryPage extends StatelessWidget {
           actions: [
             IconButton(
               tooltip: 'Quản lý danh mục',
-              icon: const Icon(Icons.category_outlined, color: Colors.white70),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const EditCategoriesPage()),
-                );
-              },
+              icon: Icon(Icons.category_outlined, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
+              onPressed: () => context.push('/settings/categories'),
             ),
             IconButton(
               tooltip: 'Thống kê đọc',
@@ -42,13 +36,13 @@ class LibraryPage extends StatelessWidget {
               onPressed: () => context.push('/analytics'),
             ),
           ],
-          bottom: const TabBar(
-            indicatorColor: Colors.redAccent,
+          bottom: TabBar(
+            indicatorColor: Theme.of(context).colorScheme.primary,
             indicatorWeight: 3,
-            labelColor: Colors.white,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            unselectedLabelColor: Colors.white54,
-            tabs: [
+            labelColor: Theme.of(context).colorScheme.primary,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+            tabs: const [
               Tab(text: 'Đang theo dõi', icon: Icon(Icons.favorite)),
               Tab(text: 'Lịch sử', icon: Icon(Icons.history)),
             ],

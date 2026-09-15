@@ -259,30 +259,30 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: Colors.purpleAccent.withValues(alpha: 0.12),
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.article_outlined,
                               size: 48,
-                              color: Colors.purpleAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Không tìm thấy bài viết',
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'Bài viết có thể đã bị tác giả xóa hoặc đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white54,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                               fontSize: 13,
                               height: 1.4,
                             ),

@@ -210,6 +210,8 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final selectedCount = _selectedChapterIds.length;
     final isNovel = widget.manga.contentType == MangaContentType.novel;
     final estimatedMb = (selectedCount * (isNovel ? 0.6 : 14.5)).toStringAsFixed(1);
@@ -232,7 +234,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -244,20 +246,20 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.15),
+                          color: primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.download_for_offline, color: Colors.orange),
+                        child: Icon(Icons.download_for_offline, color: primary),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Tải chương hàng loạt',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: theme.colorScheme.onSurface,
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -265,14 +267,20 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                             const SizedBox(height: 2),
                             Text(
                               'Tổng: ${widget.chapters.length} chap • Chưa tải: ${_undownloadedChapters.length} chap',
-                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
                       ),
                       IconButton(
                         tooltip: 'Đóng',
-                        icon: const Icon(Icons.close, color: Colors.white54),
+                        icon: Icon(
+                          Icons.close,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -282,9 +290,9 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                 // Tabs
                 TabBar(
                   controller: _tabController,
-                  indicatorColor: Colors.orange,
-                  labelColor: Colors.orange,
-                  unselectedLabelColor: Colors.white54,
+                  indicatorColor: primary,
+                  labelColor: primary,
+                  unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                   tabs: const [
                     Tab(text: 'Tải nhanh'),
                     Tab(text: 'Theo khoảng'),
@@ -306,10 +314,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
 
                 // Bottom Action Bar
                 Container(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+                  padding: EdgeInsets.fromLTRB(20, 14, 20, 16 + bottomPadding),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                    color: theme.colorScheme.surface,
+                    border: Border(top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.15))),
                   ),
                   child: Row(
                     children: [
@@ -320,8 +328,8 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                           children: [
                             Text(
                               'Đã chọn: $selectedCount chương',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
                               ),
@@ -329,7 +337,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                             const SizedBox(height: 2),
                             Text(
                               'Ước tính: ~$estimatedMb MB dung lượng',
-                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -339,10 +350,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                         icon: const Icon(Icons.download),
                         label: const Text('Bắt đầu tải', style: TextStyle(fontWeight: FontWeight.bold)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
+                          backgroundColor: primary,
                           foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.white12,
-                          disabledForegroundColor: Colors.white38,
+                          disabledBackgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
+                          disabledForegroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
@@ -380,25 +391,25 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
         ),
         const SizedBox(height: 12),
         _buildPresetTile(
-          icon: Icons.offline_pin,
-          title: '25 chương tiếp theo',
-          subtitle: 'Tải gói 25 chap đọc thả ga',
-          onTap: () => _selectNextChapters(25),
-          isSelected: _selectedChapterIds.length == 25,
+          icon: Icons.auto_stories,
+          title: '20 chương tiếp theo',
+          subtitle: 'Gói đọc thỏa thích không lo mất mạng',
+          onTap: () => _selectNextChapters(20),
+          isSelected: _selectedChapterIds.length == 20,
         ),
         const SizedBox(height: 12),
         _buildPresetTile(
           icon: Icons.mark_chat_unread_outlined,
-          title: 'Chỉ các chương chưa đọc',
-          subtitle: 'Tải $unreadUndownloadedCount chap chưa đọc và chưa tải về máy',
+          title: 'Tất cả chương chưa đọc ($unreadUndownloadedCount chap)',
+          subtitle: 'Chỉ tải những chương bạn chưa từng đọc',
           onTap: _selectUnreadUndownloaded,
           isSelected: _selectedChapterIds.length == unreadUndownloadedCount && unreadUndownloadedCount > 0,
         ),
         const SizedBox(height: 12),
         _buildPresetTile(
-          icon: Icons.all_inclusive,
-          title: 'Tất cả chương chưa tải',
-          subtitle: 'Tải toàn bộ ${_undownloadedChapters.length} chap còn lại',
+          icon: Icons.cloud_download_outlined,
+          title: 'Tất cả chương chưa tải (${_undownloadedChapters.length} chap)',
+          subtitle: 'Tải trọn bộ các chương chưa có trong máy',
           onTap: _selectAllUndownloaded,
           isSelected: _selectedChapterIds.length == _undownloadedChapters.length && _undownloadedChapters.isNotEmpty,
         ),
@@ -413,6 +424,9 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
     required VoidCallback onTap,
     required bool isSelected,
   }) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -424,10 +438,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.orange.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+            color: isSelected ? primary.withValues(alpha: 0.15) : theme.colorScheme.onSurface.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isSelected ? Colors.orange : Colors.white.withValues(alpha: 0.1),
+              color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -436,10 +450,10 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.orange : Colors.white.withValues(alpha: 0.1),
+                  color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: Colors.white, size: 20),
+                child: Icon(icon, color: isSelected ? Colors.white : theme.colorScheme.onSurface, size: 20),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -449,19 +463,19 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                     Text(
                       title,
                       style: TextStyle(
-                        color: isSelected ? Colors.orange : Colors.white,
+                        color: isSelected ? primary : theme.colorScheme.onSurface,
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(subtitle, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                    Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12)),
                   ],
                 ),
               ),
               Icon(
                 isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                color: isSelected ? Colors.orange : Colors.white30,
+                color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
               ),
             ],
           ),
@@ -480,33 +494,41 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.05),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.file_download_off_rounded,
                 size: 40,
-                color: Colors.white38,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Không có chương nào để tải',
-              style: TextStyle(color: Colors.white60, fontSize: 14),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: 14,
+              ),
             ),
           ],
         ),
       );
     }
     final maxIdx = widget.chapters.length - 1;
+    final theme = Theme.of(context);
 
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Chọn phạm vi chương cần tải:',
-            style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 20),
           Row(
@@ -515,21 +537,30 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Từ chương', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      Text(
+                        'Từ chương',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       DropdownButton<int>(
                         value: _rangeStartIndex,
                         isExpanded: true,
                         dropdownColor: Theme.of(context).cardColor,
                         underline: const SizedBox(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                        ),
                         items: List.generate(
                           widget.chapters.length,
                           (i) => DropdownMenuItem(
@@ -558,21 +589,30 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Đến chương', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                      Text(
+                        'Đến chương',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
                       const SizedBox(height: 4),
                       DropdownButton<int>(
                         value: _rangeEndIndex.clamp(_rangeStartIndex, maxIdx),
                         isExpanded: true,
                         dropdownColor: Theme.of(context).cardColor,
                         underline: const SizedBox(),
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                        ),
                         items: List.generate(
                           widget.chapters.length - _rangeStartIndex,
                           (offset) {
@@ -603,8 +643,8 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
               icon: const Icon(Icons.check),
               label: const Text('Áp dụng khoảng này', style: TextStyle(fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white12,
-                foregroundColor: Colors.white,
+                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.15),
+                foregroundColor: theme.colorScheme.primary,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
@@ -615,6 +655,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   }
 
   Widget _buildCheckboxListTab() {
+    final theme = Theme.of(context);
     final displayedChapters = _chapterSearchQuery.isEmpty
         ? widget.chapters
         : widget.chapters.where((c) {
@@ -630,21 +671,32 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
           child: Container(
             height: 38,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
+              border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
             ),
             child: TextField(
               controller: _chapterSearchController,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Lọc nhanh tên hoặc số chương...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white38),
+                hintStyle: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  fontSize: 12,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 18,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
                 suffixIcon: _chapterSearchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 14, color: Colors.white54),
+                        icon: Icon(
+                          Icons.clear,
+                          size: 14,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                         onPressed: () {
                           _chapterSearchController.clear();
                           setState(() => _chapterSearchQuery = '');
@@ -706,7 +758,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
             ],
           ),
         ),
-        const Divider(height: 1, color: Colors.white12),
+        Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.15)),
         Expanded(
           child: displayedChapters.isEmpty
               ? Center(
@@ -717,25 +769,28 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.search_off_rounded,
                           size: 32,
-                          color: Colors.white38,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Text(
+                      Text(
                         'Không tìm thấy chương phù hợp',
-                        style: TextStyle(color: Colors.white38, fontSize: 13),
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 )
               : ListView.separated(
                   itemCount: displayedChapters.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
+                  separatorBuilder: (_, __) => Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.1)),
                   itemBuilder: (context, index) {
                     final chapter = displayedChapters[index];
                     final isDownloaded = _downloadedChapterIds.contains(chapter.id);
@@ -744,17 +799,24 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                     return CheckboxListTile(
                       value: isDownloaded ? true : isSelected,
                       enabled: !isDownloaded,
-                      activeColor: isDownloaded ? Colors.green : Colors.orange,
+                      activeColor: isDownloaded ? Colors.green : Theme.of(context).colorScheme.primary,
                       title: Text(
                         chapter.title,
                         style: TextStyle(
-                          color: isDownloaded ? Colors.white38 : Colors.white,
+                          color: isDownloaded
+                              ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
+                              : theme.colorScheme.onSurface,
                           decoration: isDownloaded ? TextDecoration.lineThrough : null,
                         ),
                       ),
                       subtitle: Text(
                         isDownloaded ? 'Đã tải xuống' : chapter.fileType.toUpperCase(),
-                        style: TextStyle(color: isDownloaded ? Colors.green : Colors.white38, fontSize: 11),
+                        style: TextStyle(
+                          color: isDownloaded
+                              ? Colors.green
+                              : theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                          fontSize: 11,
+                        ),
                       ),
                       onChanged: isDownloaded
                           ? null

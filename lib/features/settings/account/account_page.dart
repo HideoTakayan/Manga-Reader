@@ -16,9 +16,9 @@ class AccountPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      final theme = Theme.of(context);
       return Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
@@ -35,17 +35,17 @@ class AccountPage extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.orangeAccent.withValues(alpha: 0.12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.orangeAccent.withValues(alpha: 0.25),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.25),
                       width: 1.5,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.account_circle_outlined,
                     size: 64,
-                    color: Colors.orangeAccent,
+                    color: theme.colorScheme.primary,
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -122,10 +122,10 @@ class AccountPage extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.orangeAccent.withValues(alpha: 0.12),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.person_off_rounded, size: 48, color: Colors.orangeAccent),
+                      child: Icon(Icons.person_off_rounded, size: 48, color: theme.colorScheme.primary),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -191,9 +191,9 @@ class AccountPage extends StatelessWidget {
                       Container(
                         height: 220,
                         width: double.infinity,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Colors.blueAccent, Colors.purpleAccent],
+                            colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
                           ),
                         ),
                       ),
@@ -212,12 +212,12 @@ class AccountPage extends StatelessWidget {
                               size: 110,
                               child: CircleAvatar(
                                 radius: 55,
-                                backgroundColor: Colors.blueAccent,
+                                backgroundColor: theme.colorScheme.primary,
                                 backgroundImage: avatarImage,
                                 child: avatarImage == null
                                     ? Text(
                                         ((data['displayName'] ?? user.displayName ?? 'U')[0]).toUpperCase(),
-                                        style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white),
+                                        style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimary),
                                       )
                                     : null,
                               ),
@@ -277,10 +277,10 @@ class AccountPage extends StatelessWidget {
                               leading: Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Colors.blueAccent.withValues(alpha: 0.15),
+                                  color: theme.colorScheme.primary.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.edit, color: Colors.blueAccent),
+                                child: Icon(Icons.edit, color: theme.colorScheme.primary),
                               ),
                               title: const Text('Chỉnh sửa hồ sơ', style: TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: const Text('Cập nhật tên, giới thiệu và ảnh', style: TextStyle(fontSize: 12)),
@@ -324,15 +324,21 @@ class AccountPage extends StatelessWidget {
                                 leading: Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: Colors.purpleAccent.withValues(alpha: 0.15),
+                                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Icon(Icons.format_quote_rounded, color: Colors.purpleAccent),
+                                  child: Icon(Icons.format_quote_rounded, color: Theme.of(context).colorScheme.primary),
                                 ),
                                 title: const Text('Tiểu sử', style: TextStyle(fontWeight: FontWeight.bold)),
-                                subtitle: Text(data['bio'].toString(), style: const TextStyle(fontSize: 13, color: Colors.white70)),
+                                subtitle: Text(
+                                  data['bio'].toString(),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                  ),
+                                ),
                               ),
-                              Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+                              Divider(color: Theme.of(context).dividerColor, height: 1),
                             ],
                             ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -345,7 +351,13 @@ class AccountPage extends StatelessWidget {
                                 child: const Icon(Icons.fingerprint_rounded, color: Colors.cyanAccent),
                               ),
                               title: const Text('Mã người dùng (UID)', style: TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text(user.uid, style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                              subtitle: Text(
+                                user.uid,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                ),
+                              ),
                               trailing: IconButton(
                                 icon: const Icon(Icons.copy_rounded, color: Colors.cyanAccent, size: 20),
                                 tooltip: 'Sao chép UID',
@@ -409,13 +421,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     super.dispose();
   }
 
-  InputDecoration _inputDeco(String label, {Widget? suffix}) {
+  InputDecoration _inputDeco(BuildContext context, String label, {Widget? suffix}) {
+    final theme = Theme.of(context);
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white70),
+      labelStyle: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
       suffixIcon: suffix,
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.05),
+      fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide.none,
@@ -430,12 +443,16 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return PopScope(
       canPop: !_isLoading,
       child: AlertDialog(
-        backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
+        backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Đổi mật khẩu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Đổi mật khẩu',
+          style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: Form(
@@ -448,13 +465,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   controller: _currentPassController,
                   obscureText: _obscureCurrent,
                   textInputAction: TextInputAction.next,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                   decoration: _inputDeco(
+                    context,
                     'Mật khẩu hiện tại',
                     suffix: IconButton(
                       icon: Icon(
                         _obscureCurrent ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.white54,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                       onPressed: () =>
                           setState(() => _obscureCurrent = !_obscureCurrent),
@@ -469,13 +487,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   controller: _newPassController,
                   obscureText: _obscureNew,
                   textInputAction: TextInputAction.next,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                   decoration: _inputDeco(
+                    context,
                     'Mật khẩu mới',
                     suffix: IconButton(
                       icon: Icon(
                         _obscureNew ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.white54,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                       onPressed: () => setState(() => _obscureNew = !_obscureNew),
                     ),
@@ -494,13 +513,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                   obscureText: _obscureConfirm,
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _isLoading ? null : _changePassword(),
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                   decoration: _inputDeco(
+                    context,
                     'Xác nhận mật khẩu mới',
                     suffix: IconButton(
                       icon: Icon(
                         _obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.white54,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                       ),
                       onPressed: () =>
                           setState(() => _obscureConfirm = !_obscureConfirm),

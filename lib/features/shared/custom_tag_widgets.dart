@@ -264,7 +264,7 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -278,44 +278,50 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.15),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.bookmarks_rounded,
-                      color: Colors.orangeAccent,
+                      color: theme.colorScheme.primary,
                       size: 20,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Nhãn Đọc Tùy Chỉnh',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: theme.colorScheme.onSurface,
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           'Gắn nhãn để phân loại và lọc truyện dễ dàng',
-                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
               ),
             ),
 
-            const Divider(color: Colors.white12, height: 1),
+            Divider(color: theme.dividerColor, height: 1),
 
             Flexible(
               child: SingleChildScrollView(
@@ -324,10 +330,10 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Active tags
-                    const Text(
+                    Text(
                       'Nhãn đang áp dụng:',
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -338,13 +344,16 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.03),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.03),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white10),
+                          border: Border.all(color: theme.dividerColor),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Chưa có nhãn nào. Chọn từ gợi ý bên dưới hoặc tự thêm nhãn mới.',
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                            fontSize: 12,
+                          ),
                         ),
                       )
                     else
@@ -365,10 +374,10 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                     const SizedBox(height: 20),
 
                     // Quick presets
-                    const Text(
+                    Text(
                       'Gợi ý nhãn nhanh:',
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -379,18 +388,19 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                       runSpacing: 8,
                       children: CustomTagHelper.presets.map((preset) {
                         final isSelected = _tags.contains(preset.label);
+                        final selectedFg = preset.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
                         return FilterChip(
                           avatar: Icon(
                             preset.icon,
                             size: 16,
-                            color: isSelected ? Colors.white : preset.color,
+                            color: isSelected ? selectedFg : preset.color,
                           ),
                           label: Text(preset.label),
                           selected: isSelected,
                           selectedColor: preset.color.withValues(alpha: 0.8),
                           backgroundColor: preset.color.withValues(alpha: 0.12),
                           labelStyle: TextStyle(
-                            color: isSelected ? Colors.white : preset.color,
+                            color: isSelected ? selectedFg : preset.color,
                             fontSize: 12,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                           ),
@@ -410,10 +420,10 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                     const SizedBox(height: 20),
 
                     // Add Custom Tag
-                    const Text(
+                    Text(
                       'Tự tạo nhãn riêng:',
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -424,13 +434,16 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                         Expanded(
                           child: TextField(
                             controller: _customTagController,
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13),
                             textCapitalization: TextCapitalization.words,
                             decoration: InputDecoration(
                               hintText: 'Nhập tên nhãn mới...',
-                              hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                              hintStyle: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                                fontSize: 13,
+                              ),
                               filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.05),
+                              fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -444,8 +457,8 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                         ElevatedButton.icon(
                           onPressed: _addCustomTag,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white12,
-                            foregroundColor: Colors.white,
+                            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                            foregroundColor: theme.colorScheme.primary,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -462,27 +475,29 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
             ),
 
             // Footer Save Action
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                  ),
                   child: _isSaving
-                      ? const SizedBox(
+                      ? SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: theme.colorScheme.onPrimary,
                           ),
                         )
                       : const Text(
@@ -496,9 +511,10 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

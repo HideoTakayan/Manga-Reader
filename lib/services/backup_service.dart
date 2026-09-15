@@ -177,13 +177,14 @@ class BackupService {
         if (rowsRaw is! List) continue;
 
         var count = 0;
+        final batch = txn.batch();
         for (final rowRaw in rowsRaw) {
           if (rowRaw is! Map) continue;
           final row = rowRaw.map(
             (key, value) => MapEntry(key.toString(), value),
           );
 
-          await txn.insert(
+          batch.insert(
             table,
             row,
             conflictAlgorithm: replaceExisting
@@ -191,6 +192,9 @@ class BackupService {
                 : ConflictAlgorithm.ignore,
           );
           count++;
+        }
+        if (count > 0) {
+          await batch.commit(noResult: true);
         }
         importedCounts[table] = count;
       }

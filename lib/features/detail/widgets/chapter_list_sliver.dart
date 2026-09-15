@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +6,7 @@ import '../../../data/database_helper.dart';
 import '../../../data/models_cloud.dart';
 import '../../../data/models.dart';
 import '../../../services/download_service.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
 class ChapterListSliver extends StatelessWidget {
   final List<CloudChapter> displayChapters;
@@ -49,7 +49,7 @@ class ChapterListSliver extends StatelessWidget {
     required bool isRead,
   }) {
     HapticFeedback.mediumImpact();
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
+    final uid = AuthService.safeUid;
 
     showModalBottomSheet(
       context: context,
@@ -68,7 +68,7 @@ class ChapterListSliver extends StatelessWidget {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -80,8 +80,8 @@ class ChapterListSliver extends StatelessWidget {
                     Expanded(
                       child: Text(
                         chapter.title,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
@@ -92,10 +92,16 @@ class ChapterListSliver extends StatelessWidget {
                   ],
                 ),
               ),
-              const Divider(color: Colors.white12),
+              Divider(color: theme.dividerColor),
               ListTile(
-                leading: const Icon(Icons.chrome_reader_mode_outlined, color: Colors.blueAccent),
-                title: const Text('Đọc từ trang đầu', style: TextStyle(color: Colors.white)),
+                leading: Icon(
+                  Icons.chrome_reader_mode_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: Text(
+                  'Đọc từ trang đầu',
+                  style: TextStyle(color: theme.colorScheme.onSurface),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await context.push(
@@ -106,12 +112,14 @@ class ChapterListSliver extends StatelessWidget {
               ),
               ListTile(
                 leading: Icon(
-                  isRead ? Icons.mark_chat_unread_outlined : Icons.check_circle_outline,
-                  color: isRead ? Colors.orangeAccent : Colors.greenAccent,
+                  isRead
+                      ? Icons.mark_chat_unread_outlined
+                      : Icons.check_circle_outline,
+                  color: isRead ? Theme.of(context).colorScheme.primary : Colors.greenAccent,
                 ),
                 title: Text(
                   isRead ? 'Đánh dấu là chưa đọc' : 'Đánh dấu là đã đọc',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -133,16 +141,17 @@ class ChapterListSliver extends StatelessWidget {
               ),
               ListTile(
                 leading: const Icon(Icons.done_all, color: Colors.amberAccent),
-                title: const Text(
+                title: Text(
                   'Đánh dấu tất cả chương trước là đã đọc',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final ascendingChapters =
                       allChapters ?? ChapterSortHelper.sort(displayChapters);
-                  final targetIndex =
-                      ascendingChapters.indexWhere((c) => c.id == chapter.id);
+                  final targetIndex = ascendingChapters.indexWhere(
+                    (c) => c.id == chapter.id,
+                  );
                   if (targetIndex >= 0) {
                     final previousChapterIds = ascendingChapters
                         .take(targetIndex + 1)
@@ -158,17 +167,21 @@ class ChapterListSliver extends StatelessWidget {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.remove_done, color: Colors.deepOrangeAccent),
-                title: const Text(
+                leading: const Icon(
+                  Icons.remove_done,
+                  color: Colors.deepOrangeAccent,
+                ),
+                title: Text(
                   'Đánh dấu tất cả chương sau là chưa đọc',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: theme.colorScheme.onSurface),
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final ascendingChapters =
                       allChapters ?? ChapterSortHelper.sort(displayChapters);
-                  final targetIndex =
-                      ascendingChapters.indexWhere((c) => c.id == chapter.id);
+                  final targetIndex = ascendingChapters.indexWhere(
+                    (c) => c.id == chapter.id,
+                  );
                   if (targetIndex >= 0) {
                     final subsequentChapterIds = ascendingChapters
                         .skip(targetIndex)
@@ -203,13 +216,13 @@ class ChapterListSliver extends StatelessWidget {
                 Icon(
                   Icons.search_off_rounded,
                   size: 36,
-                  color: Colors.white.withValues(alpha: 0.25),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Không tìm thấy chương phù hợp',
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white38,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                     fontSize: 13,
                   ),
                 ),
@@ -224,7 +237,8 @@ class ChapterListSliver extends StatelessWidget {
       delegate: SliverChildBuilderDelegate((context, index) {
         final ch = displayChapters[index];
         final isRead = readChapterIds.contains(ch.id);
-        final isCurrentlyReading = currentProgress != null &&
+        final isCurrentlyReading =
+            currentProgress != null &&
             currentProgress!.chapterId == ch.id &&
             !isRead;
 
@@ -249,15 +263,15 @@ class ChapterListSliver extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: isCurrentlyReading
-                  ? Colors.orange.withValues(alpha: 0.08)
+                  ? theme.colorScheme.primary.withValues(alpha: 0.08)
                   : Colors.transparent,
               border: Border(
                 left: isCurrentlyReading
-                    ? const BorderSide(color: Colors.orangeAccent, width: 3.5)
+                    ? BorderSide(color: theme.colorScheme.primary, width: 3.5)
                     : BorderSide.none,
                 bottom: BorderSide(
                   color: isCurrentlyReading
-                      ? Colors.orangeAccent.withValues(alpha: 0.25)
+                      ? theme.colorScheme.primary.withValues(alpha: 0.25)
                       : theme.dividerColor.withValues(alpha: 0.1),
                 ),
               ),
@@ -280,13 +294,13 @@ class ChapterListSliver extends StatelessWidget {
                               ),
                               margin: const EdgeInsets.only(right: 8),
                               decoration: BoxDecoration(
-                                color: Colors.orangeAccent,
+                                color: theme.colorScheme.primary,
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Đang đọc',
                                 style: TextStyle(
-                                  color: Colors.black,
+                                  color: theme.colorScheme.onPrimary,
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -298,7 +312,7 @@ class ChapterListSliver extends StatelessWidget {
                               height: 6,
                               margin: const EdgeInsets.only(right: 8),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
+                                color: theme.colorScheme.primary,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -308,8 +322,10 @@ class ChapterListSliver extends StatelessWidget {
                               ch.title,
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 color: isCurrentlyReading
-                                    ? Colors.orangeAccent
-                                    : (isRead ? Colors.white38 : Colors.white),
+                                    ? theme.colorScheme.primary
+                                    : (isRead
+                                        ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
+                                        : theme.colorScheme.onSurface),
                                 fontWeight: (isRead && !isCurrentlyReading)
                                     ? FontWeight.normal
                                     : FontWeight.w600,
@@ -329,17 +345,17 @@ class ChapterListSliver extends StatelessWidget {
                                 (currentProgress?.pageIndex ?? 0) > 0) ...[
                               Text(
                                 'Đang ở trang ${currentProgress!.pageIndex + 1}',
-                                style: const TextStyle(
-                                  color: Colors.orangeAccent,
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 '•',
                                 style: TextStyle(
-                                  color: Colors.white38,
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
                                   fontSize: 10,
                                 ),
                               ),
@@ -348,7 +364,9 @@ class ChapterListSliver extends StatelessWidget {
                             Text(
                               _formatDate(ch.uploadedAt),
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: isRead ? Colors.white24 : Colors.white54,
+                                color: isRead
+                                    ? theme.colorScheme.onSurface.withValues(alpha: 0.24)
+                                    : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                                 fontSize: 11,
                               ),
                             ),
@@ -356,7 +374,9 @@ class ChapterListSliver extends StatelessWidget {
                             Text(
                               '•',
                               style: TextStyle(
-                                color: isRead ? Colors.white24 : Colors.white38,
+                                color: isRead
+                                    ? theme.colorScheme.onSurface.withValues(alpha: 0.24)
+                                    : theme.colorScheme.onSurface.withValues(alpha: 0.38),
                                 fontSize: 10,
                               ),
                             ),
@@ -364,13 +384,17 @@ class ChapterListSliver extends StatelessWidget {
                             Icon(
                               Icons.remove_red_eye_outlined,
                               size: 11,
-                              color: isRead ? Colors.white24 : Colors.white54,
+                              color: isRead
+                                  ? theme.colorScheme.onSurface.withValues(alpha: 0.24)
+                                  : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                             const SizedBox(width: 3),
                             Text(
                               '${chapterViews[ch.id] ?? ch.viewCount}',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: isRead ? Colors.white24 : Colors.white54,
+                                color: isRead
+                                    ? theme.colorScheme.onSurface.withValues(alpha: 0.24)
+                                    : theme.colorScheme.onSurface.withValues(alpha: 0.54),
                                 fontSize: 11,
                               ),
                             ),
@@ -451,9 +475,7 @@ class _ChapterDownloadButton extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 8.5,
                         fontWeight: FontWeight.bold,
-                        color: theme.brightness == Brightness.dark
-                            ? Colors.white
-                            : Colors.black,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -475,7 +497,9 @@ class _ChapterDownloadButton extends StatelessWidget {
                 height: 32,
                 child: CircularProgressIndicator(
                   strokeWidth: 3,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Colors.orange,
+                  ),
                   backgroundColor: Colors.grey.withValues(alpha: 0.3),
                 ),
               ),
@@ -501,11 +525,7 @@ class _ChapterDownloadButton extends StatelessWidget {
         // 4. Nếu lỗi
         if (task?.status == DownloadStatus.failed) {
           return IconButton(
-            icon: const Icon(
-              Icons.error,
-              size: 28,
-              color: Colors.red,
-            ),
+            icon: const Icon(Icons.error, size: 28, color: Colors.red),
             tooltip: 'Thử lại tải xuống',
             onPressed: () {
               DownloadService.instance.retryDownload(chapter.id);
@@ -524,9 +544,7 @@ class _ChapterDownloadButton extends StatelessWidget {
 
             return IconButton(
               icon: Icon(
-                isDownloaded
-                    ? Icons.check_circle
-                    : Icons.download_outlined,
+                isDownloaded ? Icons.check_circle : Icons.download_outlined,
                 size: 28,
                 color: isDownloaded
                     ? Colors.green
@@ -539,29 +557,46 @@ class _ChapterDownloadButton extends StatelessWidget {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (dialogCtx) => AlertDialog(
-                      backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? theme.cardColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      title: const Text(
+                      backgroundColor:
+                          Theme.of(dialogCtx).dialogTheme.backgroundColor ??
+                          theme.cardColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      title: Text(
                         'Xóa chương đã tải?',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Theme.of(dialogCtx).colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       content: Text(
                         'Bạn có chắc muốn xóa "${chapter.title}" khỏi bộ nhớ máy?',
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(
+                          color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.75),
+                        ),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(dialogCtx, false),
-                          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                          child: const Text(
+                            'Hủy',
+                            style: TextStyle(color: Colors.grey),
+                          ),
                         ),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.redAccent,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           onPressed: () => Navigator.pop(dialogCtx, true),
-                          child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text(
+                            'Xóa',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ],
                     ),

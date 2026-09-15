@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -83,6 +84,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() => _isLoading = true);
 
     try {
@@ -120,7 +122,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }, SetOptions(merge: true));
 
       if (!mounted) return;
-      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cập nhật thông tin thành công!')),
       );
@@ -169,29 +170,39 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 10),
-                    // GestureDetector bao CircleAvatar → tap để chọn ảnh
-                    GestureDetector(
-                      onTap: _pickImage,
-                      child: Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          CircleAvatar(
-                            radius: 55,
-                            backgroundImage: avatarImage,
-                            backgroundColor: Theme.of(context).cardColor,
-                            child: avatarImage == null
-                                ? const Icon(Icons.person, size: 55, color: Colors.grey)
-                                : null,
+                    // InkWell bao CircleAvatar → tap để chọn ảnh có hiệu ứng và phản hồi xúc giác
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          _pickImage();
+                        },
+                        borderRadius: BorderRadius.circular(60),
+                        child: Tooltip(
+                          message: 'Thay đổi ảnh đại diện',
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              CircleAvatar(
+                                radius: 55,
+                                backgroundImage: avatarImage,
+                                backgroundColor: Theme.of(context).cardColor,
+                                child: avatarImage == null
+                                    ? const Icon(Icons.person, size: 55, color: Colors.grey)
+                                    : null,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                              ),
+                            ],
                           ),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: const BoxDecoration(
-                              color: Colors.blueAccent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 32),
@@ -237,7 +248,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
+                          backgroundColor: Theme.of(context).colorScheme.primary,
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),

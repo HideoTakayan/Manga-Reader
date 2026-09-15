@@ -13,6 +13,7 @@ import '../../services/history_service.dart';
 import '../../services/novel_service.dart';
 import '../catalog/catalog_cache_service.dart';
 import '../shared/drive_image.dart';
+import 'package:manga_reader/services/auth_service.dart';
 
 enum HistoryProgressFilter {
   all,        // Tất cả
@@ -41,7 +42,7 @@ class HistoryPage extends StatefulWidget {
   State<HistoryPage> createState() => _HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage> {
+class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClientMixin {
   List<ReadingHistory> _historyList = [];
   List<CloudManga> _mangas = [];
   Map<String, CloudManga> _fallbackMangaMap = {};
@@ -57,6 +58,9 @@ class _HistoryPageState extends State<HistoryPage> {
   // Multi-selection state
   final Set<String> _selectedMangaIds = {};
   bool _isSelectionMode = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -137,7 +141,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Future<List<ReadingHistory>> _fetchAndMergeHistory() async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
-    final localId = userId ?? 'guest';
+    final localId = AuthService.safeUid;
     final localHistory = await DatabaseHelper.instance.getHistory(localId);
 
     List<ReadingHistory> cloudHistory = [];
@@ -173,6 +177,19 @@ class _HistoryPageState extends State<HistoryPage> {
                 !h.mangaId.startsWith('LOCAL_NOVEL|') &&
                 !h.mangaId.startsWith('local_'),
           )
+          .map(
+            (h) => h.userId == userId
+                ? h
+                : ReadingHistory(
+                    userId: userId,
+                    mangaId: h.mangaId,
+                    chapterId: h.chapterId,
+                    chapterTitle: h.chapterTitle,
+                    lastPageIndex: h.lastPageIndex,
+                    totalPages: h.totalPages,
+                    updatedAt: h.updatedAt,
+                  ),
+          )
           .toList();
       if (cloudSavable.isNotEmpty) {
         await DatabaseHelper.instance.saveHistoryBatch(cloudSavable, alreadySynced: true);
@@ -185,11 +202,14 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _handleDeepClear() async {
     if (mounted) setState(() => _isLoading = true);
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final localId = AuthService.safeUid;
 
     try {
-      await DatabaseHelper.instance.clearHistory('guest');
-      if (userId != null) {
+      await DatabaseHelper.instance.clearHistory(localId);
+      if (userId != null && userId != localId) {
         await DatabaseHelper.instance.clearHistory(userId);
+      }
+      if (userId != null) {
         await HistoryService.instance.clearAllHistory();
       }
       if (mounted) {
@@ -219,6 +239,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _deleteSingleHistory(ReadingHistory item, String mangaTitle) async {
     HapticFeedback.lightImpact();
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final localId = AuthService.safeUid;
     final mangaId = item.mangaId;
 
     setState(() {
@@ -229,10 +250,12 @@ class _HistoryPageState extends State<HistoryPage> {
     });
 
     try {
-      await DatabaseHelper.instance.deleteHistoryForManga('guest', mangaId);
       await DatabaseHelper.instance.deleteReaderProgress(mangaId);
-      if (userId != null) {
+      await DatabaseHelper.instance.deleteHistoryForManga(localId, mangaId);
+      if (userId != null && userId != localId) {
         await DatabaseHelper.instance.deleteHistoryForManga(userId, mangaId);
+      }
+      if (userId != null) {
         await HistoryService.instance.deleteHistory(mangaId);
       }
       if (mounted) {
@@ -253,29 +276,34 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _deleteGroupHistory(List<ReadingHistory> items, String groupTitle) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Xóa lịch sử "$groupTitle"?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text('Bạn có chắc muốn xóa ${items.length} truyện trong nhóm $groupTitle?', style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      builder: (ctx) {
+        final onSurface = Theme.of(ctx).colorScheme.onSurface;
+        return AlertDialog(
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Xóa lịch sử "$groupTitle"?', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
+          content: Text('Bạn có chắc muốn xóa ${items.length} truyện trong nhóm $groupTitle?', style: TextStyle(color: onSurface.withValues(alpha: 0.7))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Xóa nhóm', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Xóa nhóm', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final localId = AuthService.safeUid;
     final ids = items.map((i) => i.mangaId).toSet();
 
     setState(() {
@@ -288,10 +316,12 @@ class _HistoryPageState extends State<HistoryPage> {
     });
 
     for (final id in ids) {
-      await DatabaseHelper.instance.deleteHistoryForManga('guest', id);
       await DatabaseHelper.instance.deleteReaderProgress(id);
-      if (userId != null) {
+      await DatabaseHelper.instance.deleteHistoryForManga(localId, id);
+      if (userId != null && userId != localId) {
         await DatabaseHelper.instance.deleteHistoryForManga(userId, id);
+      }
+      if (userId != null) {
         await HistoryService.instance.deleteHistory(id);
       }
     }
@@ -312,29 +342,34 @@ class _HistoryPageState extends State<HistoryPage> {
     final count = _selectedMangaIds.length;
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Xóa $count mục đã chọn?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Các mục được chọn sẽ bị xóa khỏi lịch sử đọc.', style: TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      builder: (ctx) {
+        final onSurface = Theme.of(ctx).colorScheme.onSurface;
+        return AlertDialog(
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Xóa $count mục đã chọn?', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
+          content: Text('Các mục được chọn sẽ bị xóa khỏi lịch sử đọc.', style: TextStyle(color: onSurface.withValues(alpha: 0.7))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
 
     final userId = FirebaseAuth.instance.currentUser?.uid;
+    final localId = AuthService.safeUid;
     final idsToDelete = Set<String>.from(_selectedMangaIds);
 
     setState(() {
@@ -347,10 +382,12 @@ class _HistoryPageState extends State<HistoryPage> {
     });
 
     for (final id in idsToDelete) {
-      await DatabaseHelper.instance.deleteHistoryForManga('guest', id);
       await DatabaseHelper.instance.deleteReaderProgress(id);
-      if (userId != null) {
+      await DatabaseHelper.instance.deleteHistoryForManga(localId, id);
+      if (userId != null && userId != localId) {
         await DatabaseHelper.instance.deleteHistoryForManga(userId, id);
+      }
+      if (userId != null) {
         await HistoryService.instance.deleteHistory(id);
       }
     }
@@ -394,11 +431,13 @@ class _HistoryPageState extends State<HistoryPage> {
     return _mangas.firstWhere(
       (c) => c.id == item.mangaId,
       orElse: () {
+        // HIST-01 fix: show chapterTitle or a readable fallback, never raw mangaId
+        final displayTitle = (item.chapterTitle != null && item.chapterTitle!.isNotEmpty)
+            ? item.chapterTitle!
+            : 'Truyện không tồn tại';
         return CloudManga(
           id: item.mangaId,
-          title: item.chapterTitle != null && item.chapterTitle!.isNotEmpty
-              ? item.mangaId
-              : 'Truyện không tồn tại',
+          title: displayTitle,
           author: 'Không rõ tác giả',
           description: '',
           coverFileId: '',
@@ -519,33 +558,36 @@ class _HistoryPageState extends State<HistoryPage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xoá tất cả?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text(
-          'Hành động này sẽ xoá vĩnh viễn toàn bộ lịch sử đọc truyện của bạn (Cả trên máy và Cloud).',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Huỷ', style: TextStyle(color: Colors.grey)),
+      builder: (ctx) {
+        final onSurface = Theme.of(ctx).colorScheme.onSurface;
+        return AlertDialog(
+          backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Xoá tất cả?', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
+          content: Text(
+            'Hành động này sẽ xoá vĩnh viễn toàn bộ lịch sử đọc truyện của bạn (Cả trên máy và Cloud).',
+            style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Huỷ', style: TextStyle(color: Colors.grey)),
             ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _handleDeepClear();
-            },
-            child: const Text('Xoá sạch', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _handleDeepClear();
+              },
+              child: const Text('Xoá sạch', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -568,11 +610,23 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _buildResumeReadingHeroCard(ReadingHistory item, CloudManga manga) {
     final isNovel = item.mangaId.startsWith('LOCAL_NOVEL|') || manga.contentType == MangaContentType.novel;
-    final total = item.totalPages > 0 ? item.totalPages : 1;
-    final current = (item.lastPageIndex + 1).clamp(1, total);
-    final percent = (current / total).clamp(0.0, 1.0);
+    // HIST-02 fix: use progressMap as single source of truth for percent when available.
+    // Fall back to page-count math only when no progress entry exists.
+    final progEntry = _progressMap[item.mangaId];
+    final double percent;
+    final int current;
+    final int total = item.totalPages > 0 ? item.totalPages : 1;
+    if (progEntry != null && progEntry.progressPercent > 0) {
+      percent = progEntry.progressPercent.clamp(0.0, 1.0);
+      current = (percent * total).round().clamp(1, total);
+    } else {
+      current = (item.lastPageIndex + 1).clamp(1, total);
+      percent = (current / total).clamp(0.0, 1.0);
+    }
     final percentText = (percent * 100).toInt();
     final relativeTime = _formatRelativeTime(item.updatedAt);
+
+    final primary = Theme.of(context).colorScheme.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(4, 4, 4, 12),
@@ -581,19 +635,19 @@ class _HistoryPageState extends State<HistoryPage> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.deepOrangeAccent.withValues(alpha: 0.18),
-            Colors.purpleAccent.withValues(alpha: 0.08),
+            primary.withValues(alpha: 0.18),
+            primary.withValues(alpha: 0.06),
             Theme.of(context).cardColor,
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Colors.orangeAccent.withValues(alpha: 0.3),
+          color: primary.withValues(alpha: 0.3),
           width: 1.2,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.deepOrangeAccent.withValues(alpha: 0.12),
+            color: primary.withValues(alpha: 0.12),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -611,16 +665,16 @@ class _HistoryPageState extends State<HistoryPage> {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.orangeAccent,
+                  decoration: BoxDecoration(
+                    color: primary,
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'TIẾP TỤC ĐỌC GẦN ĐÂY',
                   style: TextStyle(
-                    color: Colors.orangeAccent,
+                    color: primary,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 0.8,
@@ -688,8 +742,8 @@ class _HistoryPageState extends State<HistoryPage> {
                           ),
                           child: Text(
                             isNovel ? 'NOVEL' : 'MANGA',
-                            style: const TextStyle(
-                              color: Colors.orangeAccent,
+                            style: TextStyle(
+                              color: isNovel ? Colors.amber : primary,
                               fontSize: 9,
                               fontWeight: FontWeight.w900,
                             ),
@@ -723,8 +777,8 @@ class _HistoryPageState extends State<HistoryPage> {
                         (item.chapterTitle != null && item.chapterTitle!.isNotEmpty)
                             ? item.chapterTitle!
                             : 'Đang đọc dở',
-                        style: const TextStyle(
-                          color: Colors.orangeAccent,
+                        style: TextStyle(
+                          color: primary,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -741,7 +795,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                 value: percent,
                                 minHeight: 6,
                                 backgroundColor: Colors.white.withValues(alpha: 0.1),
-                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.orangeAccent),
+                                valueColor: AlwaysStoppedAnimation<Color>(primary),
                               ),
                             ),
                           ),
@@ -770,8 +824,8 @@ class _HistoryPageState extends State<HistoryPage> {
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orangeAccent,
-                                foregroundColor: Colors.black,
+                                backgroundColor: primary,
+                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
@@ -805,6 +859,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -820,16 +875,16 @@ class _HistoryPageState extends State<HistoryPage> {
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.blueAccent.withValues(alpha: 0.12),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                   border: Border.all(
-                    color: Colors.blueAccent.withValues(alpha: 0.25),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
                     width: 1.5,
                   ),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.history_rounded,
                   size: 54,
-                  color: Colors.blueAccent,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 20),
@@ -873,8 +928,8 @@ class _HistoryPageState extends State<HistoryPage> {
                     icon: const Icon(Icons.explore_rounded, size: 16),
                     label: const Text('Khám phá truyện', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -891,59 +946,73 @@ class _HistoryPageState extends State<HistoryPage> {
     final filtered = _filteredHistoryList;
     final sections = _groupHistory(filtered);
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          _isSelectionMode
-              ? 'Đã chọn ${_selectedMangaIds.length}'
-              : '${filtered.length} truyện đã lưu',
-          style: TextStyle(
-            fontWeight: _isSelectionMode ? FontWeight.bold : FontWeight.w500,
-            fontSize: _isSelectionMode ? 16 : 13,
-            color: _isSelectionMode ? Colors.white : Colors.white60,
-          ),
-        ),
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isSelectionMode) {
+          setState(() {
+            _isSelectionMode = false;
+            _selectedMangaIds.clear();
+          });
+        }
+      },
+      child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        leading: _isSelectionMode
-            ? IconButton(
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => setState(() {
-                  _isSelectionMode = false;
-                  _selectedMangaIds.clear();
-                }),
-              )
-            : null,
-        actions: [
-          if (_isSelectionMode) ...[
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  if (_selectedMangaIds.length == filtered.length) {
+        appBar: AppBar(
+          title: Text(
+            _isSelectionMode
+                ? 'Đã chọn ${_selectedMangaIds.length}'
+                : '${filtered.length} truyện đã lưu',
+            style: TextStyle(
+              fontWeight: _isSelectionMode ? FontWeight.bold : FontWeight.w500,
+              fontSize: _isSelectionMode ? 16 : 13,
+              color: _isSelectionMode ? onSurface : onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          leading: _isSelectionMode
+              ? IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => setState(() {
+                    _isSelectionMode = false;
                     _selectedMangaIds.clear();
-                  } else {
-                    _selectedMangaIds.addAll(filtered.map((e) => e.mangaId));
-                  }
-                });
-              },
-              child: Text(
-                _selectedMangaIds.length == filtered.length ? 'Bỏ chọn' : 'Chọn tất cả',
-                style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold),
+                  }),
+                )
+              : null,
+          actions: [
+            if (_isSelectionMode) ...[
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    if (_selectedMangaIds.length == filtered.length) {
+                      _selectedMangaIds.clear();
+                    } else {
+                      _selectedMangaIds.addAll(filtered.map((e) => e.mangaId));
+                    }
+                  });
+                },
+                child: Text(
+                  _selectedMangaIds.length == filtered.length ? 'Bỏ chọn' : 'Chọn tất cả',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.redAccent),
-              tooltip: 'Xóa các mục đã chọn',
-              onPressed: _deleteSelectedBatch,
-            ),
-          ] else ...[
-            IconButton(
-              icon: const Icon(Icons.checklist_rounded),
-              tooltip: 'Chọn nhiều mục',
-              onPressed: () => setState(() => _isSelectionMode = true),
-            ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                tooltip: 'Xóa các mục đã chọn',
+                onPressed: _deleteSelectedBatch,
+              ),
+            ] else ...[
+              IconButton(
+                icon: const Icon(Icons.checklist_rounded),
+                tooltip: 'Chọn nhiều mục',
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  setState(() => _isSelectionMode = true);
+                },
+              ),
             IconButton(
               icon: const Icon(Icons.delete_sweep_outlined, color: Colors.redAccent),
               tooltip: 'Xóa tất cả lịch sử',
@@ -1117,7 +1186,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                   Icon(
                                     section.icon,
                                     size: 16,
-                                    color: Colors.orangeAccent,
+                                    color: Theme.of(context).colorScheme.primary,
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
@@ -1203,15 +1272,16 @@ class _HistoryPageState extends State<HistoryPage> {
                                 ),
                                 onDismissed: (_) => _deleteSingleHistory(item, manga.title),
                                 child: Container(
-                                  height: 120,
+                                // HIST-03 fix: use minHeight constraint instead of fixed height
+                                  constraints: const BoxConstraints(minHeight: 110),
                                   margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? Colors.orange.withValues(alpha: 0.15)
+                                        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
                                         : Theme.of(context).cardColor,
                                     borderRadius: BorderRadius.circular(16),
                                     border: isSelected
-                                        ? Border.all(color: Colors.orangeAccent, width: 1.5)
+                                        ? Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5)
                                         : Border.all(color: Colors.white.withValues(alpha: 0.05)),
                                     boxShadow: [
                                       BoxShadow(
@@ -1258,23 +1328,47 @@ class _HistoryPageState extends State<HistoryPage> {
                                               isSelected
                                                   ? Icons.check_circle_rounded
                                                   : Icons.radio_button_unchecked_rounded,
-                                              color: isSelected ? Colors.orangeAccent : Colors.white38,
+                                              color: isSelected ? Theme.of(context).colorScheme.primary : Colors.white38,
                                               size: 22,
                                             ),
                                           ),
 
+                                        // HIST-05 fix: handle local file paths like the hero card does
                                         manga.coverFileId.isNotEmpty
-                                            ? DriveImage(
-                                                fileId: manga.coverFileId,
-                                                width: 85,
-                                                height: 120,
-                                                fit: BoxFit.cover,
-                                              )
+                                            ? (manga.coverFileId.startsWith('/') || manga.coverFileId.contains(':\\')
+                                                ? ClipRRect(
+                                                    borderRadius: const BorderRadius.only(
+                                                      topLeft: Radius.circular(16),
+                                                      bottomLeft: Radius.circular(16),
+                                                    ),
+                                                    child: Image.file(
+                                                      File(manga.coverFileId),
+                                                      width: 85,
+                                                      height: 120,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, __, ___) => Container(
+                                                        width: 85,
+                                                        height: 120,
+                                                        color: Colors.blueGrey.withValues(alpha: 0.2),
+                                                        child: const Icon(Icons.menu_book_rounded, size: 36, color: Colors.white38),
+                                                      ),
+                                                    ),
+                                                  )
+                                                : DriveImage(
+                                                    fileId: manga.coverFileId,
+                                                    width: 85,
+                                                    height: 120,
+                                                    fit: BoxFit.cover,
+                                                  ))
                                             : Container(
                                                 width: 85,
                                                 height: 120,
                                                 decoration: BoxDecoration(
                                                   color: Colors.blueGrey.withValues(alpha: 0.2),
+                                                  borderRadius: const BorderRadius.only(
+                                                    topLeft: Radius.circular(16),
+                                                    bottomLeft: Radius.circular(16),
+                                                  ),
                                                 ),
                                                 child: const Center(
                                                   child: Icon(
@@ -1318,13 +1412,13 @@ class _HistoryPageState extends State<HistoryPage> {
                                                 const SizedBox(height: 4),
                                                 Row(
                                                   children: [
-                                                    const Icon(Icons.menu_book_rounded, size: 13, color: Colors.orangeAccent),
+                                                    Icon(Icons.menu_book_rounded, size: 13, color: Theme.of(context).colorScheme.primary),
                                                     const SizedBox(width: 4),
                                                     Expanded(
                                                       child: Text(
                                                         '${(item.chapterTitle != null && item.chapterTitle!.isNotEmpty) ? item.chapterTitle : 'Chương ${item.chapterId}'} • Trang ${item.lastPageIndex + 1}',
-                                                        style: const TextStyle(
-                                                          color: Colors.orangeAccent,
+                                                        style: TextStyle(
+                                                          color: Theme.of(context).colorScheme.primary,
                                                           fontSize: 12.5,
                                                           fontWeight: FontWeight.w600,
                                                         ),
@@ -1344,7 +1438,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                                       minHeight: 3,
                                                       backgroundColor: Colors.white10,
                                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                                        _isMangaCompleted(item) ? Colors.greenAccent : Colors.orangeAccent,
+                                                        _isMangaCompleted(item) ? Colors.greenAccent : Theme.of(context).colorScheme.primary,
                                                       ),
                                                     ),
                                                   ),
@@ -1372,22 +1466,21 @@ class _HistoryPageState extends State<HistoryPage> {
                                                           decoration: BoxDecoration(
                                                             color: _isMangaCompleted(item)
                                                                 ? Colors.green.withValues(alpha: 0.15)
-                                                                : Colors.orange.withValues(alpha: 0.15),
+                                                                : Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                                                             borderRadius: BorderRadius.circular(4),
                                                             border: Border.all(
                                                               color: _isMangaCompleted(item)
                                                                   ? Colors.greenAccent.withValues(alpha: 0.4)
-                                                                  : Colors.orangeAccent.withValues(alpha: 0.4),
+                                                                  : Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
                                                             ),
                                                           ),
                                                           child: Text(
                                                             _isMangaCompleted(item)
                                                                 ? 'Xong'
-                                                                : (_progressMap.containsKey(item.mangaId) && _progressMap[item.mangaId]!.progressPercent > 0
-                                                                    ? '${(_progressMap[item.mangaId]!.progressPercent * 100).toInt()}%'
-                                                                    : 'Đang đọc'),
+                                                                // HIST-04 fix: show 'Đang đọc' even when progressPercent==0
+                                                                : 'Đang đọc',
                                                             style: TextStyle(
-                                                              color: _isMangaCompleted(item) ? Colors.greenAccent : Colors.orangeAccent,
+                                                              color: _isMangaCompleted(item) ? Colors.greenAccent : Theme.of(context).colorScheme.primary,
                                                               fontSize: 10,
                                                               fontWeight: FontWeight.bold,
                                                             ),
@@ -1416,6 +1509,7 @@ class _HistoryPageState extends State<HistoryPage> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -1424,27 +1518,36 @@ class _HistoryPageState extends State<HistoryPage> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 32),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
             color: isSelected
                 ? Theme.of(context).colorScheme.primary
-                : Colors.white.withValues(alpha: 0.1),
+                : Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white.withValues(alpha: 0.12),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? Colors.white : Colors.white70,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              color: isSelected ? Colors.white : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
           ),
         ),
       ),

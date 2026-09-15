@@ -61,6 +61,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     _searchDebounce?.cancel();
@@ -134,6 +135,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     if (_searchQuery.isNotEmpty) return;
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 200) {
@@ -233,7 +235,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                 }
 
                 return Container(
-                  height: 42,
+                  height: 44,
                   color: Theme.of(context).cardColor.withValues(alpha: 0.6),
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: ListView(
@@ -244,13 +246,15 @@ class _ForumSharePageState extends State<ForumSharePage> {
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: ChoiceChip(
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           label: const Text('Tất cả'),
                           selected: _selectedTag == null,
                           selectedColor: primary.withValues(alpha: 0.22),
                           labelStyle: TextStyle(
                             color: _selectedTag == null
                                 ? primary
-                                : Colors.white70,
+                                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: _selectedTag == null
                                 ? FontWeight.bold
                                 : FontWeight.normal,
@@ -259,7 +263,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                           side: BorderSide(
                             color: _selectedTag == null
                                 ? primary
-                                : Colors.white12,
+                                : Theme.of(context).dividerColor.withValues(alpha: 0.2),
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -273,6 +277,8 @@ class _ForumSharePageState extends State<ForumSharePage> {
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             label: Text('#$_selectedTag'),
                             selected: true,
                             selectedColor: primary.withValues(alpha: 0.22),
@@ -294,18 +300,24 @@ class _ForumSharePageState extends State<ForumSharePage> {
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             label: Text('#$tag'),
                             selected: isSelected,
                             selectedColor: primary.withValues(alpha: 0.22),
                             labelStyle: TextStyle(
-                              color: isSelected ? primary : Colors.white70,
+                              color: isSelected
+                                  ? primary
+                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                               fontWeight: isSelected
                                   ? FontWeight.bold
                                   : FontWeight.normal,
                               fontSize: 12,
                             ),
                             side: BorderSide(
-                              color: isSelected ? primary : Colors.white12,
+                              color: isSelected
+                                  ? primary
+                                  : Theme.of(context).dividerColor.withValues(alpha: 0.2),
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -382,10 +394,10 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                 Container(
                                   padding: const EdgeInsets.all(18),
                                   decoration: BoxDecoration(
-                                    color: Colors.blueAccent.withValues(alpha: 0.12),
+                                    color: primary.withValues(alpha: 0.12),
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: Colors.blueAccent.withValues(alpha: 0.25),
+                                      color: primary.withValues(alpha: 0.25),
                                       width: 1.5,
                                     ),
                                   ),
@@ -394,7 +406,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                         ? Icons.share_outlined
                                         : Icons.search_off_rounded,
                                     size: 44,
-                                    color: Colors.blueAccent,
+                                    color: primary,
                                   ),
                                 ),
                                 const SizedBox(height: 16),
@@ -402,10 +414,10 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                   _searchQuery.isEmpty
                                       ? 'Chưa có bài chia sẻ nào'
                                       : 'Không tìm thấy bài chia sẻ phù hợp',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -414,7 +426,10 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                       ? 'Chia sẻ bộ truyện yêu thích của bạn đến cộng đồng ngay!'
                                       : 'Thử tìm kiếm với từ khóa khác',
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 13, color: Colors.white54),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  ),
                                 ),
                                 if (_searchQuery.isEmpty) ...[
                                   const SizedBox(height: 16),
@@ -452,7 +467,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                       ),
                                     ),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.purpleAccent,
+                                      backgroundColor: primary,
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 20,
@@ -561,24 +576,24 @@ class _ForumSharePageState extends State<ForumSharePage> {
         decoration: BoxDecoration(
           color: isSelected
               ? color.withValues(alpha: 0.18)
-              : Colors.white.withValues(alpha: 0.05),
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color.withValues(alpha: 0.6) : Colors.white12,
+            color: isSelected ? color.withValues(alpha: 0.6) : Theme.of(context).dividerColor.withValues(alpha: 0.2),
             width: 1,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: isSelected ? color : Colors.white60),
+            Icon(icon, size: 12, color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? color : Colors.white70,
+                color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
           ],

@@ -137,10 +137,10 @@ class MangaHeaderSection extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.person_outline,
                               size: 16,
-                              color: Colors.orangeAccent,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 4),
                             Flexible(
@@ -200,7 +200,8 @@ class MangaHeaderSection extends StatelessWidget {
                         ),
                       ],
                     ),
-                    if (manga.uploaderGroupId != null && manga.uploaderGroupId!.isNotEmpty) ...[
+                    if (manga.uploaderGroupId != null &&
+                        manga.uploaderGroupId!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       _GroupBadge(groupId: manga.uploaderGroupId!),
                     ],
@@ -258,7 +259,9 @@ class _MangaStatsRowState extends State<_MangaStatsRow> {
   void didUpdateWidget(_MangaStatsRow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mangaId != widget.mangaId) {
-      _statsStream = InteractionService.instance.streamMangaStats(widget.mangaId);
+      _statsStream = InteractionService.instance.streamMangaStats(
+        widget.mangaId,
+      );
     }
   }
 
@@ -267,16 +270,22 @@ class _MangaStatsRowState extends State<_MangaStatsRow> {
     return StreamBuilder<Map<String, int>>(
       stream: _statsStream,
       builder: (context, statsSnapshot) {
-        final stats = statsSnapshot.data ?? {
-          'viewCount': widget.initialViewCount,
-          'likeCount': widget.initialLikeCount,
-        };
+        final stats =
+            statsSnapshot.data ??
+            {
+              'viewCount': widget.initialViewCount,
+              'likeCount': widget.initialLikeCount,
+            };
         final viewCount = stats['viewCount'] ?? 0;
         final likeCount = stats['likeCount'] ?? 0;
 
         return Row(
           children: [
-            const Icon(Icons.remove_red_eye_outlined, size: 16, color: Colors.white70),
+            const Icon(
+              Icons.remove_red_eye_outlined,
+              size: 16,
+              color: Colors.white70,
+            ),
             const SizedBox(width: 4),
             Text(
               widget.formatCount(viewCount),
@@ -312,7 +321,9 @@ class _RatingWidgetState extends State<_RatingWidget> {
   @override
   void initState() {
     super.initState();
-    _ratingStream = InteractionService.instance.streamMangaRating(widget.mangaId);
+    _ratingStream = InteractionService.instance.streamMangaRating(
+      widget.mangaId,
+    );
     _loadUserRating();
   }
 
@@ -320,15 +331,27 @@ class _RatingWidgetState extends State<_RatingWidget> {
   void didUpdateWidget(_RatingWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mangaId != widget.mangaId) {
-      _ratingStream = InteractionService.instance.streamMangaRating(widget.mangaId);
+      _ratingStream = InteractionService.instance.streamMangaRating(
+        widget.mangaId,
+      );
     }
   }
 
   Future<void> _loadUserRating() async {
     final prefs = await SharedPreferences.getInstance();
+    int rating = prefs.getInt('rating_${widget.mangaId}') ?? 0;
+    if (rating == 0) {
+      final cloudRating = await InteractionService.instance.getUserRating(
+        widget.mangaId,
+      );
+      if (cloudRating != null && cloudRating > 0) {
+        rating = cloudRating;
+        await prefs.setInt('rating_${widget.mangaId}', rating);
+      }
+    }
     if (mounted) {
       setState(() {
-        _userRating = prefs.getInt('rating_${widget.mangaId}') ?? 0;
+        _userRating = rating;
       });
     }
   }
@@ -371,11 +394,9 @@ class _RatingWidgetState extends State<_RatingWidget> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Không thể lưu đánh giá: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Không thể lưu đánh giá: $e')));
     } finally {
       if (mounted) setState(() => _isRating = false);
     }
@@ -410,10 +431,14 @@ class _RatingWidgetState extends State<_RatingWidget> {
                           duration: const Duration(milliseconds: 200),
                           child: Icon(
                             starValue <=
-                                    (_userRating > 0 ? _userRating : average.round())
+                                    (_userRating > 0
+                                        ? _userRating
+                                        : average.round())
                                 ? Icons.star_rounded
                                 : Icons.star_border_rounded,
-                            key: ValueKey('star_${starValue}_${_userRating}_${average.round()}'),
+                            key: ValueKey(
+                              'star_${starValue}_${_userRating}_${average.round()}',
+                            ),
                             size: 18,
                             color: _userRating > 0 && starValue <= _userRating
                                 ? Colors.orangeAccent
@@ -429,7 +454,10 @@ class _RatingWidgetState extends State<_RatingWidget> {
                   const SizedBox(
                     width: 12,
                     height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.amber,
+                    ),
                   )
                 else
                   Flexible(
@@ -437,7 +465,10 @@ class _RatingWidgetState extends State<_RatingWidget> {
                       average > 0
                           ? '${average.toStringAsFixed(1)} ($count lượt)'
                           : 'Chưa có đánh giá',
-                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -519,51 +550,74 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: Theme.of(ctx).colorScheme.onSurface.withValues(
+                            alpha: 0.2,
+                          ),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 4,
+                  ),
                   child: Text(
                     'Trạng thái đọc',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(ctx).colorScheme.onSurface,
                     ),
                   ),
                 ),
-                const Divider(color: Colors.white12),
+                Divider(color: Theme.of(ctx).dividerColor),
                 ...MangaReadingStatus.values.map((status) {
                   final isSelected = _entry?.status == status;
-                  final (label, icon, color) = LibraryStatusService.getStatusDisplay(status);
+                  final (label, icon, color) =
+                      LibraryStatusService.getStatusDisplay(status);
                   return ListTile(
                     leading: Icon(icon, color: color),
                     title: Text(
                       label,
                       style: TextStyle(
-                        color: isSelected ? color : Colors.white,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected
+                            ? color
+                            : Theme.of(ctx).colorScheme.onSurface,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
-                    trailing: isSelected ? Icon(Icons.check, color: color) : null,
+                    trailing: isSelected
+                        ? Icon(Icons.check, color: color)
+                        : null,
                     onTap: () async {
                       Navigator.pop(ctx);
-                      await LibraryStatusService.instance.setStatus(widget.mangaId, status);
+                      await LibraryStatusService.instance.setStatus(
+                        widget.mangaId,
+                        status,
+                      );
                     },
                   );
                 }),
                 if (_entry != null) ...[
-                  const Divider(color: Colors.white12),
+                  Divider(color: Theme.of(ctx).dividerColor),
                   ListTile(
-                    leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                    title: const Text('Xóa trạng thái', style: TextStyle(color: Colors.redAccent)),
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      'Xóa trạng thái',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
                     onTap: () async {
                       Navigator.pop(ctx);
-                      await LibraryStatusService.instance.removeEntry(widget.mangaId);
+                      await LibraryStatusService.instance.removeEntry(
+                        widget.mangaId,
+                      );
                     },
                   ),
                 ],
@@ -581,7 +635,7 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
     final tags = _entry?.tags ?? [];
     final (label, icon, color) = status != null
         ? LibraryStatusService.getStatusDisplay(status)
-        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Colors.white60);
+        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6));
 
     return Wrap(
       spacing: 6,
@@ -595,10 +649,14 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: (status != null ? color : Colors.white).withValues(alpha: 0.12),
+              color: (status != null ? color : Theme.of(context).colorScheme.onSurface).withValues(
+                alpha: 0.12,
+              ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: (status != null ? color : Colors.white30).withValues(alpha: 0.4),
+                color: (status != null ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)).withValues(
+                  alpha: 0.4,
+                ),
               ),
             ),
             child: Row(
@@ -622,18 +680,20 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
         ),
 
         // Custom tags
-        ...tags.map((tag) => CustomTagBadge(
-              tag: tag,
-              isSmall: true,
-              onTap: () async {
-                final updated = await CustomTagManagerDialog.show(
-                  context,
-                  mangaId: widget.mangaId,
-                  currentTags: tags,
-                );
-                if (updated != null) _loadStatus();
-              },
-            )),
+        ...tags.map(
+          (tag) => CustomTagBadge(
+            tag: tag,
+            isSmall: true,
+            onTap: () async {
+              final updated = await CustomTagManagerDialog.show(
+                context,
+                mangaId: widget.mangaId,
+                currentTags: tags,
+              );
+              if (updated != null) _loadStatus();
+            },
+          ),
+        ),
 
         // Add Tag button
         InkWell(
@@ -649,21 +709,23 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white24,
-              ),
+              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.bookmark_add_outlined, size: 13, color: Colors.orangeAccent),
-                SizedBox(width: 4),
+                Icon(
+                  Icons.bookmark_add_outlined,
+                  size: 13,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
                 Text(
                   '+ Nhãn',
                   style: TextStyle(
-                    color: Colors.orangeAccent,
+                    color: Theme.of(context).colorScheme.primary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
@@ -714,7 +776,11 @@ class _GroupBadgeState extends State<_GroupBadge> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.groups_2_outlined, size: 16, color: Colors.lightBlueAccent),
+                const Icon(
+                  Icons.groups_2_outlined,
+                  size: 16,
+                  color: Colors.lightBlueAccent,
+                ),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(

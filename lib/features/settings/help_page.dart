@@ -195,17 +195,17 @@ class _HelpPageState extends State<HelpPage> {
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color: Colors.blueAccent.withValues(alpha: 0.1),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Colors.blueAccent.withValues(alpha: 0.2),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                           width: 1.5,
                         ),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.search_off_rounded,
                         size: 42,
-                        color: Colors.blueAccent,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -310,8 +310,8 @@ class _HelpPageState extends State<HelpPage> {
         shape: const Border(), // Remove default borders on expansion
         title: Text(
           faq['question']!,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -348,7 +348,7 @@ class _HelpPageState extends State<HelpPage> {
         ),
         title: Text(
           guide['title']!,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
         ),
         subtitle: Text(
           guide['description']!,
@@ -373,8 +373,8 @@ class _HelpPageState extends State<HelpPage> {
             Expanded(
               child: Text(
                 guide['title']!,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -385,7 +385,10 @@ class _HelpPageState extends State<HelpPage> {
           child: Text(
             guide['content'] ??
                 guide['description']!, // fallback nếu không có 'content'
-            style: const TextStyle(color: Colors.white70, height: 1.6),
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+              height: 1.6,
+            ),
           ),
         ),
         actions: [
@@ -421,7 +424,10 @@ class _HelpPageState extends State<HelpPage> {
               ),
               child: const Icon(Icons.email, color: Colors.orange),
             ),
-            title: const Text('Email', style: TextStyle(color: Colors.white)),
+            title: Text(
+              'Email',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            ),
             subtitle: const Text(
               'minhhieued245@gmail.com',
               style: TextStyle(color: Colors.grey, fontSize: 12),
@@ -459,9 +465,9 @@ class _HelpPageState extends State<HelpPage> {
               ),
               child: const Icon(Icons.facebook, color: Colors.blueAccent),
             ),
-            title: const Text(
+            title: Text(
               'Facebook',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
             ),
             subtitle: const Text(
               'Nhắn tin qua Facebook',

@@ -70,7 +70,8 @@ class HistoryService {
           .collection('history')
           .orderBy('updatedAt', descending: true)
           .limit(limit)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 5));
 
       return snapshot.docs.map((doc) {
         return _historyFromFirestore(doc.id, doc.data());

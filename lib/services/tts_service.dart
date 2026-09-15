@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -7,8 +8,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../features/reader/epub/epub_parser.dart';
+import '../features/reader/epub/epub_models.dart';
 import 'notification_service.dart';
 import 'glossary_service.dart';
+
+class TtsChunk {
+  final String text;
+  final int blockIndex;
+  final int charStartInBlock;
+  final int charEndInBlock;
+
+  const TtsChunk({
+    required this.text,
+    this.blockIndex = 0,
+    this.charStartInBlock = 0,
+    this.charEndInBlock = 0,
+  });
+
+  @override
+  String toString() => 'TtsChunk(b:$blockIndex, [$charStartInBlock..$charEndInBlock]: "$text")';
+}
 
 class TtsService extends ChangeNotifier {
   static final TtsService instance = TtsService._internal();
@@ -35,15 +54,23 @@ class TtsService extends ChangeNotifier {
   List<Map<String, String>> _availableVoices = [];
   Map<String, String>? _selectedVoice;
 
-  List<String> _chunks = [];
+  List<TtsChunk> _chunks = [];
   int _chunkIndex = 0;
   String? _lastFullText;
+  List<String>? _lastBlockTexts;
+
+  int? _currentWordStart;
+  int? _currentWordEnd;
+  String? _currentWord;
+
+  final ValueNotifier<({int? start, int? end})> wordProgressNotifier = ValueNotifier((start: null, end: null));
 
   Timer? _sleepTimer;
   int _sleepMinutesRemaining = 0;
+  bool _stopAtEndOfChapter = false;
 
-  Future<void> Function()? onNextChapterRequested;
-  Future<void> Function()? onPrevChapterRequested;
+  Future<bool> Function()? onNextChapterRequested;
+  Future<bool> Function()? onPrevChapterRequested;
 
   // Getters
   String? get currentMangaId => _currentMangaId;
@@ -62,12 +89,24 @@ class TtsService extends ChangeNotifier {
   Map<String, String>? get selectedVoice => _selectedVoice;
   int get chunkIndex => _chunkIndex;
   int get totalChunks => _chunks.length;
-  String? get currentChunkText =>
+  List<TtsChunk> get chunks => List.unmodifiable(_chunks);
+  TtsChunk? get currentChunk =>
       (_chunks.isNotEmpty && _chunkIndex >= 0 && _chunkIndex < _chunks.length)
           ? _chunks[_chunkIndex]
           : null;
+  String? get currentChunkText => currentChunk?.text;
+  int? get currentBlockIndex => currentChunk?.blockIndex;
+  int? get currentWordStart => _currentWordStart;
+  int? get currentWordEnd => _currentWordEnd;
+  String? get currentWord => _currentWord;
   double get progress => _chunks.isEmpty ? 0.0 : (_chunkIndex + 1) / _chunks.length;
   int get sleepMinutesRemaining => _sleepMinutesRemaining;
+  bool get stopAtEndOfChapter => _stopAtEndOfChapter;
+
+  void setStopAtEndOfChapter(bool value) {
+    _stopAtEndOfChapter = value;
+    notifyListeners();
+  }
 
   void _hookNotificationActions() {
     NotificationService.onTtsActionReceived = (actionId) {
@@ -89,13 +128,34 @@ class TtsService extends ChangeNotifier {
   }
 
   Future<void> _initTts() async {
+    try {
+      await _tts.awaitSpeakCompletion(true);
+    } catch (_) {}
+
     _tts.setCompletionHandler(() {
+      _currentWordStart = null;
+      _currentWordEnd = null;
+      _currentWord = null;
+      wordProgressNotifier.value = (start: null, end: null);
       _playNextChunk();
+    });
+
+    _tts.setProgressHandler((String text, int start, int end, String word) {
+      if (currentChunkText == null || text != currentChunkText) return;
+      _currentWordStart = start.clamp(0, text.length);
+      _currentWordEnd = end.clamp(0, text.length);
+      _currentWord = word;
+      wordProgressNotifier.value = (start: _currentWordStart, end: _currentWordEnd);
+      // Không gọi notifyListeners() ở đây vì word-by-word progress gây rebuild toàn UI
+      // Sử dụng wordProgressNotifier để update độc lập từng khối UI nhỏ (ValueListenableBuilder)
     });
 
     _tts.setErrorHandler((msg) {
       debugPrint('TTS Error: $msg');
       _isPlaying = false;
+      _currentWordStart = null;
+      _currentWordEnd = null;
+      _currentWord = null;
       WakelockPlus.disable();
       _updateMediaNotification();
       notifyListeners();
@@ -165,38 +225,109 @@ class TtsService extends ChangeNotifier {
     }
   }
 
-  List<String> splitTtsChunks(String text) {
-    const maxChars = 2800;
-    final source = text
-        .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .trim();
-    if (source.isEmpty) return const [];
+  /// Trích xuất danh sách câu kèm tọa độ ký tự chính xác tuyệt đối trong block.
+  /// Không dùng indexOf sau khi trim/split giúp loại bỏ hoàn toàn lỗi lệch index highlight.
+  static List<({String text, int start, int end})> extractSentenceSpans(String block) {
+    if (block.isEmpty) return const [];
 
-    final chunks = <String>[];
-    final buffer = StringBuffer();
-    final pieces = source.split(RegExp(r'(?<=[.!?…。！？])\s+|\n\s*\n'));
-    for (final rawPiece in pieces) {
-      final piece = rawPiece.trim();
-      if (piece.isEmpty) continue;
-      if (piece.length > maxChars) {
-        if (buffer.isNotEmpty) {
-          chunks.add(buffer.toString().trim());
-          buffer.clear();
+    final spans = <({String text, int start, int end})>[];
+    // Khớp các câu kết thúc bởi: ! ? … 。！？ hoặc dấu . KHÔNG phải thập phân (1.5 an toàn)
+    final sentenceRegex = RegExp(
+      r'(?:[^.!?…。！？\n]|\d\.\d)*(?:(?<!\d)\.(?!\d)[“”‘\)]*|[!?…。！？]+[“”‘\)]*|\n+|$)',
+      multiLine: true,
+    );
+
+    for (final match in sentenceRegex.allMatches(block)) {
+      final raw = match.group(0) ?? '';
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) continue;
+
+      final leadingOffset = raw.indexOf(trimmed);
+      final sentenceStart = match.start + (leadingOffset != -1 ? leadingOffset : 0);
+      final sentenceEnd = sentenceStart + trimmed.length;
+
+      // Chỉ cắt câu cực kỳ dài (> 240 ký tự) không có dấu chấm để TTS dễ thở hơn
+      if (trimmed.length > 240) {
+        final subRegex = RegExp(r'[^,;:\-—\n]+(?:[,;:\-—]+|\n+|$)');
+        var curBuf = '';
+        var curStart = sentenceStart;
+        for (final subMatch in subRegex.allMatches(trimmed)) {
+          final subRaw = subMatch.group(0) ?? '';
+          if (curBuf.isNotEmpty && (curBuf.length + subRaw.length > 180)) {
+            final tBuf = curBuf.trim();
+            if (tBuf.isNotEmpty) {
+              final lead = curBuf.indexOf(tBuf);
+              final actualStart = curStart + (lead != -1 ? lead : 0);
+              spans.add((text: tBuf, start: actualStart, end: actualStart + tBuf.length));
+            }
+            curBuf = subRaw;
+            curStart = sentenceStart + subMatch.start;
+          } else {
+            curBuf += subRaw;
+          }
         }
-        for (var i = 0; i < piece.length; i += maxChars) {
-          chunks.add(piece.substring(i, min(i + maxChars, piece.length)));
+        final tBuf = curBuf.trim();
+        if (tBuf.isNotEmpty) {
+          final lead = curBuf.indexOf(tBuf);
+          final actualStart = curStart + (lead != -1 ? lead : 0);
+          spans.add((text: tBuf, start: actualStart, end: actualStart + tBuf.length));
         }
-        continue;
+      } else {
+        spans.add((text: trimmed, start: sentenceStart, end: sentenceEnd));
       }
-      if (buffer.length + piece.length + 1 > maxChars && buffer.isNotEmpty) {
-        chunks.add(buffer.toString().trim());
-        buffer.clear();
-      }
-      buffer.writeln(piece);
     }
-    if (buffer.toString().trim().isNotEmpty) {
-      chunks.add(buffer.toString().trim());
+
+    return spans;
+  }
+
+  static List<String> splitParagraphIntoSentences(String para) {
+    final spans = extractSentenceSpans(para);
+    if (spans.isEmpty) return const [];
+    return spans.map((s) => s.text).toList();
+  }
+
+  List<TtsChunk> splitTtsChunks(
+    String text, {
+    List<String>? blockTexts,
+    String? mangaId,
+  }) {
+    final chunks = <TtsChunk>[];
+
+    if (blockTexts != null && blockTexts.isNotEmpty) {
+      for (var bIdx = 0; bIdx < blockTexts.length; bIdx++) {
+        final rawBlock = blockTexts[bIdx];
+        final block = GlossaryService.instance
+            .applyReplacements(rawBlock, mangaId: mangaId);
+        if (block.trim().isEmpty) continue;
+
+        final sentenceSpans = extractSentenceSpans(block);
+        for (final s in sentenceSpans) {
+          chunks.add(TtsChunk(
+            text: s.text,
+            blockIndex: bIdx,
+            charStartInBlock: s.start,
+            charEndInBlock: s.end,
+          ));
+        }
+      }
+    } else {
+      final processedText = GlossaryService.instance
+          .applyReplacements(text, mangaId: mangaId);
+      final paragraphs = processedText.split(RegExp(r'\n\s*\n'));
+      for (var bIdx = 0; bIdx < paragraphs.length; bIdx++) {
+        final para = paragraphs[bIdx];
+        if (para.trim().isEmpty) continue;
+
+        final sentenceSpans = extractSentenceSpans(para);
+        for (final s in sentenceSpans) {
+          chunks.add(TtsChunk(
+            text: s.text,
+            blockIndex: bIdx,
+            charStartInBlock: s.start,
+            charEndInBlock: s.end,
+          ));
+        }
+      }
     }
     return chunks;
   }
@@ -211,7 +342,7 @@ class TtsService extends ChangeNotifier {
     final total = max(1, _chunks.length);
     final statusText = _isPlaying ? 'Đang đọc' : 'Tạm dừng';
     final speedText = '${_rate.toStringAsFixed(1)}x';
-    final body = '$statusText • Đoạn $current/$total • Tốc độ $speedText';
+    final body = '$statusText • Câu $current/$total • Tốc độ $speedText';
 
     await NotificationService.instance.showTtsMediaNotification(
       title: title,
@@ -231,10 +362,14 @@ class TtsService extends ChangeNotifier {
     String? epubPath,
     int chapterIndex = 0,
     required String text,
+    List<String>? blockTexts,
     int startChunkIndex = 0,
   }) async {
-    final processedText = GlossaryService.instance.applyReplacements(text, mangaId: mangaId);
-    final chunks = splitTtsChunks(processedText);
+    final chunks = splitTtsChunks(
+      text,
+      blockTexts: blockTexts,
+      mangaId: mangaId,
+    );
     if (chunks.isEmpty) return;
 
     _currentMangaId = mangaId;
@@ -244,7 +379,8 @@ class TtsService extends ChangeNotifier {
     _coverUrl = coverUrl ?? _coverUrl;
     _epubPath = epubPath ?? _epubPath;
     _currentChapterIndex = chapterIndex;
-    _lastFullText = processedText;
+    _lastFullText = text;
+    _lastBlockTexts = blockTexts;
 
     _chunks = chunks;
     _chunkIndex = startChunkIndex.clamp(0, chunks.length - 1).toInt();
@@ -259,26 +395,48 @@ class TtsService extends ChangeNotifier {
     await _speakCurrentChunk();
   }
 
+  bool _isSpeaking = false;
+
   Future<void> _speakCurrentChunk() async {
     if (!_isPlaying || _chunks.isEmpty) return;
-    final chunk = _chunks[_chunkIndex].trim();
+    if (_chunkIndex < 0 || _chunkIndex >= _chunks.length) return;
+    final chunk = _chunks[_chunkIndex].text.trim();
     if (chunk.isEmpty) {
       await _playNextChunk();
       return;
     }
+    _currentWordStart = null;
+    _currentWordEnd = null;
+    _currentWord = null;
     WakelockPlus.enable();
     await _updateMediaNotification();
-    await _tts.speak(chunk);
+    // Báo cho UI highlight câu mới và tự động cuộn đến câu ĐỒNG THỜI khi câu bắt đầu phát!
     notifyListeners();
+
+    if (_isSpeaking) {
+      await _tts.stop();
+    }
+    _isSpeaking = true;
+    try {
+      await _tts.speak(chunk);
+    } finally {
+      _isSpeaking = false;
+    }
   }
 
   Future<void> _playNextChunk() async {
     if (!_isPlaying || _chunks.isEmpty) return;
     _chunkIndex++;
     if (_chunkIndex >= _chunks.length) {
-      if (onNextChapterRequested != null) {
-        await onNextChapterRequested!();
+      if (_stopAtEndOfChapter) {
+        _stopAtEndOfChapter = false;
+        await stop();
         return;
+      }
+
+      if (onNextChapterRequested != null) {
+        final handled = await onNextChapterRequested!();
+        if (handled) return;
       }
 
       // Tự động sang chương kế tiếp khi nghe Audiobook ngầm hoặc ngoài màn hình khóa
@@ -287,13 +445,34 @@ class TtsService extends ChangeNotifier {
         if (advanced) return;
       }
 
-      _isPlaying = false;
-      WakelockPlus.disable();
-      await _updateMediaNotification();
-      notifyListeners();
+      // Đã đọc hết toàn bộ sách -> Dừng phát sạch sẽ
+      await stop();
       return;
     }
+
+    // Nghỉ nhẹ 100ms: Android audio buffer kịp flush, chống nuốt từ đầu câu tiếp theo và ngắt câu tự nhiên
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!_isPlaying) return;
+
     await _speakCurrentChunk();
+  }
+
+  Future<void> seekToChunk(int index) async {
+    if (_chunks.isEmpty) return;
+    final target = index.clamp(0, _chunks.length - 1);
+    if (_chunkIndex == target && _isPlaying) return;
+    _chunkIndex = target;
+    _currentWordStart = null;
+    _currentWordEnd = null;
+    _currentWord = null;
+    wordProgressNotifier.value = (start: null, end: null);
+    await _tts.stop();
+    if (_isPlaying) {
+      await _speakCurrentChunk();
+    } else {
+      await _updateMediaNotification();
+      notifyListeners();
+    }
   }
 
   Future<bool> _autoAdvanceToNextEpubChapter() async {
@@ -317,12 +496,38 @@ class TtsService extends ChangeNotifier {
       if (rawText.trim().isEmpty) return false;
       final nextText = GlossaryService.instance.applyReplacements(rawText, mangaId: _currentMangaId);
 
+      // Giữ nguyên full block index: divider → empty string (skip bởi splitTtsChunks),
+      // nhưng bIdx vẫn khớp với _blockKeys trong widget (full index).
+      final nextBlocks = nextChapter.blocks
+          .map((b) => (b.text != null && b.type != EpubBlockType.divider) ? b.text! : '')
+          .toList();
+
       _currentChapterIndex = nextIndex;
       _currentChapterId = 'chap_$nextIndex';
       _currentChapterTitle = nextChapter.title;
       _lastFullText = nextText;
-      _chunks = splitTtsChunks(nextText);
+      _lastBlockTexts = nextBlocks;
+      _chunks = splitTtsChunks(
+        nextText,
+        blockTexts: nextBlocks,
+        mangaId: _currentMangaId,
+      );
       _chunkIndex = 0;
+
+      if (_currentMangaId != null) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+            'epub_flutter_progress_$_currentMangaId',
+            jsonEncode({
+              'chapter': nextIndex,
+              'page': 0,
+              'offset': 0.0,
+              'blockIndex': 0,
+            }),
+          );
+        } catch (_) {}
+      }
 
       await _updateMediaNotification();
       notifyListeners();
@@ -344,6 +549,10 @@ class TtsService extends ChangeNotifier {
 
   Future<void> pause() async {
     _isPlaying = false;
+    _currentWordStart = null;
+    _currentWordEnd = null;
+    _currentWord = null;
+    wordProgressNotifier.value = (start: null, end: null);
     WakelockPlus.disable();
     await _tts.stop();
     await _updateMediaNotification();
@@ -352,7 +561,11 @@ class TtsService extends ChangeNotifier {
 
   Future<void> resume() async {
     if (_chunks.isEmpty && _lastFullText != null) {
-      _chunks = splitTtsChunks(_lastFullText!);
+      _chunks = splitTtsChunks(
+        _lastFullText!,
+        blockTexts: _lastBlockTexts,
+        mangaId: _currentMangaId,
+      );
     }
     if (_chunks.isEmpty) return;
     _isPlaying = true;
@@ -367,6 +580,10 @@ class TtsService extends ChangeNotifier {
     if (_chunkIndex < _chunks.length - 1) {
       await _tts.stop();
       _chunkIndex++;
+      _currentWordStart = null;
+      _currentWordEnd = null;
+      _currentWord = null;
+      wordProgressNotifier.value = (start: null, end: null);
       if (_isPlaying) {
         await _speakCurrentChunk();
       } else {
@@ -376,9 +593,18 @@ class TtsService extends ChangeNotifier {
     } else {
       // Đang ở đoạn cuối của chương -> Chuyển sang chương tiếp theo
       await _tts.stop();
+      if (_stopAtEndOfChapter) {
+        _stopAtEndOfChapter = false;
+        await stop();
+        return;
+      }
+      if (onNextChapterRequested != null) {
+        final handled = await onNextChapterRequested!();
+        if (handled) return;
+      }
       final advanced = await _autoAdvanceToNextEpubChapter();
-      if (!advanced && onNextChapterRequested != null) {
-        onNextChapterRequested!();
+      if (!advanced) {
+        await stop();
       }
     }
   }
@@ -387,6 +613,24 @@ class TtsService extends ChangeNotifier {
     if (_chunkIndex > 0) {
       await _tts.stop();
       _chunkIndex--;
+      _currentWordStart = null;
+      _currentWordEnd = null;
+      _currentWord = null;
+      wordProgressNotifier.value = (start: null, end: null);
+      if (_isPlaying) {
+        await _speakCurrentChunk();
+      } else {
+        await _updateMediaNotification();
+        notifyListeners();
+      }
+    } else {
+      // Đang ở đoạn đầu tiên của chương -> Chuyển về cuối chương trước nếu có
+      await _tts.stop();
+      if (onPrevChapterRequested != null) {
+        final handled = await onPrevChapterRequested!();
+        if (handled) return;
+      }
+      // Không lùi được nữa (ở đầu chương 1), phát lại câu đầu
       if (_isPlaying) {
         await _speakCurrentChunk();
       } else {
@@ -398,6 +642,10 @@ class TtsService extends ChangeNotifier {
 
   Future<void> stop() async {
     _isPlaying = false;
+    _currentWordStart = null;
+    _currentWordEnd = null;
+    _currentWord = null;
+    wordProgressNotifier.value = (start: null, end: null);
     WakelockPlus.disable();
     await _tts.stop();
     await _updateMediaNotification();
@@ -408,11 +656,17 @@ class TtsService extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepMinutesRemaining = 0;
+    _stopAtEndOfChapter = false;
     _isPlaying = false;
     _isVisible = false;
     _chunks = [];
     _chunkIndex = 0;
     _lastFullText = null;
+    _lastBlockTexts = null;
+    _currentWordStart = null;
+    _currentWordEnd = null;
+    _currentWord = null;
+    wordProgressNotifier.value = (start: null, end: null);
     WakelockPlus.disable();
     await _tts.stop();
     await _updateMediaNotification();
@@ -422,6 +676,7 @@ class TtsService extends ChangeNotifier {
   void setSleepTimer(int minutes) {
     _sleepTimer?.cancel();
     _sleepTimer = null;
+    _stopAtEndOfChapter = false;
     if (minutes <= 0) {
       _sleepMinutesRemaining = 0;
       notifyListeners();
@@ -443,29 +698,35 @@ class TtsService extends ChangeNotifier {
     });
   }
 
-  static const List<double> availableSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  static const List<double> availableSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
 
   Future<void> cycleSpeed() async {
     final currentIndex = availableSpeeds.indexWhere((s) => (s - _rate).abs() < 0.05);
     final nextIndex = currentIndex == -1 ? 2 : (currentIndex + 1) % availableSpeeds.length;
-    await setRate(availableSpeeds[nextIndex]);
+    await setRate(availableSpeeds[nextIndex], restartIfPlaying: true);
   }
 
-  Future<void> setRate(double value) async {
+  Future<void> setRate(double value, {bool restartIfPlaying = false}) async {
     _rate = value;
     await _tts.setSpeechRate(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('global_tts_rate', value);
     await _updateMediaNotification();
     notifyListeners();
+    if (restartIfPlaying && _isPlaying) {
+      await _speakCurrentChunk();
+    }
   }
 
-  Future<void> setPitch(double value) async {
+  Future<void> setPitch(double value, {bool restartIfPlaying = false}) async {
     _pitch = value;
     await _tts.setPitch(value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('global_tts_pitch', value);
     notifyListeners();
+    if (restartIfPlaying && _isPlaying) {
+      await _speakCurrentChunk();
+    }
   }
 
   Future<void> setLanguage(String lang) async {
@@ -475,6 +736,9 @@ class TtsService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('global_tts_lang', lang);
     notifyListeners();
+    if (_isPlaying) {
+      await _speakCurrentChunk();
+    }
   }
 
   Future<void> setVoice(Map<String, String> voice) async {
@@ -489,6 +753,9 @@ class TtsService extends ChangeNotifier {
       await prefs.setString('global_tts_voice_locale', voice['locale'] ?? '');
     } catch (_) {}
     notifyListeners();
+    if (_isPlaying) {
+      await _speakCurrentChunk();
+    }
   }
 
   Future<void> _applySettings() async {
@@ -501,5 +768,13 @@ class TtsService extends ChangeNotifier {
         'locale': _selectedVoice!['locale']!,
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _tts.stop();
+    super.dispose();
   }
 }

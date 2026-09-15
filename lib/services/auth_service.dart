@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/database_helper.dart';
 
 // AuthService: không phải Singleton — mỗi caller tạo instance mới.
 // Thiết kế này OK vì FirebaseAuth/GoogleSignIn đều là Singleton bên dưới.
@@ -14,6 +16,12 @@ class AuthService {
   static String persistedUid = '';
   static String persistedEmail = '';
   static String persistedName = '';
+
+  static String get safeUid {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? persistedUid;
+    return uid.isNotEmpty ? uid : '';
+  }
+
 
   /// Khởi tạo trạng thái đăng nhập từ bộ nhớ máy khi app khởi động
   static Future<void> init() async {
@@ -37,11 +45,15 @@ class AuthService {
           'user_name',
           currentFirebaseUser.displayName ?? '',
         );
+        unawaited(DatabaseHelper.instance.migrateGuestHistory(currentFirebaseUser.uid));
       } else if (hasPersisted) {
         isPersistedLoggedIn = true;
         persistedUid = prefs.getString('user_uid') ?? '';
         persistedEmail = prefs.getString('user_email') ?? '';
         persistedName = prefs.getString('user_name') ?? '';
+        if (persistedUid.isNotEmpty) {
+          unawaited(DatabaseHelper.instance.migrateGuestHistory(persistedUid));
+        }
       } else {
         isPersistedLoggedIn = false;
       }
@@ -84,6 +96,8 @@ class AuthService {
       });
       // Gửi email xác thực — user phải click link trước khi đăng nhập được
       await cred.user!.sendEmailVerification();
+      // Đăng xuất ngay để phiên chưa xác thực không hoạt động trực tiếp
+      await _auth.signOut();
     } on FirebaseAuthException catch (e) {
       throw Exception(e.message ?? 'Lỗi đăng ký tài khoản');
     }
@@ -138,6 +152,7 @@ class AuthService {
           persistedUid = user.uid;
           persistedEmail = user.email ?? '';
           persistedName = displayName;
+          unawaited(DatabaseHelper.instance.migrateGuestHistory(user.uid));
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -221,15 +236,19 @@ class AuthService {
       if (!userDoc.exists) {
         await _createUserProfile(
           uid: userCredential.user!.uid,
-          email: userCredential.user!.email!,
+          email: userCredential.user?.email ?? '',
           name: userCredential.user!.displayName ?? 'User',
           photoUrl: userCredential.user!.photoURL,
           authProvider: 'google',
         );
       }
+      unawaited(DatabaseHelper.instance.migrateGuestHistory(userCredential.user!.uid));
     } on FirebaseAuthException catch (e) {
       throw Exception(_handleAuthError(e));
     } catch (e) {
+      if (e.toString().contains('Đăng nhập bị hủy')) {
+        throw Exception('Đăng nhập bị hủy');
+      }
       throw Exception('Lỗi đăng nhập Google: ${e.toString()}');
     }
   }

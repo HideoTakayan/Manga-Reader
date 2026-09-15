@@ -16,13 +16,19 @@ class ArchiveImageExtractor {
     final cacheDir = Directory(p.join(tempDir.path, 'reader_cache', chapterId));
 
     if (await cacheDir.exists()) {
-      final files = cacheDir.listSync().whereType<File>().toList();
+      // Lọc bỏ file 0-byte (có thể do app crash giữa chừng khi ghi)
+      final files = cacheDir.listSync().whereType<File>()
+          .where((f) {
+            try { return f.lengthSync() > 0; } catch (_) { return false; }
+          })
+          .toList();
       if (files.isNotEmpty) {
         final paths = files.map((f) => f.path).toList();
         paths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
         debugPrint('✅ Reusing extracted cache for chapter $chapterId');
         return paths;
       }
+      // Cache folder rỗng hoặc toàn file hỏng → xóa để giải nén lại
       await cacheDir.delete(recursive: true);
     }
     await cacheDir.create(recursive: true);
@@ -40,7 +46,11 @@ class ArchiveImageExtractor {
       final tempDir = await getTemporaryDirectory();
       final cacheDir = Directory(p.join(tempDir.path, 'reader_cache', chapterId));
       if (await cacheDir.exists()) {
-        final files = cacheDir.listSync().whereType<File>().toList();
+        final files = cacheDir.listSync().whereType<File>()
+            .where((f) {
+              try { return f.lengthSync() > 0; } catch (_) { return false; }
+            })
+            .toList();
         if (files.isNotEmpty) {
           final paths = files.map((f) => f.path).toList();
           paths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
@@ -169,11 +179,14 @@ List<String> _extractZipImagesToDisk(Map<String, dynamic> args) {
         Uint8List fileBytes;
         if (content is Uint8List) {
           fileBytes = content;
+        } else if (content is InputStreamBase) {
+          fileBytes = content.toUint8List();
         } else if (content is List<int>) {
           fileBytes = Uint8List.fromList(content);
         } else {
           continue;
         }
+        if (fileBytes.isEmpty) continue;
 
         final ext = p.extension(name);
         final fileName = 'page_${index.toString().padLeft(4, '0')}$ext';

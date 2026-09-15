@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -210,10 +211,13 @@ class DriveService {
   // Thử khôi phục phiên đăng nhập cũ khi mở app (im lặng, không hiện popup).
   Future<GoogleSignInAccount?> restorePreviousSession() async {
     try {
-      final user = await _googleSignIn.signInSilently();
+      final user = await _googleSignIn
+          .signInSilently()
+          .timeout(const Duration(seconds: 8));
       if (user != null) {
         _currentUser = user;
-        final hasDrive = await _initializeDriveApi();
+        final hasDrive = await _initializeDriveApi()
+            .timeout(const Duration(seconds: 8));
         if (hasDrive) {
           _authController.add(_currentUser);
           return _currentUser;
@@ -286,34 +290,94 @@ class DriveService {
     } catch (_) {}
   }
 
+  /// Phân tích cú pháp catalog JSON an toàn (Defensive Parsing):
+  /// Nếu có 1 bản ghi bị lỗi cú pháp/thiếu trường, bỏ qua bản ghi đó chứ không làm crash toàn bộ danh mục.
+  List<CloudManga> _safeParseCatalog(String content) {
+    try {
+      final dynamic decoded = jsonDecode(content);
+      if (decoded is! List) return [];
+      final List<CloudManga> result = [];
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          try {
+            result.add(CloudManga.fromMap(item));
+          } catch (e) {
+            debugPrint('⚠️ Error parsing manga entry in catalog: $e');
+          }
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('⚠️ JSON decode error in _safeParseCatalog: $e');
+      return [];
+    }
+  }
+
   Future<List<CloudManga>?> _fetchCatalogByFileId(String fileId) async {
+    // 1. Google Drive REST API qua API Key
     try {
       final dlUrl = Uri.parse(
         'https://www.googleapis.com/drive/v3/files/$fileId'
-        '?alt=media&key=${DriveConfig.apiKey}',
+        '?alt=media&supportsAllDrives=true&key=${DriveConfig.apiKey}',
       );
-      final dlRes = await _httpClient.get(dlUrl).timeout(const Duration(seconds: 4));
-      if (dlRes.statusCode == 200) {
+      final dlRes = await _httpClient.get(dlUrl).timeout(const Duration(seconds: 5));
+      if ((dlRes.statusCode == 200 || dlRes.statusCode == 206) &&
+          !(dlRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
         final content = utf8.decode(dlRes.bodyBytes);
-        final List<dynamic> jsonList = jsonDecode(content);
-        return jsonList.map((e) => CloudManga.fromMap(e)).toList();
+        final list = _safeParseCatalog(content);
+        if (list.isNotEmpty) return list;
       }
     } catch (e) {
       debugPrint('⚠️ Direct catalog download by ID failed: $e');
     }
 
-    // Fallback: Tải qua CDN Proxy nếu có cấu hình
+    // 2. Fallback: Tải qua CDN Proxy nếu có cấu hình
     if (DriveConfig.cdnProxyUrl.trim().isNotEmpty) {
       try {
         final cdnUrl = Uri.parse(DriveConfig.getDownloadUrl(fileId));
-        final cdnRes = await _httpClient.get(cdnUrl).timeout(const Duration(seconds: 4));
-        if (cdnRes.statusCode == 200 && !(cdnRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+        final cdnRes = await _httpClient.get(cdnUrl).timeout(const Duration(seconds: 5));
+        if (cdnRes.statusCode == 200 &&
+            !(cdnRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
           final content = utf8.decode(cdnRes.bodyBytes);
-          final List<dynamic> jsonList = jsonDecode(content);
-          return jsonList.map((e) => CloudManga.fromMap(e)).toList();
+          final list = _safeParseCatalog(content);
+          if (list.isNotEmpty) return list;
         }
       } catch (e) {
         debugPrint('⚠️ CDN catalog download fallback failed: $e');
+      }
+    }
+
+    // 3. Fallback: Tải trực tiếp qua Google Drive uc download
+    try {
+      final ucUrl = Uri.parse('https://drive.google.com/uc?export=download&id=$fileId');
+      final ucRes = await _httpClient.get(ucUrl).timeout(const Duration(seconds: 6));
+      if (ucRes.statusCode == 200 &&
+          !(ucRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+        final content = utf8.decode(ucRes.bodyBytes);
+        final list = _safeParseCatalog(content);
+        if (list.isNotEmpty) return list;
+      }
+    } catch (e) {
+      debugPrint('⚠️ UC catalog download fallback failed: $e');
+    }
+
+    // 4. Fallback: Dùng _driveApi nếu đã đăng nhập quyền ghi
+    if (_driveApi != null) {
+      try {
+        final media = await _driveApi!.files.get(
+          fileId,
+          downloadOptions: drive.DownloadOptions.fullMedia,
+          supportsAllDrives: true,
+        ) as drive.Media;
+        final List<int> bytes = [];
+        await for (final chunk in media.stream) {
+          bytes.addAll(chunk);
+        }
+        final content = utf8.decode(bytes);
+        final list = _safeParseCatalog(content);
+        if (list.isNotEmpty) return list;
+      } catch (e) {
+        debugPrint('⚠️ DriveApi catalog download fallback failed: $e');
       }
     }
 
@@ -321,13 +385,38 @@ class DriveService {
   }
 
   Future<(String?, List<CloudManga>?)> _searchAndDownloadCatalog() async {
+    // 1. Thử qua DriveApi nếu có tài khoản đã đăng nhập
+    if (_driveApi != null) {
+      try {
+        final q = "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
+        final fileList = await _driveApi!.files.list(
+          q: q,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          pageSize: 10,
+        );
+        if (fileList.files != null && fileList.files!.isNotEmpty) {
+          final fileId = fileList.files!.first.id;
+          if (fileId != null) {
+            final mangas = await _fetchCatalogByFileId(fileId);
+            return (fileId, mangas);
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ DriveApi Catalog search failed: $e');
+      }
+    }
+
+    // 2. Thử qua REST API với API Key
     try {
       final q = "name = '$_catalogFileName' and '$_rootFolderId' in parents and trashed = false";
       final listUrl = Uri.parse(
         'https://www.googleapis.com/drive/v3/files'
-        '?q=${Uri.encodeComponent(q)}&key=${DriveConfig.apiKey}',
+        '?q=${Uri.encodeComponent(q)}'
+        '&supportsAllDrives=true&includeItemsFromAllDrives=true'
+        '&key=${DriveConfig.apiKey}',
       );
-      final listRes = await _httpClient.get(listUrl).timeout(const Duration(seconds: 4));
+      final listRes = await _httpClient.get(listUrl).timeout(const Duration(seconds: 6));
       if (listRes.statusCode == 200) {
         final listData = jsonDecode(listRes.body) as Map<String, dynamic>;
         final files = listData['files'] as List<dynamic>? ?? [];
@@ -368,14 +457,17 @@ class DriveService {
           .catchError((_) => <String, Map<String, int>>{});
 
       List<CloudManga>? rawMangas;
+      if (forceRefresh) {
+        _catalogFileId = null;
+      }
       final cachedId = await _getCatalogFileId();
-      if (cachedId != null) {
+      if (!forceRefresh && cachedId != null) {
         // TẢI TRỰC TIẾP (Bỏ qua 2s tìm kiếm files.list)
         rawMangas = await _fetchCatalogByFileId(cachedId);
       }
 
-      // Nếu chưa có ID hoặc ID cũ bị lỗi (404/re-upload), tìm kiếm lại và lưu ID mới
-      if (rawMangas == null) {
+      // Nếu chưa có ID hoặc ID cũ bị lỗi (404/re-upload/rỗng) hoặc forceRefresh, tìm kiếm lại và lưu ID mới
+      if (rawMangas == null || rawMangas.isEmpty) {
         final (newId, searchMangas) = await _searchAndDownloadCatalog();
         if (newId != null) {
           _saveCatalogFileId(newId);
@@ -668,16 +760,27 @@ class DriveService {
     if (_rootFolderId == null) return;
 
     try {
-      // Liệt kê tất cả folder con (mỗi folder = 1 bộ truyện)
+      // Liệt kê tất cả folder con (mỗi folder = 1 bộ truyện) có hỗ trợ phân trang đầy đủ
       final foldersQuery =
           "mimeType = 'application/vnd.google-apps.folder' and '$_rootFolderId' in parents and trashed = false";
-      final folderList = await _driveApi!.files.list(
-        q: foldersQuery,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      );
+      
+      final List<drive.File> allFolders = [];
+      String? pageToken;
+      do {
+        final folderList = await _driveApi!.files.list(
+          q: foldersQuery,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          pageSize: 1000,
+          pageToken: pageToken,
+        );
+        if (folderList.files != null && folderList.files!.isNotEmpty) {
+          allFolders.addAll(folderList.files!);
+        }
+        pageToken = folderList.nextPageToken;
+      } while (pageToken != null && pageToken.isNotEmpty);
 
-      if (folderList.files == null || folderList.files!.isEmpty) {
+      if (allFolders.isEmpty) {
         _cachedMangas = [];
         await _saveCatalogToDrive([]);
         return;
@@ -685,7 +788,7 @@ class DriveService {
 
       // Đọc info.json trong từng folder để lấy metadata
       final List<CloudManga> mangas = [];
-      for (final folder in folderList.files!) {
+      for (final folder in allFolders) {
         try {
           final infoQuery =
               "name = 'info.json' and '${folder.id}' in parents and trashed = false";
@@ -968,7 +1071,7 @@ class DriveService {
       // Chạy song song: Tải lượt xem từ Firestore
       final statsFuture = InteractionService.instance
           .getChapterViews(mangaId)
-          .timeout(const Duration(seconds: 3))
+          .timeout(const Duration(seconds: 4))
           .catchError((_) => <String, int>{});
 
       do {
@@ -978,10 +1081,11 @@ class DriveService {
         final listUrl = Uri.parse(
           'https://www.googleapis.com/drive/v3/files'
           '?q=${Uri.encodeComponent(q)}'
+          '&supportsAllDrives=true&includeItemsFromAllDrives=true'
           '&fields=files(id,name,mimeType,size,createdTime),nextPageToken'
           '&pageSize=1000$tokenParam&key=${DriveConfig.apiKey}',
         );
-        final listRes = await _httpClient.get(listUrl).timeout(const Duration(seconds: 5));
+        final listRes = await _httpClient.get(listUrl).timeout(const Duration(seconds: 8));
         if (listRes.statusCode != 200) {
           if (rawFiles.isNotEmpty) break; // Đã có dữ liệu từ các trang trước
           throw Exception('HTTP ${listRes.statusCode} khi lấy chapters');
@@ -996,16 +1100,32 @@ class DriveService {
 
       final statsMap = await statsFuture;
 
-      final files = rawFiles.map((f) {
+      final files = <CloudChapter>[];
+      for (final f in rawFiles) {
         final name = f['name'] as String? ?? '';
         final id = f['id'] as String? ?? '';
-        String type = 'zip';
-        final lowerName = name.toLowerCase();
-        if (lowerName.endsWith('.epub')) type = 'epub';
-        if (lowerName.endsWith('.cbz')) type = 'cbz';
-        if (lowerName.endsWith('.pdf')) type = 'pdf';
+        final mimeType = f['mimeType'] as String? ?? '';
 
-        return CloudChapter(
+        // Bỏ qua thư mục con và file metadata / ảnh bìa
+        if (mimeType == 'application/vnd.google-apps.folder') continue;
+        final lowerName = name.toLowerCase();
+        if (lowerName == 'info.json') continue;
+        if (lowerName.startsWith('cover.') || lowerName.startsWith('cover_') || mimeType.startsWith('image/')) continue;
+
+        String type = 'zip';
+        if (lowerName.endsWith('.epub') || mimeType.contains('epub')) {
+          type = 'epub';
+        } else if (lowerName.endsWith('.cbz')) {
+          type = 'cbz';
+        } else if (lowerName.endsWith('.pdf') || mimeType.contains('pdf')) {
+          type = 'pdf';
+        } else if (lowerName.endsWith('.cbr')) {
+          type = 'cbr';
+        } else if (lowerName.endsWith('.cbt')) {
+          type = 'cbt';
+        }
+
+        files.add(CloudChapter(
           id: id,
           title: name.isEmpty ? 'Không rõ' : name,
           fileId: id,
@@ -1015,10 +1135,31 @@ class DriveService {
               ? DateTime.tryParse(f['createdTime'] as String) ?? DateTime.now()
               : DateTime.now(),
           viewCount: statsMap[id] ?? 0,
-        );
-      }).toList();
+        ));
+      }
 
-      final sorted = ChapterSortHelper.sort(files);
+      // Áp dụng thứ tự chương tùy chỉnh từ CloudManga.chapterOrder nếu có
+      final manga = getMangaById(mangaId);
+      final customOrder = manga?.chapterOrder ?? [];
+      List<CloudChapter> sorted;
+      if (customOrder.isNotEmpty) {
+        final orderMap = {for (int i = 0; i < customOrder.length; i++) customOrder[i]: i};
+        final inOrder = <CloudChapter>[];
+        final notInOrder = <CloudChapter>[];
+        for (final ch in files) {
+          if (orderMap.containsKey(ch.id)) {
+            inOrder.add(ch);
+          } else {
+            notInOrder.add(ch);
+          }
+        }
+        inOrder.sort((a, b) => orderMap[a.id]!.compareTo(orderMap[b.id]!));
+        final sortedRemaining = ChapterSortHelper.sort(notInOrder);
+        sorted = [...inOrder, ...sortedRemaining];
+      } else {
+        sorted = ChapterSortHelper.sort(files);
+      }
+
       // Lưu vào RAM cache
       _chapterCache[mangaId] = (DateTime.now(), sorted);
       return sorted;
@@ -1032,7 +1173,7 @@ class DriveService {
   }
 
   // Upload file chapter mới (ZIP/CBZ/PDF) lên folder truyện trên Drive.
-  // Sau khi upload xong, gửi thông báo realtime cho người đang theo dõi truyện.
+  // Sau khi upload xong, tự động cập nhật catalog.json và gửi thông báo realtime cho người theo dõi.
   Future<void> addChapter({
     required String mangaId,
     required String title,
@@ -1053,14 +1194,56 @@ class DriveService {
       ..parents = [mangaId];
 
     final media = drive.Media(file.openRead(), file.lengthSync());
-    await _driveApi!.files.create(
+    final created = await _driveApi!.files.create(
       fileMeta,
       uploadMedia: media,
       supportsAllDrives: true,
     );
+
+    // Cập nhật thông tin truyện: updatedAt, chapterOrder, catalog.json và gửi thông báo
+    try {
+      final currentMangas = await getMangas();
+      final idx = currentMangas.indexWhere((m) => m.id == mangaId);
+      if (idx != -1 && created.id != null) {
+        final m = currentMangas[idx];
+        final newOrder = List<String>.from(m.chapterOrder);
+        if (!newOrder.contains(created.id)) {
+          newOrder.add(created.id!);
+        }
+        final updatedManga = CloudManga(
+          id: m.id,
+          title: m.title,
+          author: m.author,
+          description: m.description,
+          coverFileId: m.coverFileId,
+          updatedAt: DateTime.now(),
+          genres: m.genres,
+          status: m.status,
+          viewCount: m.viewCount,
+          likeCount: m.likeCount,
+          chapterOrder: newOrder,
+          contentType: m.contentType,
+          uploaderGroupId: m.uploaderGroupId,
+          uploaderGroupName: m.uploaderGroupName,
+        );
+        currentMangas[idx] = updatedManga;
+        _cachedMangas = currentMangas;
+        await _updateCatalog(updatedManga);
+
+        // Gửi thông báo cho người theo dõi
+        await NotificationService.instance.notifySubscribers(
+          mangaId: mangaId,
+          title: '${m.title} có chương mới!',
+          body: 'Chương mới: $safeTitle',
+          type: 'new_chapter',
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ Cảnh báo cập nhật catalog sau khi thêm chapter: $e');
+    }
   }
 
-  // Xóa một chapter khỏi Drive theo fileId.
+  // Xóa một chapter khỏi Drive theo fileId và đồng bộ catalog.json.
   Future<void> deleteChapter(String chapterId, {String? mangaId}) async {
     await ensureDriveAccess();
     if (mangaId != null) {
@@ -1070,6 +1253,39 @@ class DriveService {
     }
     try {
       await _driveApi!.files.delete(chapterId, supportsAllDrives: true);
+
+      // Cập nhật lại chapterOrder trong catalog nếu có mangaId
+      if (mangaId != null) {
+        try {
+          final currentMangas = await getMangas();
+          final idx = currentMangas.indexWhere((m) => m.id == mangaId);
+          if (idx != -1) {
+            final m = currentMangas[idx];
+            if (m.chapterOrder.contains(chapterId)) {
+              final newOrder = List<String>.from(m.chapterOrder)..remove(chapterId);
+              final updatedManga = CloudManga(
+                id: m.id,
+                title: m.title,
+                author: m.author,
+                description: m.description,
+                coverFileId: m.coverFileId,
+                updatedAt: m.updatedAt,
+                genres: m.genres,
+                status: m.status,
+                viewCount: m.viewCount,
+                likeCount: m.likeCount,
+                chapterOrder: newOrder,
+                contentType: m.contentType,
+                uploaderGroupId: m.uploaderGroupId,
+                uploaderGroupName: m.uploaderGroupName,
+              );
+              currentMangas[idx] = updatedManga;
+              _cachedMangas = currentMangas;
+              await _updateCatalog(updatedManga);
+            }
+          }
+        } catch (_) {}
+      }
     } catch (e) {
       if (e is drive.DetailedApiRequestError && e.status == 404) {
         print('Chapter đã bị xoá trước đó (404).');
@@ -1160,7 +1376,7 @@ class DriveService {
         '?fields=id,name,parents,mimeType,size'
         '&supportsAllDrives=true&key=${DriveConfig.apiKey}',
       );
-      final res = await http.get(url).timeout(const Duration(seconds: 15));
+      final res = await _httpClient.get(url).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         return {
@@ -1239,7 +1455,10 @@ class DriveService {
         final cdnUrl = DriveConfig.getDownloadUrl(fileId);
         final apiMediaUrl = Uri.parse(
           'https://www.googleapis.com/drive/v3/files/$fileId'
-          '?alt=media&key=${DriveConfig.apiKey}',
+          '?alt=media&supportsAllDrives=true&key=${DriveConfig.apiKey}',
+        );
+        final publicUrl = Uri.parse(
+          'https://drive.google.com/uc?export=download&id=$fileId',
         );
 
         final initialUrl = DriveConfig.cdnProxyUrl.trim().isNotEmpty
@@ -1250,25 +1469,40 @@ class DriveService {
         if (existingBytes > 0) {
           req1.headers['Range'] = 'bytes=$existingBytes-';
         }
+        req1.headers['Accept-Encoding'] = 'identity';
 
         http.StreamedResponse response = await _httpClient
             .send(req1)
             .timeout(const Duration(seconds: 300));
 
+        // 1. Nếu ban đầu dùng CDN nhưng gặp lỗi -> Thử trực tiếp Google Drive UC
         if ((response.statusCode != 200 && response.statusCode != 206) ||
-            (response.headers['content-type']?.toLowerCase().contains(
-                  'text/html',
-                ) ??
-                false)) {
-          final publicUrl = Uri.parse(
-            'https://drive.google.com/uc?export=download&id=$fileId',
-          );
+            (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+          unawaited(response.stream.drain().catchError((_) {})); // Giải phóng socket stream cũ
+
           final req2 = http.Request('GET', publicUrl);
           if (existingBytes > 0) {
             req2.headers['Range'] = 'bytes=$existingBytes-';
           }
+          req2.headers['Accept-Encoding'] = 'identity';
           response = await _httpClient
               .send(req2)
+              .timeout(const Duration(seconds: 300));
+        }
+
+        // 2. Nếu Google Drive UC cũng lỗi -> Thử trực tiếp Google Drive REST API alt=media
+        if (((response.statusCode != 200 && response.statusCode != 206) ||
+            (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) &&
+            initialUrl != apiMediaUrl) {
+          unawaited(response.stream.drain().catchError((_) {})); // Giải phóng socket stream cũ
+
+          final reqApi = http.Request('GET', apiMediaUrl);
+          if (existingBytes > 0) {
+            reqApi.headers['Range'] = 'bytes=$existingBytes-';
+          }
+          reqApi.headers['Accept-Encoding'] = 'identity';
+          response = await _httpClient
+              .send(reqApi)
               .timeout(const Duration(seconds: 300));
         }
 
@@ -1278,22 +1512,68 @@ class DriveService {
         }
 
         if (response.statusCode == 416) {
-          // Range Not Satisfiable: file đã hoàn thành hoặc không hỗ trợ range cũ
-          print('HTTP 416 (Range Satisfied / Complete) for $fileId');
-          return true;
+          // Range Not Satisfiable: file .part hiện tại có thể bị lỗi hoặc vượt quá kích thước trên server
+          print('HTTP 416 (Range Not Satisfiable) cho $fileId -> Xóa file .part cũ và tải lại từ đầu');
+          if (await file.exists()) {
+            await file.delete();
+          }
+          existingBytes = 0;
+          retryCount++;
+          continue;
+        }
+
+        // 3. Xử lý trang cảnh báo virus của Google Drive nếu có HTML
+        if (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false) {
+          final htmlString = await response.stream.bytesToString();
+          final confirmMatch = RegExp(r'(?:confirm=|[?&]confirm=|name="confirm"\s+value=")([^"&]+)').firstMatch(htmlString);
+          final uuidMatch = RegExp(r'(?:uuid=|[?&]uuid=|name="uuid"\s+value=")([^"&]+)').firstMatch(htmlString);
+
+          if (confirmMatch != null) {
+            final confirmToken = confirmMatch.group(1)!;
+            final uuid = uuidMatch?.group(1);
+            final cookies = response.headers['set-cookie'];
+            final confirmUrl = Uri.parse(
+              'https://drive.usercontent.google.com/download'
+              '?id=$fileId&export=download&confirm=$confirmToken${uuid != null ? '&uuid=$uuid' : ''}'
+            );
+            
+            final req3 = http.Request('GET', confirmUrl);
+            if (cookies != null) {
+              final warningMatch = RegExp(r'(download_warning_[^=]+=[^;]+)').firstMatch(cookies);
+              if (warningMatch != null) {
+                req3.headers['cookie'] = warningMatch.group(1)!;
+              }
+            }
+            if (existingBytes > 0) {
+              req3.headers['Range'] = 'bytes=$existingBytes-';
+            }
+            req3.headers['Accept-Encoding'] = 'identity';
+            response = await _httpClient.send(req3).timeout(const Duration(seconds: 300));
+            
+            // Nếu bypass virus scan thất bại -> Thử trực tiếp Google Drive API alt=media
+            if ((response.statusCode != 200 && response.statusCode != 206) ||
+                (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+              unawaited(response.stream.drain().catchError((_) {}));
+              final reqApi = http.Request('GET', apiMediaUrl);
+              if (existingBytes > 0) {
+                reqApi.headers['Range'] = 'bytes=$existingBytes-';
+              }
+              reqApi.headers['Accept-Encoding'] = 'identity';
+              response = await _httpClient.send(reqApi).timeout(const Duration(seconds: 300));
+            }
+          } else {
+            // Không tìm thấy confirm token -> Thử sang Google Drive API alt=media
+            final reqApi = http.Request('GET', apiMediaUrl);
+            if (existingBytes > 0) {
+              reqApi.headers['Range'] = 'bytes=$existingBytes-';
+            }
+            reqApi.headers['Accept-Encoding'] = 'identity';
+            response = await _httpClient.send(reqApi).timeout(const Duration(seconds: 300));
+          }
         }
 
         if (response.statusCode != 200 && response.statusCode != 206) {
           throw Exception('HTTP ${response.statusCode}');
-        }
-
-        if (response.headers['content-type']?.toLowerCase().contains(
-              'text/html',
-            ) ??
-            false) {
-          throw Exception(
-            'Drive returned an HTML page instead of chapter bytes',
-          );
         }
 
         final isPartial = response.statusCode == 206;
@@ -1310,7 +1590,7 @@ class DriveService {
           onProgress(received, total);
         }
 
-        await for (final chunk in response.stream) {
+        await for (final chunk in response.stream.timeout(const Duration(seconds: 45))) {
           if (isCancelled != null && isCancelled()) {
             throw Exception('Đã hủy tải truyện');
           }
@@ -1327,6 +1607,10 @@ class DriveService {
         await sink.flush();
         await sink.close();
         sink = null; // Đặt null để finally block không đóng lần 2
+
+        if (received == 0 && (total > 0 || !await file.exists() || await file.length() == 0)) {
+          throw Exception('Tải file nhận 0 bytes');
+        }
 
         print('Tải file hoàn tất (sink): $fileId ($received bytes)');
         if (onProgress != null && total == 0) onProgress(100, 100);
@@ -1357,6 +1641,7 @@ class DriveService {
             await sink.flush();
             await sink.close();
           } catch (_) {}
+          sink = null;
         }
       }
     }
@@ -1417,27 +1702,45 @@ class DriveService {
         final cdnUrl = DriveConfig.getDownloadUrl(fileId);
         final apiMediaUrl = Uri.parse(
           'https://www.googleapis.com/drive/v3/files/$fileId'
-          '?alt=media&key=${DriveConfig.apiKey}',
+          '?alt=media&supportsAllDrives=true&key=${DriveConfig.apiKey}',
+        );
+        final publicUrl = Uri.parse(
+          'https://drive.google.com/uc?export=download&id=$fileId',
         );
 
         final initialUrl = DriveConfig.cdnProxyUrl.trim().isNotEmpty
             ? Uri.parse(cdnUrl)
             : apiMediaUrl;
 
+        final req1 = http.Request('GET', initialUrl);
+        req1.headers['Accept-Encoding'] = 'identity';
+
         http.StreamedResponse response = await _httpClient
-            .send(http.Request('GET', initialUrl))
+            .send(req1)
             .timeout(const Duration(seconds: 300));
 
-        if (response.statusCode != 200 ||
-            (response.headers['content-type']?.toLowerCase().contains(
-                  'text/html',
-                ) ??
-                false)) {
-          final publicUrl = Uri.parse(
-            'https://drive.google.com/uc?export=download&id=$fileId',
-          );
+        // 1. Fallback nếu CDN lỗi -> Thử trực tiếp Google Drive UC
+        if ((response.statusCode != 200 && response.statusCode != 206) ||
+            (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+          unawaited(response.stream.drain().catchError((_) {}));
+
+          final req2 = http.Request('GET', publicUrl);
+          req2.headers['Accept-Encoding'] = 'identity';
           response = await _httpClient
-              .send(http.Request('GET', publicUrl))
+              .send(req2)
+              .timeout(const Duration(seconds: 300));
+        }
+
+        // 2. Fallback nếu Google Drive UC lỗi -> Thử trực tiếp Google Drive REST API alt=media
+        if (((response.statusCode != 200 && response.statusCode != 206) ||
+            (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) &&
+            initialUrl != apiMediaUrl) {
+          unawaited(response.stream.drain().catchError((_) {}));
+
+          final reqApi = http.Request('GET', apiMediaUrl);
+          reqApi.headers['Accept-Encoding'] = 'identity';
+          response = await _httpClient
+              .send(reqApi)
               .timeout(const Duration(seconds: 300));
         }
 
@@ -1446,32 +1749,66 @@ class DriveService {
           return null;
         }
 
-        if (response.statusCode != 200) {
-          throw Exception('HTTP ${response.statusCode}');
+        // 3. Xử lý cảnh báo quét virus nếu có
+        if (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false) {
+          final htmlString = await response.stream.bytesToString();
+          final confirmMatch = RegExp(r'(?:confirm=|[?&]confirm=|name="confirm"\s+value=")([^"&]+)').firstMatch(htmlString);
+          final uuidMatch = RegExp(r'(?:uuid=|[?&]uuid=|name="uuid"\s+value=")([^"&]+)').firstMatch(htmlString);
+
+          if (confirmMatch != null) {
+            final confirmToken = confirmMatch.group(1)!;
+            final uuid = uuidMatch?.group(1);
+            final cookies = response.headers['set-cookie'];
+            final confirmUrl = Uri.parse(
+              'https://drive.usercontent.google.com/download'
+              '?id=$fileId&export=download&confirm=$confirmToken${uuid != null ? '&uuid=$uuid' : ''}'
+            );
+            
+            final req3 = http.Request('GET', confirmUrl);
+            if (cookies != null) {
+              final warningMatch = RegExp(r'(download_warning_[^=]+=[^;]+)').firstMatch(cookies);
+              if (warningMatch != null) {
+                req3.headers['cookie'] = warningMatch.group(1)!;
+              }
+            }
+            req3.headers['Accept-Encoding'] = 'identity';
+            response = await _httpClient.send(req3).timeout(const Duration(seconds: 300));
+            
+            // Nếu bypass virus scan thất bại -> Thử trực tiếp Drive API alt=media
+            if ((response.statusCode != 200 && response.statusCode != 206) ||
+                (response.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+              unawaited(response.stream.drain().catchError((_) {}));
+              final reqApi = http.Request('GET', apiMediaUrl);
+              reqApi.headers['Accept-Encoding'] = 'identity';
+              response = await _httpClient.send(reqApi).timeout(const Duration(seconds: 300));
+            }
+          } else {
+            // Không tìm thấy confirm token -> Thử sang Drive API alt=media
+            final reqApi = http.Request('GET', apiMediaUrl);
+            reqApi.headers['Accept-Encoding'] = 'identity';
+            response = await _httpClient.send(reqApi).timeout(const Duration(seconds: 300));
+          }
         }
 
-        if (response.headers['content-type']?.toLowerCase().contains(
-              'text/html',
-            ) ??
-            false) {
-          throw Exception(
-            'Drive returned an HTML page instead of chapter bytes',
-          );
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          throw Exception('HTTP ${response.statusCode}');
         }
 
         final total = response.contentLength ?? 0;
         int received = 0;
-        final bytes = <int>[];
+        final builder = BytesBuilder(copy: false);
 
-        await for (final chunk in response.stream) {
-          bytes.addAll(chunk);
+        await for (final chunk in response.stream.timeout(
+          const Duration(seconds: 45),
+        )) {
+          builder.add(chunk);
           received += chunk.length;
           if (onProgress != null && total > 0) {
             onProgress(received, total);
           }
         }
 
-        final result = Uint8List.fromList(bytes);
+        final result = builder.takeBytes();
 
         print('✅ Tải file hoàn tất: $fileId (${result.length} bytes)');
         if (onProgress != null && total == 0) onProgress(100, 100);
@@ -1479,6 +1816,7 @@ class DriveService {
         // Lưu vào cache nếu dung lượng < 20MB để tiết kiệm RAM (Chống OOM)
         if (result.length <= 20 * 1024 * 1024) {
           _fileCache[fileId] = result;
+          _fileCacheOrder.remove(fileId);
           _fileCacheOrder.add(fileId);
           _trimFileCache();
         }

@@ -267,6 +267,8 @@ class _NotificationListPageState extends State<NotificationListPage>
               }
 
               if (notifications.isEmpty) {
+                final primary = Theme.of(context).colorScheme.primary;
+                final onPrimary = Theme.of(context).colorScheme.onPrimary;
                 return Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -276,13 +278,13 @@ class _NotificationListPageState extends State<NotificationListPage>
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Colors.blueAccent.withValues(alpha: 0.1),
+                            color: primary.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.notifications_none_rounded,
                             size: 56,
-                            color: Colors.blueAccent,
+                            color: primary,
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -313,8 +315,8 @@ class _NotificationListPageState extends State<NotificationListPage>
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blueAccent,
-                            foregroundColor: Colors.white,
+                            backgroundColor: primary,
+                            foregroundColor: onPrimary,
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

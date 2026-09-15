@@ -1,11 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../config/admin_config.dart';
-import '../../services/auth_service.dart';
 import '../../services/ui_service.dart';
 import '../../services/external_file_service.dart';
 import '../reader/widgets/mini_tts_player.dart';
@@ -42,23 +38,20 @@ class _MainScaffoldState extends State<MainScaffold> {
     });
   }
 
-  List<int> _getActiveBranches(bool isAdmin, bool hasGroup) {
-    final branches = <int>[
+  List<int> _getActiveBranches() {
+    return const [
       _Branch.home,
       _Branch.library,
       _Branch.following,
+      _Branch.forum,
+      _Branch.settings,
     ];
-    if (isAdmin) {
-      branches.add(_Branch.admin);
-    } else if (hasGroup) {
-      branches.add(_Branch.group);
-    }
-    branches.add(_Branch.forum);
-    branches.add(_Branch.settings);
-    return branches;
   }
 
   int _branchToTab(int branchIndex, List<int> activeBranches) {
+    if (branchIndex == _Branch.admin || branchIndex == _Branch.group) {
+      return activeBranches.indexOf(_Branch.settings);
+    }
     final tabIndex = activeBranches.indexOf(branchIndex);
     if (tabIndex != -1) return tabIndex;
     final fallbackIndex = activeBranches.indexOf(_Branch.settings);
@@ -74,153 +67,119 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final isAdmin = AdminConfig.isAdmin(
-      user?.email ?? AuthService.persistedEmail,
+    final activeBranches = _getActiveBranches();
+    final navIndex = _branchToTab(
+      widget.navigationShell.currentIndex,
+      activeBranches,
     );
 
-    return StreamBuilder<DocumentSnapshot>(
-      stream: user != null
-          ? FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .snapshots()
-          : const Stream.empty(),
-      builder: (context, snapshot) {
-        bool hasGroup = false;
-        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-          final groupId = data['groupId']?.toString().trim();
-          hasGroup = groupId != null && groupId.isNotEmpty;
-        }
+    ExternalFileService.instance.setContext(context);
 
-        final activeBranches = _getActiveBranches(isAdmin, hasGroup);
-        final navIndex = _branchToTab(
-          widget.navigationShell.currentIndex,
-          activeBranches,
+    final isHome = widget.navigationShell.currentIndex == _Branch.home;
+
+    return PopScope(
+      canPop: isHome,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        widget.navigationShell.goBranch(
+          _Branch.home,
+          initialLocation: true,
         );
-
-        ExternalFileService.instance.setContext(context);
-
-        final isHome = widget.navigationShell.currentIndex == _Branch.home;
-
-        return PopScope(
-          canPop: isHome,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
-            widget.navigationShell.goBranch(
-              _Branch.home,
-              initialLocation: true,
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            widget.navigationShell,
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: MiniTtsPlayer(),
+            ),
+          ],
+        ),
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: UiService.instance.isMainBottomBarVisible,
+          builder: (context, isVisible, child) {
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, animation) => SizeTransition(
+                sizeFactor: animation,
+                axisAlignment: -1,
+                child: child,
+              ),
+              child: isVisible
+                  ? NavigationBarTheme(
+                      data: NavigationBarThemeData(
+                        backgroundColor: Theme.of(
+                          context,
+                        ).bottomNavigationBarTheme.backgroundColor,
+                        indicatorColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.18),
+                        iconTheme: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return IconThemeData(
+                              color: Theme.of(context).colorScheme.primary,
+                            );
+                          }
+                          return const IconThemeData(color: Colors.white54);
+                        }),
+                        labelTextStyle: WidgetStateProperty.all(
+                          const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      child: NavigationBar(
+                        selectedIndex: navIndex,
+                        onDestinationSelected: (index) {
+                          HapticFeedback.selectionClick();
+                          final targetBranch = _tabToBranch(
+                            index,
+                            activeBranches,
+                          );
+                          widget.navigationShell.goBranch(
+                            targetBranch,
+                            initialLocation:
+                                targetBranch == widget.navigationShell.currentIndex,
+                          );
+                        },
+                        destinations: const [
+                          NavigationDestination(
+                            icon: Icon(Icons.home_outlined),
+                            selectedIcon: Icon(Icons.home_rounded),
+                            label: 'Trang chủ',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.collections_bookmark_outlined),
+                            selectedIcon: Icon(Icons.collections_bookmark_rounded),
+                            label: 'Thư viện',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.favorite_border_rounded),
+                            selectedIcon: Icon(Icons.favorite_rounded),
+                            label: 'Theo dõi',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.forum_outlined),
+                            selectedIcon: Icon(Icons.forum_rounded),
+                            label: 'Diễn đàn',
+                          ),
+                          NavigationDestination(
+                            icon: Icon(Icons.settings_outlined),
+                            selectedIcon: Icon(Icons.settings_rounded),
+                            label: 'Cài đặt',
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             );
           },
-          child: Scaffold(
-            body: Stack(
-              children: [
-                widget.navigationShell,
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: MiniTtsPlayer(),
-                ),
-              ],
-            ),
-            bottomNavigationBar: ValueListenableBuilder<bool>(
-              valueListenable: UiService.instance.isMainBottomBarVisible,
-              builder: (context, isVisible, child) {
-                return AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  transitionBuilder: (child, animation) => SizeTransition(
-                    sizeFactor: animation,
-                    axisAlignment: -1,
-                    child: child,
-                  ),
-                  child: isVisible
-                      ? NavigationBarTheme(
-                          data: NavigationBarThemeData(
-                            backgroundColor: Theme.of(
-                              context,
-                            ).bottomNavigationBarTheme.backgroundColor,
-                            indicatorColor: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.18),
-                            iconTheme: WidgetStateProperty.resolveWith((states) {
-                              if (states.contains(WidgetState.selected)) {
-                                return IconThemeData(
-                                  color: Theme.of(context).colorScheme.primary,
-                                );
-                              }
-                              return const IconThemeData(color: Colors.white54);
-                            }),
-                            labelTextStyle: WidgetStateProperty.all(
-                              const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          child: NavigationBar(
-                            selectedIndex: navIndex,
-                            onDestinationSelected: (index) {
-                              HapticFeedback.selectionClick();
-                              final targetBranch = _tabToBranch(
-                                index,
-                                activeBranches,
-                              );
-                              widget.navigationShell.goBranch(
-                                targetBranch,
-                                initialLocation:
-                                    targetBranch == widget.navigationShell.currentIndex,
-                              );
-                            },
-                            destinations: [
-                              const NavigationDestination(
-                                icon: Icon(Icons.home_outlined),
-                                selectedIcon: Icon(Icons.home),
-                                label: 'Trang chủ',
-                              ),
-                              const NavigationDestination(
-                                icon: Icon(Icons.collections_bookmark_outlined),
-                                selectedIcon: Icon(Icons.collections_bookmark),
-                                label: 'Thư viện',
-                              ),
-                              const NavigationDestination(
-                                icon: Icon(Icons.favorite_border),
-                                selectedIcon: Icon(Icons.favorite),
-                                label: 'Theo dõi',
-                              ),
-                              if (isAdmin)
-                                const NavigationDestination(
-                                  icon: Icon(Icons.admin_panel_settings_outlined),
-                                  selectedIcon: Icon(Icons.admin_panel_settings),
-                                  label: 'Quản trị',
-                                )
-                              else if (hasGroup)
-                                const NavigationDestination(
-                                  icon: Icon(Icons.groups_outlined),
-                                  selectedIcon: Icon(Icons.groups),
-                                  label: 'Nhóm dịch',
-                                ),
-                              const NavigationDestination(
-                                icon: Icon(Icons.forum_outlined),
-                                selectedIcon: Icon(Icons.forum),
-                                label: 'Diễn đàn',
-                              ),
-                              const NavigationDestination(
-                                icon: Icon(Icons.settings_outlined),
-                                selectedIcon: Icon(Icons.settings),
-                                label: 'Cài đặt',
-                              ),
-                            ],
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                );
-              },
-            ),
         ),
-      );
-    },
-  );
+      ),
+    );
   }
 }

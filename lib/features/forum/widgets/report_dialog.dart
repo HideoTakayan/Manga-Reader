@@ -104,6 +104,7 @@ class _ReportDialogState extends State<ReportDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return PopScope(
       canPop: !_isSubmitting,
@@ -112,7 +113,11 @@ class _ReportDialogState extends State<ReportDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Báo cáo ${_getTypeName()}',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: theme.colorScheme.onSurface,
+          ),
         ),
         content: SingleChildScrollView(
           child: Column(
@@ -121,7 +126,10 @@ class _ReportDialogState extends State<ReportDialog> {
             children: [
               Text(
                 'Vui lòng chọn lý do báo cáo:',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                  fontSize: 13,
+                ),
               ),
               const SizedBox(height: 12),
               ..._reasons.map((reason) {
@@ -130,11 +138,13 @@ class _ReportDialogState extends State<ReportDialog> {
                   margin: const EdgeInsets.only(bottom: 6),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? Colors.orange.withValues(alpha: 0.12)
-                        : Colors.white.withValues(alpha: 0.04),
+                        ? primary.withValues(alpha: 0.12)
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: isSelected ? Colors.orange : Colors.white.withValues(alpha: 0.08),
+                      color: isSelected
+                          ? primary
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.08),
                     ),
                   ),
                   child: ListTile(
@@ -144,14 +154,14 @@ class _ReportDialogState extends State<ReportDialog> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected ? Colors.orangeAccent : Colors.white,
+                        color: isSelected ? primary : theme.colorScheme.onSurface,
                       ),
                     ),
                     leading: Radio<String>(
                       value: reason,
                       // ignore: deprecated_member_use
                       groupValue: _selectedReason,
-                      activeColor: Colors.orange,
+                      activeColor: primary,
                       // ignore: deprecated_member_use
                       onChanged: (value) {
                         setState(() {
@@ -173,21 +183,24 @@ class _ReportDialogState extends State<ReportDialog> {
                   padding: const EdgeInsets.only(top: 8.0),
                   child: TextField(
                     controller: _otherReasonController,
-                    style: const TextStyle(fontSize: 13, color: Colors.white),
+                    style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                     textInputAction: TextInputAction.done,
                     textCapitalization: TextCapitalization.sentences,
                     decoration: InputDecoration(
                       hintText: 'Nhập lý do cụ thể...',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                      hintStyle: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                        fontSize: 13,
+                      ),
                       filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
+                      fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+                        borderSide: BorderSide(color: primary, width: 1.5),
                       ),
                       contentPadding: const EdgeInsets.all(12),
                     ),
@@ -206,16 +219,19 @@ class _ReportDialogState extends State<ReportDialog> {
           ElevatedButton(
             onPressed: _isSubmitting ? null : _submitReport,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+              backgroundColor: primary,
+              foregroundColor: theme.colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
             child: _isSubmitting
-                ? const SizedBox(
+                ? SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: theme.colorScheme.onPrimary,
+                    ),
                   )
                 : const Text('Gửi báo cáo', style: TextStyle(fontWeight: FontWeight.bold)),
           ),

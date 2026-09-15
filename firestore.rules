@@ -61,7 +61,16 @@
           && (!payload.keys().hasAny(['updatedAt']) || payload.updatedAt == request.time || payload.updatedAt is timestamp)
           && (!payload.keys().hasAny(['lastSeen']) || payload.lastSeen == null || payload.lastSeen is timestamp);
 
-        return hasValidKeys && isValidUid && isValidEmail && isValidTypes;
+        let isValidExpLvl = (!diffKeys.hasAny(['exp']) || (payload.exp >= (resource.data.keys().hasAny(['exp']) ? resource.data.exp : 0) && payload.exp <= (resource.data.keys().hasAny(['exp']) ? resource.data.exp : 0) + 1000))
+                         && (!diffKeys.hasAny(['level']) || (payload.level >= (resource.data.keys().hasAny(['level']) ? resource.data.level : 1) && payload.level <= (resource.data.keys().hasAny(['level']) ? resource.data.level : 1) + 5))
+                         && (!diffKeys.hasAny(['claimedChaptersCount']) || (payload.claimedChaptersCount >= (resource.data.keys().hasAny(['claimedChaptersCount']) ? resource.data.claimedChaptersCount : 0) && payload.claimedChaptersCount <= (resource.data.keys().hasAny(['claimedChaptersCount']) ? resource.data.claimedChaptersCount : 0) + 100));
+        
+        let isValidGroupId = !diffKeys.hasAny(['groupId']) || payload.groupId == '' || (
+          exists(/databases/$(database)/documents/scanlation_groups/$(payload.groupId)) &&
+          request.auth.uid in get(/databases/$(database)/documents/scanlation_groups/$(payload.groupId)).data.members
+        );
+
+        return hasValidKeys && isValidUid && isValidEmail && isValidTypes && isValidExpLvl && isValidGroupId;
       }
 
       function isSafeProfileCreate() {
@@ -139,23 +148,32 @@
 
       function onlyMangaStatsChanged() {
         let diff = request.resource.data.diff(resource.data);
-        let isAllowedKeys = diff.affectedKeys().hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']);
         let previousViewCount = resource.data.keys().hasAny(['viewCount']) ? resource.data.viewCount : 0;
         let previousLikeCount = resource.data.keys().hasAny(['likeCount']) ? resource.data.likeCount : 0;
         let previousRatingSum = resource.data.keys().hasAny(['ratingSum']) ? resource.data.ratingSum : 0;
         let previousRatingCount = resource.data.keys().hasAny(['ratingCount']) ? resource.data.ratingCount : 0;
-        let ratingChanged = diff.affectedKeys().hasAny(['ratingSum', 'ratingCount']);
-        let ratingDelta = ratingChanged ? request.resource.data.ratingSum - previousRatingSum : 0;
-        let isViewValid = !diff.affectedKeys().hasAny(['viewCount']) || (request.resource.data.viewCount == previousViewCount + 1 && request.resource.data.viewCount >= 0);
-        let isLikeValid = !diff.affectedKeys().hasAny(['likeCount']) || ((request.resource.data.likeCount == previousLikeCount + 1 || request.resource.data.likeCount == previousLikeCount - 1) && request.resource.data.likeCount >= 0);
-        let isRatingValid = !ratingChanged || (
-          diff.affectedKeys().hasAll(['ratingSum', 'ratingCount'])
-          && request.resource.data.ratingCount == previousRatingCount + 1
-          && ratingDelta >= 1
-          && ratingDelta <= 5
-          && request.resource.data.ratingSum >= 0
+        let ratingDelta = diff.affectedKeys().hasAny(['ratingSum', 'ratingCount']) ? request.resource.data.ratingSum - previousRatingSum : 0;
+        let isViewValid = !diff.affectedKeys().hasAny(['viewCount']) || 
+(request.resource.data.viewCount == previousViewCount + 1 && request.resource.data.viewCount >= 0);
+        let isLikeValid = !diff.affectedKeys().hasAny(['likeCount']) || 
+((request.resource.data.likeCount == previousLikeCount + 1 || request.resource.data.likeCount == previousLikeCount - 1) && request.resource.data.likeCount >= 0);
+        let isRatingValid = !diff.affectedKeys().hasAny(['ratingSum', 'ratingCount']) || (
+          request.resource.data.ratingSum >= 0
+          && request.resource.data.keys().hasAny(['ratingSum'])
+          && (
+            (
+              diff.affectedKeys().hasAll(['ratingSum', 'ratingCount'])
+              && request.resource.data.ratingCount == previousRatingCount + 1
+              && ratingDelta >= 1
+              && ratingDelta <= 5
+            ) || (
+              diff.affectedKeys().hasOnly(['ratingSum'])
+              && ratingDelta >= -4
+              && ratingDelta <= 5
+            )
+          )
         );
-        return isAllowedKeys && isViewValid && isLikeValid && isRatingValid;
+        return diff.affectedKeys().hasOnly(['viewCount', 'likeCount', 'ratingSum', 'ratingCount']) && isViewValid && isLikeValid && isRatingValid;
       }
 
       function onlyMangaStatsCreated() {
@@ -248,7 +266,7 @@
                 (request.resource.data.type in ['forum_chat_reply', 'forum_chat_mention'] && request.resource.data.route == '/forum') ||
                 (request.resource.data.route == ('/forum/detail/' + request.resource.data.postId) && (
                   (request.resource.data.type in ['forum_like', 'forum_comment'] && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)).data.authorId == userId) ||
-                  (request.resource.data.type == 'forum_reply' && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.replyToCommentId)).data.authorId == userId) ||
+                  (request.resource.data.type == 'forum_reply' && request.resource.data.keys().hasAny(['replyToCommentId']) && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.replyToCommentId)).data.authorId == userId) ||
                   (request.resource.data.type == 'forum_comment_like' && request.resource.data.keys().hasAny(['commentId']) && get(/databases/$(database)/documents/forumPosts/$(request.resource.data.postId)/comments/$(request.resource.data.commentId)).data.authorId == userId)
                 ))
               );
@@ -266,6 +284,17 @@
           allow create: if isOwner(userId) && request.resource.data.keys().hasOnly(['likedAt']);
           allow delete: if isOwner(userId);
           allow update: if false;
+        }
+
+        match /ratings/{userId} {
+          allow read: if true;
+          allow create, update: if isOwner(userId)
+            && request.resource.data.keys().hasOnly(['userId', 'stars', 'ratedAt'])
+            && request.resource.data.userId == userId
+            && request.resource.data.stars is int
+            && request.resource.data.stars >= 1
+            && request.resource.data.stars <= 5;
+          allow delete: if isOwner(userId) || isAdmin();
         }
 
         match /chapters/{chapterId} {
@@ -336,7 +365,16 @@
           && request.resource.data.status == 'pending'
           && (request.resource.data.createdAt == request.time || request.resource.data.createdAt is timestamp)
           && (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt is timestamp);
-        allow update, delete: if isAdmin();
+        allow update: if isAdmin()
+          && (!request.resource.data.keys().hasAny(['status'])
+            || request.resource.data.status == resource.data.status
+            || (request.resource.data.status == 'resolved'
+                && request.resource.data.keys().hasAll(['resolvedBy', 'resolvedAt'])
+                && request.resource.data.resolvedBy == request.auth.uid
+                && (request.resource.data.resolvedAt == request.time || request.resource.data.resolvedAt is timestamp)
+               )
+          );
+        allow delete: if isAdmin();
       }
 
       // =========================================================
@@ -438,7 +476,16 @@
           // Any signed-in user can vote in poll, only if post is not deleted
           (signedIn()
             && isActiveForumContent(resource.data)
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll']))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
+            && request.resource.data.poll.keys().hasAll(['options', 'votes', 'voterUids', 'userVotes'])
+            && request.resource.data.poll.options == resource.data.poll.options
+            && request.resource.data.poll.voterUids.size() == resource.data.poll.voterUids.size() + 1
+            && request.resource.data.poll.voterUids.hasAll(resource.data.poll.voterUids)
+            && request.resource.data.poll.voterUids.hasAll([request.auth.uid])
+            && !resource.data.poll.voterUids.hasAny([request.auth.uid])
+            && request.resource.data.poll.userVotes.keys().hasAll(resource.data.poll.userVotes.keys())
+            && request.resource.data.poll.userVotes.keys().hasAll([request.auth.uid])
+            && !resource.data.poll.userVotes.keys().hasAny([request.auth.uid]))
           ||
           // Any user can update stats (viewCount public, likes/comments signedIn), only if post is not deleted
           (isActiveForumContent(resource.data)
@@ -630,27 +677,61 @@
         allow update, delete: if isAdmin();
       }
 
-      function isSelfJoin(resourceData, requestData) {
-        return requestData.members.size() == resourceData.members.size() + 1 &&
-               requestData.members.hasAll(resourceData.members) &&
-               requestData.members.hasAll([request.auth.uid]);
+      function isSelfJoin(resourceData, reqData) {
+        return reqData.members.size() == resourceData.members.size() + 1 &&
+               reqData.members.hasAll(resourceData.members) &&
+               reqData.members.hasAll([request.auth.uid]);
       }
 
-      function isSelfLeave(resourceData, requestData) {
-        return resourceData.members.size() == requestData.members.size() + 1 &&
-               resourceData.members.hasAll(requestData.members) &&
-               !requestData.members.hasAny([request.auth.uid]);
+      function isSelfLeave(resourceData, reqData) {
+        return resourceData.members.size() == reqData.members.size() + 1 &&
+               resourceData.members.hasAll(reqData.members) &&
+               !reqData.members.hasAny([request.auth.uid]);
       }
 
       match /scanlation_groups/{groupId} {
         allow read: if signedIn();
-        allow create: if signedIn() && request.resource.data.leaderId == request.auth.uid;
+        allow create: if signedIn() 
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'description', 'avatarUrl', 'leaderId', 'leaderEmail',
+            'members', 'inviteCode', 'status', 'followerCount', 'createdAt',
+            'updatedAt', 'socialLinks'
+          ])
+          && request.resource.data.leaderId == request.auth.uid
+          && (!request.resource.data.keys().hasAny(['id']) || request.resource.data.id == groupId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 50
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 500
+          && (!request.resource.data.keys().hasAny(['leaderEmail']) || (request.resource.data.leaderEmail is string && request.resource.data.leaderEmail.size() <= 150))
+          && (!request.resource.data.keys().hasAny(['inviteCode']) || (request.resource.data.inviteCode is string && request.resource.data.inviteCode.size() <= 20))
+          && (!request.resource.data.keys().hasAny(['status']) || request.resource.data.status in ['pending', 'approved'])
+          && (!request.resource.data.keys().hasAny(['avatarUrl']) || request.resource.data.avatarUrl is string)
+          && request.resource.data.members is list
+          && request.resource.data.members.size() == 1
+          && request.auth.uid in request.resource.data.members
+          && (!request.resource.data.keys().hasAny(['followerCount']) || request.resource.data.followerCount == 0)
+          && (request.resource.data.createdAt == request.time || request.resource.data.createdAt is timestamp)
+          && (!request.resource.data.keys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time || request.resource.data.updatedAt is timestamp)
+          && (!request.resource.data.keys().hasAny(['socialLinks']) || request.resource.data.socialLinks is map);
+
         allow update: if signedIn() && (
-          resource.data.leaderId == request.auth.uid ||
           isAdmin() ||
           (
+            resource.data.leaderId == request.auth.uid &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'avatarUrl', 'members', 'socialLinks', 'inviteCode', 'status', 'updatedAt']) &&
+            request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 50 &&
+            request.resource.data.description is string && request.resource.data.description.size() <= 500 &&
+            request.resource.data.members is list && request.auth.uid in request.resource.data.members &&
+            (!request.resource.data.keys().hasAny(['inviteCode']) || (request.resource.data.inviteCode is string && request.resource.data.inviteCode.size() <= 20)) &&
+            (!request.resource.data.keys().hasAny(['avatarUrl']) || request.resource.data.avatarUrl is string) &&
+            (!request.resource.data.keys().hasAny(['socialLinks']) || request.resource.data.socialLinks is map) &&
+            (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt is timestamp)
+          ) ||
+          (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
-            (isSelfJoin(resource.data, request.resource.data) || isSelfLeave(resource.data, request.resource.data))
+            (isSelfLeave(resource.data, request.resource.data) || isSelfJoin(resource.data, request.resource.data))
           ) ||
           (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount']) &&
@@ -663,23 +744,45 @@
 
       match /drive_access_requests/{requestId} {
         allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
-        allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+        allow create: if signedIn() 
+          && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'groupId', 'groupName', 'status', 'createdAt', 'updatedAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.email is string
+          && request.resource.data.status == 'pending'
+          && (request.resource.data.createdAt == request.time || request.resource.data.createdAt is timestamp)
+          && (!request.resource.data.keys().hasAny(['displayName']) || (request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100))
+          && (!request.resource.data.keys().hasAny(['groupId']) || (request.resource.data.groupId is string && request.resource.data.groupId.size() <= 100))
+          && (!request.resource.data.keys().hasAny(['groupName']) || (request.resource.data.groupName is string && request.resource.data.groupName.size() <= 100));
         allow update: if isAdmin() || (
           signedIn()
           && resource.data.uid == request.auth.uid
           && request.resource.data.uid == request.auth.uid
-          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+          && resource.data.status == 'pending'
         );
         allow delete: if isAdmin();
       }
 
       match /community_glossaries/{packId} {
         allow read: if true;
-        allow create: if signedIn() && request.resource.data.authorId == request.auth.uid;
+        allow create: if signedIn() 
+          && request.resource.data.keys().hasOnly(['id', 'name', 'title', 'authorId', 'authorName', 'authorAvatar', 'mangaTitle', 'description', 'rules', 'likesCount', 'downloadsCount', 'likedUserIds', 'createdAt', 'updatedAt'])
+          && request.resource.data.authorId == request.auth.uid
+          && (!request.resource.data.keys().hasAny(['name']) || (request.resource.data.name is string && request.resource.data.name.size() <= 100))
+          && (!request.resource.data.keys().hasAny(['title']) || (request.resource.data.title is string && request.resource.data.title.size() <= 100))
+          && (!request.resource.data.keys().hasAny(['authorAvatar']) || (request.resource.data.authorAvatar is string && request.resource.data.authorAvatar.size() <= 2000))
+          && (!request.resource.data.keys().hasAny(['mangaTitle']) || (request.resource.data.mangaTitle is string && request.resource.data.mangaTitle.size() <= 200))
+          && request.resource.data.likesCount == 0
+          && request.resource.data.downloadsCount == 0
+          && request.resource.data.likedUserIds == []
+          && request.resource.data.rules is list
+          && request.resource.data.rules.size() <= 1000;
         allow update: if
-          (signedIn() && (resource.data.authorId == request.auth.uid || isAdmin())) ||
-          (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedUserIds', 'likesCount', 'downloadsCount'])) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloadsCount']);
+          (signedIn() && resource.data.authorId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'title', 'description', 'mangaTitle', 'rules', 'updatedAt']) && request.resource.data.rules is list && request.resource.data.rules.size() <= 1000) ||
+          isAdmin() ||
+          (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedUserIds', 'likesCount']) && 
+           (request.resource.data.likesCount == resource.data.likesCount + 1 || request.resource.data.likesCount == resource.data.likesCount - 1) && request.resource.data.likesCount >= 0) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloadsCount']) && request.resource.data.downloadsCount == resource.data.downloadsCount + 1);
         allow delete: if signedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
       }
 

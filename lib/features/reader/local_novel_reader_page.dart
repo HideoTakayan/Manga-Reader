@@ -67,7 +67,7 @@ class _LocalNovelReaderPageState extends State<LocalNovelReaderPage> {
                   'File tiểu thuyết có thể đã bị xóa, đổi tên, di chuyển hoặc bị hỏng dữ liệu.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white60,
+                    color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                     height: 1.4,
                   ),
                 ),

@@ -250,31 +250,34 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                     Navigator.pop(sheetContext);
                     final confirm = await showDialog<bool>(
                       context: pageContext,
-                      builder: (dialogContext) => AlertDialog(
-                        backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        title: const Text('Xác nhận xóa', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        content: const Text(
-                          'Bạn có chắc muốn xóa bình luận này?',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.pop(dialogContext, false),
-                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                      builder: (dialogContext) {
+                        final onSurface = Theme.of(dialogContext).colorScheme.onSurface;
+                        return AlertDialog(
+                          backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Text('Xác nhận xóa', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
+                          content: Text(
+                            'Bạn có chắc muốn xóa bình luận này?',
+                            style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                           ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          actions: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
                             ),
-                            onPressed: () => Navigator.pop(dialogContext, true),
-                            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () => Navigator.pop(dialogContext, true),
+                              child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        );
+                      },
                     );
 
                     if (confirm == true && pageContext.mounted) {
@@ -365,7 +368,12 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
     VoidCallback? onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: onTap != null
+          ? () {
+              HapticFeedback.selectionClick();
+              onTap();
+            }
+          : null,
       borderRadius: BorderRadius.circular(4),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),

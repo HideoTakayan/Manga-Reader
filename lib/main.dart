@@ -17,10 +17,18 @@ import 'services/level_service.dart';
 import 'features/forum/services/leaderboard_service.dart';
 import 'core/app_router.dart';
 import 'core/theme.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'core/utils/archive_image_extractor.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Bật Android Photo Picker (giao diện chọn ảnh hiện đại dạng bottom sheet như Messenger)
+  final imagePickerPlatform = ImagePickerPlatform.instance;
+  if (imagePickerPlatform is ImagePickerAndroid) {
+    imagePickerPlatform.useAndroidPhotoPicker = true;
+  }
 
   try {
     PaintingBinding.instance.imageCache
@@ -28,52 +36,59 @@ Future<void> main() async {
       ..maximumSizeBytes = 80 << 20; // ~80MB
   } catch (_) {}
 
+  // ❗ Chỉ Firebase là bắt buộc trước runApp
   await _initFirebase();
 
-  // Khởi tạo hệ thống thư mục
+  // Khởi tạo folder (cần thiết để không bị lỗi path ngay khi app mở)
   try {
     await FolderService.init();
   } catch (e) {
     debugPrint('⚠️ FolderService init error: $e');
   }
 
-  // Dọn dẹp cache rác cũ hơn 7 ngày từ các phiên trước
+  // ✅ Khởi động UI ngay — không chờ các service nặng
+  runApp(const ProviderScope(child: MangaApp()));
+
+  // Phần còn lại chạy SONG SONG sau khi UI đã hiện — không block màn hình
+  _initServicesInBackground();
+}
+
+/// Khởi tạo tất cả các service nặng SAU KHI UI đã render xong
+Future<void> _initServicesInBackground() async {
+  // Dọn dẹp cache cũ (không quan trọng, chạy luôn nền)
   try {
     ArchiveImageExtractor.cleanUpOldCache();
   } catch (_) {}
 
-  // Đăng ký ngôn ngữ tiếng Việt cho timeago
+  // Đăng ký ngôn ngữ tiếng Việt
   try {
     timeago.setLocaleMessages('vi', timeago.ViMessages());
   } catch (_) {}
 
-  // Khởi tạo Hệ thống Thông báo (Cục bộ + Trình lắng nghe Firestore)
-  try {
-    await NotificationService.instance.initialize();
-  } catch (e) {
-    debugPrint('⚠️ NotificationService init error: $e');
-  }
+  // Chạy song song để tiết kiệm thời gian
+  await Future.wait([
+    _tryInit('AuthService', () => AuthService.init()),
+    _tryInit('NotificationService', () => NotificationService.instance.initialize()),
+    _tryInit('BackgroundService', () => BackgroundService.initialize()),
+    _tryInit('LevelService', () => LevelService.instance.init()),
+    _tryInit('DriveSession', () => DriveService.instance.restorePreviousSession()),
+  ]);
 
+  // LeaderboardService warmup (không cần await)
   try {
-    await BackgroundService.initialize();
-  } catch (e) {
-    debugPrint('⚠️ BackgroundService init error: $e');
-  }
-
-  // Khởi tạo trạng thái đăng nhập từ bộ nhớ máy (hỗ trợ đọc offline khi mất mạng)
-  try {
-    await AuthService.init();
-  } catch (e) {
-    debugPrint('⚠️ AuthService.init error: $e');
-  }
-
-  // Khởi tạo hệ thống cấp độ & cache bảng xếp hạng
-  try {
-    await LevelService.instance.init();
     LeaderboardService.instance.initWarmup();
   } catch (_) {}
 
-  // Tự động sync lịch sử đọc khi user đăng nhập (hoặc kết nối mạng trở lại).
+  // Preload mangas sau khi session Drive đã khôi phục
+  try {
+    await DriveService.instance.preheatCdn();
+    await DriveService.instance.getMangas();
+    debugPrint('✅ Mangas preloaded in background');
+  } catch (e) {
+    debugPrint('⚠️ Mangas preload failed: $e');
+  }
+
+  // Lắng nghe auth state để sync lịch sử đọc
   try {
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user != null) {
@@ -89,31 +104,22 @@ Future<void> main() async {
     });
   } catch (_) {}
 
-  // Khôi phục thủ công phiên đăng nhập nếu Firebase Auth bị mất session
+  // Khôi phục session nếu Firebase Auth bị mất
   if (FirebaseAuth.instance.currentUser == null) {
     try {
       await AuthService().restoreSession().timeout(const Duration(seconds: 1));
     } catch (_) {}
   }
+}
 
+/// Helper để bọc mỗi init trong try-catch không làm crash Future.wait
+Future<void> _tryInit(String name, Future<void> Function() fn) async {
   try {
-    await DriveService.instance.restorePreviousSession();
-    debugPrint('✅ Drive Session Restored');
+    await fn();
+    debugPrint('✅ $name initialized');
   } catch (e) {
-    debugPrint('⚠️ Drive Session Restore Failed: $e');
+    debugPrint('⚠️ $name init error: $e');
   }
-
-  runApp(const ProviderScope(child: MangaApp()));
-
-  Future.microtask(() async {
-    try {
-      await DriveService.instance.preheatCdn();
-      await DriveService.instance.getMangas();
-      debugPrint('✅ Mangas preloaded in background');
-    } catch (e) {
-      debugPrint('⚠️ Mangas preload failed: $e');
-    }
-  });
 }
 
 Future<void> _initFirebase() async {

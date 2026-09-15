@@ -79,10 +79,18 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Khôi phục dữ liệu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text(
+        title: Text(
+          'Khôi phục dữ liệu',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
           'Bạn muốn gộp dữ liệu backup vào dữ liệu hiện tại, hay thay thế toàn bộ dữ liệu local?',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -93,8 +101,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, false),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(ctx).colorScheme.primary,
+              foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: const Text('Gộp', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -148,8 +156,19 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xóa bản sao lưu?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        content: Text('Bạn có chắc muốn xóa file "${file.path.split(RegExp(r'[\\/]')).last}" khỏi máy?', style: const TextStyle(color: Colors.white70)),
+        title: Text(
+          'Xóa bản sao lưu?',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(ctx).colorScheme.onSurface,
+          ),
+        ),
+        content: Text(
+          'Bạn có chắc muốn xóa file "${file.path.split(RegExp(r'[\\/]')).last}" khỏi máy?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -236,7 +255,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
@@ -341,8 +360,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   leading: CircleAvatar(
-                    backgroundColor: Colors.indigoAccent.withValues(alpha: 0.15),
-                    child: const Icon(Icons.description_outlined, color: Colors.indigoAccent, size: 22),
+                    backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                    child: Icon(Icons.description_outlined, color: Theme.of(context).colorScheme.primary, size: 22),
                   ),
                   title: Text(
                     fileName,
@@ -359,7 +378,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     children: [
                       IconButton(
                         tooltip: 'Khôi phục bản sao lưu này',
-                        icon: const Icon(Icons.restore, color: Colors.blueAccent, size: 22),
+                        icon: Icon(Icons.restore, color: Theme.of(context).colorScheme.primary, size: 22),
                         onPressed: _isBusy ? null : () => _importBackup(filePath: file.path),
                       ),
                       IconButton(

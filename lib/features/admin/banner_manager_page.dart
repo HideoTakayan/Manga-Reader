@@ -253,9 +253,9 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                               icon: const Icon(Icons.close, size: 18),
                             ),
                       hintText: 'Tìm truyện để thêm vào banner...',
-                      hintStyle: const TextStyle(fontSize: 13, color: Colors.white54),
+                      hintStyle: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
                       filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.05),
+                      fillColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -343,7 +343,7 @@ class _SelectedBannerList extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -351,13 +351,13 @@ class _SelectedBannerList extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purpleAccent.withValues(alpha: 0.12),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.view_carousel_outlined,
                 size: 28,
-                color: Colors.purpleAccent,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
             const SizedBox(height: 10),
@@ -368,7 +368,10 @@ class _SelectedBannerList extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Chọn các bộ truyện từ danh sách bên dưới để ghim lên đầu trang chủ.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                fontSize: 11.5,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -397,7 +400,10 @@ class _SelectedBannerList extends StatelessWidget {
                 children: [
                   ReorderableDragStartListener(
                     index: index,
-                    child: const Icon(Icons.drag_handle, color: Colors.white54),
+                    child: Icon(
+                      Icons.drag_handle,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Container(

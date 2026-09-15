@@ -70,12 +70,12 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Không thể tải danh sách truyện',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
-                            color: Colors.white,
+                            color: theme.colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -84,7 +84,10 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                           textAlign: TextAlign.center,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, color: Colors.white54),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
                         ),
                       ],
                     ),
@@ -109,7 +112,7 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white24,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -162,14 +165,22 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                               padding: const EdgeInsets.all(18),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white.withValues(alpha: 0.05),
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                               ),
-                              child: const Icon(Icons.library_books_outlined, size: 44, color: Colors.white38),
+                              child: Icon(
+                                Icons.library_books_outlined,
+                                size: 44,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                              ),
                             ),
                             const SizedBox(height: 14),
-                            const Text(
+                            Text(
                               'Không có truyện nào',
-                              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 15),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
                             ),
                           ],
                         ),
@@ -185,19 +196,30 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                               padding: const EdgeInsets.all(18),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white.withValues(alpha: 0.05),
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.05),
                               ),
-                              child: const Icon(Icons.search_off_rounded, size: 44, color: Colors.white38),
+                              child: Icon(
+                                Icons.search_off_rounded,
+                                size: 44,
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                              ),
                             ),
                             const SizedBox(height: 14),
-                            const Text(
+                            Text(
                               'Không tìm thấy truyện phù hợp',
-                              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 15),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
                             ),
                             const SizedBox(height: 6),
                             Text(
                               'Thử tìm bằng tên khác hoặc tác giả',
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                                fontSize: 12.5,
+                              ),
                             ),
                           ],
                         ),
@@ -223,8 +245,12 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                                 errorBuilder: (_, __, ___) => Container(
                                   width: 46,
                                   height: 62,
-                                  color: Colors.white12,
-                                  child: const Icon(Icons.book_rounded, color: Colors.white24, size: 22),
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                                  child: Icon(
+                                    Icons.book_rounded,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
+                                    size: 22,
+                                  ),
                                 ),
                               ),
                             ),
@@ -236,7 +262,10 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                             ),
                             subtitle: Text(
                               manga.author,
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
                             ),
                             onTap: () {
                               Navigator.of(context).pop(manga);

@@ -351,89 +351,10 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
   }
 
   void _showDriveAccessRequestDialog() {
-    final user = FirebaseAuth.instance.currentUser;
-    final emailController = TextEditingController(text: user?.email ?? '');
-    final messenger = ScaffoldMessenger.of(context);
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Tài khoản Google của bạn chưa được Admin cấp quyền truy cập Google Drive.\n\nNhập email Google bên dưới, Admin sẽ thêm bạn vào danh sách cho phép:',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7), fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.done,
-                style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
-                decoration: InputDecoration(
-                  labelText: 'Email Google',
-                  labelStyle: const TextStyle(color: Color(0xFFFFB74D)),
-                  hintText: 'example@gmail.com',
-                  hintStyle: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.4)),
-                  prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFFB74D)),
-                  filled: true,
-                  fillColor: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.05),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Theme.of(ctx).dividerColor.withValues(alpha: 0.2)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              final email = emailController.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                await FirebaseFirestore.instance.collection('drive_access_requests').doc(user?.uid ?? email).set({
-                  'email': email,
-                  'uid': user?.uid ?? '',
-                  'displayName': user?.displayName ?? '',
-                  'groupId': widget.group.id,
-                  'groupName': widget.group.name,
-                  'status': 'pending',
-                  'createdAt': FieldValue.serverTimestamp(),
-                });
-                if (mounted) {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin thêm email của bạn vào danh sách cho phép.'),
-                      duration: Duration(seconds: 4),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  messenger.showSnackBar(SnackBar(content: Text('Lỗi gửi yêu cầu: $e')));
-                }
-              }
-            },
-            child: const Text('Gửi yêu cầu', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    ).whenComplete(emailController.dispose);
+      builder: (ctx) => _DriveAccessRequestDialog(group: widget.group),
+    );
   }
 
   Widget _buildEmptyState(bool isConnected) {
@@ -630,7 +551,7 @@ class _GroupMangaCard extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -639,13 +560,17 @@ class _GroupMangaCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   manga.title,
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(height: 8),
-              const Divider(color: Colors.white12),
+              Divider(color: Theme.of(ctx).dividerColor.withValues(alpha: 0.2)),
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -655,8 +580,20 @@ class _GroupMangaCard extends StatelessWidget {
                   ),
                   child: Icon(Icons.list_alt_rounded, color: primary, size: 22),
                 ),
-                title: const Text('Quản lý Chương', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Thêm chapter, xoá, đổi thứ tự kéo thả', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                title: Text(
+                  'Quản lý Chương',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Thêm chapter, xoá, đổi thứ tự kéo thả',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   Navigator.push(
@@ -676,8 +613,20 @@ class _GroupMangaCard extends StatelessWidget {
                   ),
                   child: const Icon(Icons.edit_note_rounded, color: Colors.amberAccent, size: 22),
                 ),
-                title: const Text('Sửa Thông Tin Truyện', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Đổi tên, tác giả, thể loại, ảnh bìa, trạng thái', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                title: Text(
+                  'Sửa Thông Tin Truyện',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Đổi tên, tác giả, thể loại, ảnh bìa, trạng thái',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final result = await showDialog<bool>(
@@ -699,7 +648,13 @@ class _GroupMangaCard extends StatelessWidget {
                   child: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 22),
                 ),
                 title: const Text('Xóa Truyện', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
-                subtitle: const Text('Xóa hoàn toàn bộ truyện và các chương trên Drive', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                subtitle: Text(
+                  'Xóa hoàn toàn bộ truyện và các chương trên Drive',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _confirmDeleteManga(context);
@@ -718,10 +673,19 @@ class _GroupMangaCard extends StatelessWidget {
       builder: (dialogContext) => AlertDialog(
         backgroundColor: Theme.of(dialogContext).dialogTheme.backgroundColor ?? Theme.of(dialogContext).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xác nhận xóa truyện?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Xác nhận xóa truyện?',
+          style: TextStyle(
+            color: Theme.of(dialogContext).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(
           'Bạn có chắc chắn muốn xóa bộ truyện "${manga.title}"?\n\nToàn bộ chương và dữ liệu trên Google Drive sẽ bị xóa vĩnh viễn.',
-          style: const TextStyle(color: Colors.white70, fontSize: 13),
+          style: TextStyle(
+            color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.75),
+            fontSize: 13,
+          ),
         ),
         actions: [
           TextButton(
@@ -769,3 +733,120 @@ class _GroupMangaCard extends StatelessWidget {
     );
   }
 }
+
+class _DriveAccessRequestDialog extends StatefulWidget {
+  final ScanlationGroup group;
+  const _DriveAccessRequestDialog({required this.group});
+
+  @override
+  State<_DriveAccessRequestDialog> createState() => _DriveAccessRequestDialogState();
+}
+
+class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
+  late final TextEditingController _emailController;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    _emailController = TextEditingController(text: user?.email ?? '');
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || _isSubmitting) return;
+
+    setState(() => _isSubmitting = true);
+    final user = FirebaseAuth.instance.currentUser;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+
+    try {
+      await FirebaseFirestore.instance.collection('drive_access_requests').doc(user?.uid ?? email).set({
+        'email': email,
+        'uid': user?.uid ?? '',
+        'displayName': user?.displayName ?? '',
+        'groupId': widget.group.id,
+        'groupName': widget.group.name,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin thêm email của bạn vào danh sách cho phép.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Lỗi gửi yêu cầu: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return AlertDialog(
+      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Yêu cầu quyền truy cập Drive',
+        style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tài khoản Google của bạn chưa được Admin cấp quyền truy cập Google Drive.\n\nNhập email Google bên dưới, Admin sẽ thêm bạn vào danh sách cho phép:',
+              style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                labelText: 'Email Google',
+                labelStyle: const TextStyle(color: Color(0xFFFFB74D)),
+                hintText: 'example@gmail.com',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.4)),
+                prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFFB74D)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.05),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.2)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: _submit,
+          child: const Text('Gửi yêu cầu', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+

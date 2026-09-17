@@ -162,81 +162,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   // Dialog quên mật khẩu: nhập email → gọi AuthService.sendPasswordResetEmail() → Firebase gửi link.
-  // Pre-fill email từ ô email trên form để tiện cho user.
-  Future<void> _showForgotPasswordDialog() async {
-    final resetEmailCtrl = TextEditingController(text: _emailCtrl.text);
-
-    try {
-      await showDialog(
-        context: context,
-        builder: (ctx) {
-          Future<void> submitReset() async {
-            final email = resetEmailCtrl.text.trim();
-            if (email.isEmpty) {
-              EasyLoading.showError('Vui lòng nhập email');
-              return;
-            }
-            Navigator.pop(ctx);
-            EasyLoading.show(status: 'Đang gửi...');
-            try {
-              await _auth.sendPasswordResetEmail(email);
-              EasyLoading.showSuccess('Đã gửi email khôi phục!');
-            } catch (e) {
-              EasyLoading.showError(
-                e.toString().replaceAll('Exception: ', ''),
-              );
-            }
-          }
-
-          final onSurface = Theme.of(ctx).colorScheme.onSurface;
-          return AlertDialog(
-            backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text(
-              'Quên mật khẩu?',
-              style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.',
-                    style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: resetEmailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => submitReset(),
-                    style: TextStyle(color: onSurface),
-                    decoration: _inputDecoration(context, 'Email', Icons.email_outlined),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: submitReset,
-                child: const Text('Gửi liên kết', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      );
-    } finally {
-      resetEmailCtrl.dispose();
-    }
+  Future<void> _showForgotPasswordDialog() {
+    return showDialog(
+      context: context,
+      builder: (_) => _ForgotPasswordDialog(
+        initialEmail: _emailCtrl.text,
+        authService: _auth,
+        inputDecorationBuilder: (ctx, label, icon) =>
+            _inputDecoration(ctx, label, icon),
+      ),
+    );
   }
 
   @override
@@ -261,8 +196,9 @@ class _LoginPageState extends State<LoginPage> {
           backgroundColor: Colors.transparent,
           body: Stack(
             children: [
-              Center(
-              child: SingleChildScrollView(
+              SafeArea(
+                child: Center(
+                  child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
@@ -504,6 +440,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
+              ),
             ),
             if (context.canPop())
               SafeArea(
@@ -523,3 +460,99 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
+
+class _ForgotPasswordDialog extends StatefulWidget {
+  final String initialEmail;
+  final AuthService authService;
+  final InputDecoration Function(BuildContext context, String label, IconData icon) inputDecorationBuilder;
+
+  const _ForgotPasswordDialog({
+    required this.initialEmail,
+    required this.authService,
+    required this.inputDecorationBuilder,
+  });
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final TextEditingController _resetEmailCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetEmailCtrl = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _resetEmailCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitReset() async {
+    final email = _resetEmailCtrl.text.trim();
+    if (email.isEmpty) {
+      EasyLoading.showError('Vui lòng nhập email');
+      return;
+    }
+    Navigator.pop(context);
+    EasyLoading.show(status: 'Đang gửi...');
+    try {
+      await widget.authService.sendPasswordResetEmail(email);
+      EasyLoading.showSuccess('Đã gửi email khôi phục!');
+    } catch (e) {
+      EasyLoading.showError(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return AlertDialog(
+      backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Quên mật khẩu?',
+        style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Nhập email của bạn để nhận liên kết đặt lại mật khẩu.',
+              style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _resetEmailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submitReset(),
+              style: TextStyle(color: onSurface),
+              decoration: widget.inputDecorationBuilder(context, 'Email', Icons.email_outlined),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: _submitReset,
+          child: const Text('Gửi liên kết', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+

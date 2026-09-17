@@ -233,7 +233,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     'Dữ liệu được backup',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -245,7 +245,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   const SizedBox(height: 8),
                   Text(
                     'File truyện đã tải không nằm trong backup JSON để tránh file quá nặng.',
-                    style: theme.textTheme.bodySmall?.copyWith(color: Colors.white54),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -304,7 +306,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
               decoration: BoxDecoration(
                 color: theme.cardColor,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -322,19 +324,22 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  const Text(
+                  Text(
                     'Chưa có bản sao lưu nào trên máy',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: theme.colorScheme.onSurface,
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Tạo bản sao lưu để bảo vệ dữ liệu đọc và cài đặt cá nhân của bạn',
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -355,7 +360,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                 decoration: BoxDecoration(
                   color: theme.cardColor,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -371,7 +376,10 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   ),
                   subtitle: Text(
                     '${_formatFileDate(modified)} • ${_formatFileSize(size)}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

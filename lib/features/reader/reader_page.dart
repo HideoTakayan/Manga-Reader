@@ -2752,6 +2752,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             final current = ref.watch(readerProvider);
             final theme = Theme.of(context);
             final primary = theme.colorScheme.primary;
+            final onSurface = theme.colorScheme.onSurface;
+            final divider = theme.dividerColor;
             return SafeArea(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -2766,18 +2768,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       children: [
                         Row(
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Cài đặt đọc truyện tranh',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: onSurface,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white70),
+                              icon: Icon(Icons.close, color: onSurface.withValues(alpha: 0.7)),
                               tooltip: 'Đóng',
                               onPressed: () => Navigator.pop(context),
                               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -2790,12 +2792,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         decoration: BoxDecoration(
                           color: current.isPerMangaSettings
                               ? primary.withValues(alpha: 0.15)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: current.isPerMangaSettings
                                 ? primary
-                                : Colors.transparent,
+                                : divider.withValues(alpha: 0.2),
                             width: 1,
                           ),
                         ),
@@ -2807,11 +2809,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          subtitle: const Text(
+                          subtitle: Text(
                             'Ghi đè cài đặt chung. Bật để lưu chế độ đọc, hướng lật, v.v. riêng cho phần truyện này.',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.white60,
+                              color: onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                           value: current.isPerMangaSettings,
@@ -2827,9 +2829,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ),
                       const _ReaderSheetSectionHeader('BỐ CỤC & HƯỚNG ĐỌC', Icons.auto_stories_rounded),
-                      const Text(
+                      Text(
                         'Chế độ đọc',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReadingMode>(
@@ -2875,9 +2877,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                       if (current.readingMode == ReadingMode.horizontal) ...[
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Hướng đọc (Trái ↔ Phải)',
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                         ),
                         const SizedBox(height: 8),
                         SegmentedButton<ReaderDirection>(
@@ -2915,9 +2917,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
 
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'Chế độ hiển thị trang (Ngang/Tablet)',
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                         ),
                         const SizedBox(height: 8),
                         SegmentedButton<ReaderDualPageMode>(
@@ -2963,9 +2965,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ],
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Fit ảnh',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderImageFit>(
@@ -3051,9 +3053,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         },
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Xoay màn hình',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderOrientation>(
@@ -3106,9 +3108,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         },
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Vị trí bắt đầu phóng to',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderZoomStart>(
@@ -3169,12 +3171,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.cropBorders
                                 ? primary.withValues(alpha: 0.45)
-                                : Colors.white12,
+                                : divider.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -3183,7 +3185,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Icons.crop_free_rounded,
                               color: current.cropBorders
                                   ? primary
-                                  : Colors.white70,
+                                  : onSurface.withValues(alpha: 0.7),
                               size: 22,
                             ),
                             const SizedBox(width: 12),
@@ -3196,16 +3198,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     style: TextStyle(
                                       color: current.cropBorders
                                           ? primary
-                                          : Colors.white,
+                                          : onSurface,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Tự động loại bỏ lề giấy trắng thừa giúp tranh tràn toàn màn hình',
                                     style: TextStyle(
-                                      color: Colors.white54,
+                                      color: onSurface.withValues(alpha: 0.6),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -3233,12 +3235,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.rotateLandscapeImages
                                 ? primary.withValues(alpha: 0.45)
-                                : Colors.white12,
+                                : divider.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -3247,7 +3249,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Icons.rotate_90_degrees_cw_rounded,
                               color: current.rotateLandscapeImages
                                   ? primary
-                                  : Colors.white70,
+                                  : onSurface.withValues(alpha: 0.7),
                               size: 22,
                             ),
                             const SizedBox(width: 12),
@@ -3260,16 +3262,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     style: TextStyle(
                                       color: current.rotateLandscapeImages
                                           ? primary
-                                          : Colors.white,
+                                          : onSurface,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Xoay 90° các trang ảnh khổ ngang để xem tràn toàn màn hình',
                                     style: TextStyle(
-                                      color: Colors.white54,
+                                      color: onSurface.withValues(alpha: 0.6),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -3297,12 +3299,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.showBatteryAndClock
                                 ? primary.withValues(alpha: 0.45)
-                                : Colors.white12,
+                                : divider.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -3311,7 +3313,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               Icons.access_time_rounded,
                               color: current.showBatteryAndClock
                                   ? primary
-                                  : Colors.white70,
+                                  : onSurface.withValues(alpha: 0.7),
                               size: 22,
                             ),
                             const SizedBox(width: 12),
@@ -3324,16 +3326,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     style: TextStyle(
                                       color: current.showBatteryAndClock
                                           ? primary
-                                          : Colors.white,
+                                          : onSurface,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Hiển thị giờ và số trang tinh tế khi ẩn thanh công cụ',
                                     style: TextStyle(
-                                      color: Colors.white54,
+                                      color: onSurface.withValues(alpha: 0.6),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -3363,12 +3365,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         decoration: BoxDecoration(
                           color: current.isIncognito
                               ? Colors.purple.withValues(alpha: 0.12)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.isIncognito
                                 ? Colors.purpleAccent.withValues(alpha: 0.6)
-                                : Colors.white12,
+                                : divider.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -3379,7 +3381,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   : Icons.visibility_outlined,
                               color: current.isIncognito
                                   ? Colors.purpleAccent
-                                  : Colors.white70,
+                                  : onSurface.withValues(alpha: 0.7),
                               size: 22,
                             ),
                             const SizedBox(width: 12),
@@ -3392,16 +3394,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     style: TextStyle(
                                       color: current.isIncognito
                                           ? Colors.purpleAccent
-                                          : Colors.white,
+                                          : onSurface,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 13.5,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Không lưu lịch sử, tiến trình đọc và không đồng bộ Cloud',
                                     style: TextStyle(
-                                      color: Colors.white54,
+                                      color: onSurface.withValues(alpha: 0.6),
                                       fontSize: 11,
                                     ),
                                   ),
@@ -3429,12 +3431,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.05),
+                          color: onSurface.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: current.volumePageTurn
                                 ? primary.withValues(alpha: 0.45)
-                                : Colors.white12,
+                                : divider.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Column(
@@ -3445,7 +3447,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   Icons.volume_up_rounded,
                                   color: current.volumePageTurn
                                       ? primary
-                                      : Colors.white70,
+                                      : onSurface.withValues(alpha: 0.7),
                                   size: 22,
                                 ),
                                 const SizedBox(width: 12),
@@ -3459,16 +3461,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                         style: TextStyle(
                                           color: current.volumePageTurn
                                               ? primary
-                                              : Colors.white,
+                                              : onSurface,
                                           fontWeight: FontWeight.bold,
                                           fontSize: 13.5,
                                         ),
                                       ),
                                       const SizedBox(height: 2),
-                                      const Text(
+                                      Text(
                                         'Dùng nút tăng/giảm âm lượng để lật trang hoặc cuộn đọc',
                                         style: TextStyle(
-                                          color: Colors.white54,
+                                          color: onSurface.withValues(alpha: 0.6),
                                           fontSize: 11,
                                         ),
                                       ),
@@ -3487,15 +3489,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                               ],
                             ),
                             if (current.volumePageTurn) ...[
-                              const Divider(color: Colors.white10, height: 16),
+                              Divider(color: divider, height: 16),
                               Row(
                                 children: [
                                   const SizedBox(width: 34),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
                                       'Đảo ngược chiều phím',
                                       style: TextStyle(
-                                        color: Colors.white70,
+                                        color: onSurface.withValues(alpha: 0.75),
                                         fontSize: 12.5,
                                       ),
                                     ),
@@ -3516,9 +3518,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ),
                       const _ReaderSheetSectionHeader('MÀU NỀN & BẢO VỆ MẮT', Icons.palette_outlined),
-                      const Text(
+                      Text(
                         'Màu nền',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderBackground>(
@@ -3571,9 +3573,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         },
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Sơ đồ vùng chạm lật trang',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderTapZone>(
@@ -3666,9 +3668,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.04),
+                          color: onSurface.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(color: divider.withValues(alpha: 0.2)),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -3685,8 +3687,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   current.tapZone,
                                   isVertical: current.isVerticalMode,
                                 ),
-                                style: const TextStyle(
-                                  color: Colors.white70,
+                                style: TextStyle(
+                                  color: onSurface.withValues(alpha: 0.75),
                                   fontSize: 11.5,
                                   height: 1.35,
                                 ),
@@ -3703,9 +3705,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         tapZoneInvert: current.tapZoneInvert,
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Đảo ngược vùng chạm',
-                        style: TextStyle(color: Colors.white70),
+                        style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                       ),
                       const SizedBox(height: 8),
                       SegmentedButton<ReaderTapZoneInvert>(
@@ -3756,7 +3758,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       const SizedBox(height: 16),
 
                       // ===== BỘ LỌC ẢNH BAN ĐÊM =====
-                      const Divider(color: Colors.white12, height: 24),
+                      Divider(color: divider, height: 24),
                       Row(
                         children: [
                           const Icon(
@@ -3765,10 +3767,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             size: 18,
                           ),
                           const SizedBox(width: 8),
-                          const Text(
+                          Text(
                             'Bộ lọc ban đêm',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: onSurface,
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
                             ),
@@ -3873,25 +3875,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       // Thanh giảm sáng
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.brightness_4,
-                            color: Colors.white54,
+                            color: onSurface.withValues(alpha: 0.6),
                             size: 16,
                           ),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'Giảm sáng',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: onSurface.withValues(alpha: 0.7),
                                 fontSize: 13,
                               ),
                             ),
                           ),
                           Text(
                             '${(current.dimLevel * 100).round()}%',
-                            style: const TextStyle(
-                              color: Colors.white54,
+                            style: TextStyle(
+                              color: onSurface.withValues(alpha: 0.54),
                               fontSize: 12,
                             ),
                           ),
@@ -3900,9 +3902,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 2.5,
-                          activeTrackColor: Colors.white70,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: Colors.white,
+                          activeTrackColor: onSurface.withValues(alpha: 0.7),
+                          inactiveTrackColor: divider,
+                          thumbColor: onSurface,
                           thumbShape: const RoundSliderThumbShape(
                             enabledThumbRadius: 7,
                           ),
@@ -3930,19 +3932,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             size: 16,
                           ),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'Lọc ánh sáng xanh',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: onSurface.withValues(alpha: 0.7),
                                 fontSize: 13,
                               ),
                             ),
                           ),
                           Text(
                             '${(current.tintLevel * 200).round()}%',
-                            style: const TextStyle(
-                              color: Colors.white54,
+                            style: TextStyle(
+                              color: onSurface.withValues(alpha: 0.54),
                               fontSize: 12,
                             ),
                           ),
@@ -3952,7 +3954,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 2.5,
                           activeTrackColor: primary,
-                          inactiveTrackColor: Colors.white12,
+                          inactiveTrackColor: divider,
                           thumbColor: primary,
                           thumbShape: const RoundSliderThumbShape(
                             enabledThumbRadius: 7,
@@ -3970,7 +3972,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         ),
                       ),
                       const SizedBox(height: 20),
-                      const Divider(color: Colors.white12),
+                      Divider(color: divider),
                       const SizedBox(height: 4),
                       SizedBox(
                         width: double.infinity,
@@ -4036,6 +4038,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final theme = Theme.of(context);
         final primary = theme.colorScheme.primary;
         final onPrimary = theme.colorScheme.onPrimary;
+        final onSurface = theme.colorScheme.onSurface;
+        final divider = theme.dividerColor;
         return SafeArea(
           child: SizedBox(
             height: MediaQuery.sizeOf(context).height * 0.78,
@@ -4051,8 +4055,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           children: [
                             Text(
                               state.currentChapter?.title ?? 'Danh sách trang',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: onSurface,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -4062,8 +4066,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             const SizedBox(height: 2),
                             Text(
                               'Tổng cộng ${state.pages.length} trang • Chạm để nhảy trang',
-                              style: const TextStyle(
-                                color: Colors.white54,
+                              style: TextStyle(
+                                color: onSurface.withValues(alpha: 0.6),
                                 fontSize: 12,
                               ),
                             ),
@@ -4093,7 +4097,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       ),
                       const SizedBox(width: 6),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon: Icon(Icons.close, color: onSurface.withValues(alpha: 0.7)),
                         tooltip: 'Đóng',
                         onPressed: () => Navigator.pop(context),
                         constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -4128,12 +4132,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           decoration: BoxDecoration(
-                            color: Colors.black,
+                            color: theme.scaffoldBackgroundColor,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: selected
                                   ? primary
-                                  : Colors.white12,
+                                  : divider,
                               width: selected ? 2.5 : 1,
                             ),
                             boxShadow: selected
@@ -5465,6 +5469,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
     final onPrimary = theme.colorScheme.onPrimary;
+    final onSurface = theme.colorScheme.onSurface;
+    final divider = theme.dividerColor;
 
     return Drawer(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -5476,8 +5482,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
               padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
-                border: const Border(
-                  bottom: BorderSide(color: Colors.white12, width: 1),
+                border: Border(
+                  bottom: BorderSide(color: divider, width: 1),
                 ),
               ),
               child: Column(
@@ -5502,8 +5508,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                           children: [
                             Text(
                               state.manga?.title ?? 'Đang đọc',
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: onSurface,
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -5525,9 +5531,9 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.close,
-                          color: Colors.white70,
+                          color: onSurface.withValues(alpha: 0.7),
                           size: 20,
                         ),
                         tooltip: 'Đóng',
@@ -5541,7 +5547,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                     indicatorColor: primary,
                     indicatorWeight: 3,
                     labelColor: primary,
-                    unselectedLabelColor: Colors.white60,
+                    unselectedLabelColor: onSurface.withValues(alpha: 0.6),
                     labelStyle: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
@@ -5592,27 +5598,27 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                             Expanded(
                               child: TextField(
                                 controller: _chapterSearchController,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: onSurface,
                                   fontSize: 13,
                                 ),
                                 textInputAction: TextInputAction.search,
                                 decoration: InputDecoration(
                                   hintText: 'Tìm số chương...',
-                                  hintStyle: const TextStyle(
-                                    color: Colors.white38,
+                                  hintStyle: TextStyle(
+                                    color: onSurface.withValues(alpha: 0.38),
                                     fontSize: 12,
                                   ),
-                                  prefixIcon: const Icon(
+                                  prefixIcon: Icon(
                                     Icons.search,
-                                    color: Colors.white54,
+                                    color: onSurface.withValues(alpha: 0.54),
                                     size: 16,
                                   ),
                                   suffixIcon: _chapterSearchQuery.isNotEmpty
                                       ? IconButton(
-                                          icon: const Icon(
+                                          icon: Icon(
                                             Icons.clear,
-                                            color: Colors.white54,
+                                            color: onSurface.withValues(alpha: 0.54),
                                             size: 14,
                                           ),
                                           onPressed: () {
@@ -5624,7 +5630,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                         )
                                       : null,
                                   filled: true,
-                                  fillColor: Colors.white.withValues(
+                                  fillColor: onSurface.withValues(
                                     alpha: 0.08,
                                   ),
                                   contentPadding: const EdgeInsets.symmetric(
@@ -5659,7 +5665,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                 Icons.swap_vert_rounded,
                                 color: _isSortReversed
                                     ? primary
-                                    : Colors.white70,
+                                    : onSurface.withValues(alpha: 0.7),
                                 size: 22,
                               ),
                               tooltip: _isSortReversed
@@ -5687,10 +5693,12 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                       // Chapter ListView
                       Expanded(
                         child: filteredChapters.isEmpty
-                            ? const Center(
+                            ? Center(
                                 child: Text(
                                   'Không tìm thấy chương nào',
-                                  style: TextStyle(color: Colors.white54),
+                                  style: TextStyle(
+                                    color: onSurface.withValues(alpha: 0.54),
+                                  ),
                                 ),
                               )
                             : ListView.builder(
@@ -5717,7 +5725,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                           ? primary.withValues(
                                               alpha: 0.14,
                                             )
-                                          : Colors.white.withValues(
+                                          : onSurface.withValues(
                                               alpha: 0.04,
                                             ),
                                       borderRadius: BorderRadius.circular(10),
@@ -5726,9 +5734,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                             ? primary.withValues(
                                                 alpha: 0.7,
                                               )
-                                            : Colors.white.withValues(
-                                                alpha: 0.08,
-                                              ),
+                                            : divider,
                                         width: isCurrent ? 1.5 : 1,
                                       ),
                                     ),
@@ -5749,7 +5755,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                             ? primary
                                             : isRead
                                             ? Colors.greenAccent
-                                            : Colors.white24,
+                                            : onSurface.withValues(alpha: 0.24),
                                         size: 20,
                                       ),
                                       title: Text(
@@ -5758,8 +5764,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                           color: isCurrent
                                               ? primary
                                               : isRead
-                                              ? Colors.white60
-                                              : Colors.white,
+                                              ? onSurface.withValues(alpha: 0.4)
+                                              : onSurface,
                                           fontWeight: isCurrent
                                               ? FontWeight.bold
                                               : FontWeight.w500,
@@ -5826,12 +5832,12 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                               labelStyle: TextStyle(
                                 color: !_filterOnlyCurrentChapter
                                     ? onPrimary
-                                    : Colors.white70,
+                                    : onSurface.withValues(alpha: 0.7),
                                 fontWeight: !_filterOnlyCurrentChapter
                                     ? FontWeight.bold
                                     : FontWeight.normal,
                               ),
-                              backgroundColor: Colors.white.withValues(
+                              backgroundColor: onSurface.withValues(
                                 alpha: 0.08,
                               ),
                               onSelected: (val) {
@@ -5854,12 +5860,12 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                               labelStyle: TextStyle(
                                 color: _filterOnlyCurrentChapter
                                     ? onPrimary
-                                    : Colors.white70,
+                                    : onSurface.withValues(alpha: 0.7),
                                 fontWeight: _filterOnlyCurrentChapter
                                     ? FontWeight.bold
                                     : FontWeight.normal,
                               ),
-                              backgroundColor: Colors.white.withValues(
+                              backgroundColor: onSurface.withValues(
                                 alpha: 0.08,
                               ),
                               onSelected: (val) {
@@ -5889,7 +5895,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                       Icon(
                                         Icons.bookmark_border_rounded,
                                         size: 48,
-                                        color: Colors.white.withValues(
+                                        color: onSurface.withValues(
                                           alpha: 0.25,
                                         ),
                                       ),
@@ -5898,18 +5904,18 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                         _filterOnlyCurrentChapter
                                             ? 'Chưa có bookmark nào trong chương này'
                                             : 'Chưa có trang đánh dấu nào',
-                                        style: const TextStyle(
-                                          color: Colors.white70,
+                                        style: TextStyle(
+                                          color: onSurface.withValues(alpha: 0.7),
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
                                         ),
                                         textAlign: TextAlign.center,
                                       ),
                                       const SizedBox(height: 6),
-                                      const Text(
+                                      Text(
                                         'Chạm vào biểu tượng Bookmark trên thanh điều khiển khi đọc để lưu lại trang yêu thích!',
                                         style: TextStyle(
-                                          color: Colors.white38,
+                                          color: onSurface.withValues(alpha: 0.38),
                                           fontSize: 12,
                                         ),
                                         textAlign: TextAlign.center,
@@ -5952,7 +5958,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                     child: Container(
                                       padding: const EdgeInsets.all(12),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(
+                                        color: onSurface.withValues(
                                           alpha: 0.05,
                                         ),
                                         borderRadius: BorderRadius.circular(12),
@@ -5961,7 +5967,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                               ? Colors.amber.withValues(
                                                   alpha: 0.4,
                                                 )
-                                              : Colors.white12,
+                                              : divider,
                                         ),
                                       ),
                                       child: Column(
@@ -6012,8 +6018,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                               Expanded(
                                                 child: Text(
                                                   chapterTitle,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
+                                                  style: TextStyle(
+                                                    color: onSurface,
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 13,
                                                   ),
@@ -6060,8 +6066,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                                   Expanded(
                                                     child: Text(
                                                       bookmark.note!,
-                                                      style: const TextStyle(
-                                                        color: Colors.white70,
+                                                      style: TextStyle(
+                                                        color: onSurface.withValues(alpha: 0.7),
                                                         fontSize: 12,
                                                         fontStyle:
                                                             FontStyle.italic,
@@ -6079,8 +6085,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                                 _formatDateTime(
                                                   bookmark.updatedAt,
                                                 ),
-                                                style: const TextStyle(
-                                                  color: Colors.white38,
+                                                style: TextStyle(
+                                                  color: onSurface.withValues(alpha: 0.38),
                                                   fontSize: 11,
                                                 ),
                                               ),
@@ -6142,8 +6148,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
-                border: const Border(
-                  top: BorderSide(color: Colors.white12, width: 1),
+                border: Border(
+                  top: BorderSide(color: divider, width: 1),
                 ),
               ),
               child: Row(
@@ -6151,8 +6157,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                   Expanded(
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white24),
+                        foregroundColor: onSurface,
+                        side: BorderSide(color: divider),
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -6185,8 +6191,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                   Expanded(
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: const BorderSide(color: Colors.white24),
+                        foregroundColor: onSurface.withValues(alpha: 0.7),
+                        side: BorderSide(color: divider),
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -6335,6 +6341,8 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
 
         final theme = Theme.of(context);
         final primary = theme.colorScheme.primary;
+        final onSurface = theme.colorScheme.onSurface;
+        final divider = theme.dividerColor;
 
         return Container(
           decoration: BoxDecoration(
@@ -6349,9 +6357,9 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                   horizontal: 16,
                   vertical: 12,
                 ),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: Colors.white12, width: 1),
+                    bottom: BorderSide(color: divider, width: 1),
                   ),
                 ),
                 child: Consumer(
@@ -6362,7 +6370,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                     return Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
+                          icon: Icon(Icons.close, color: onSurface),
                           onPressed: () => Navigator.pop(context),
                         ),
                         Expanded(
@@ -6370,18 +6378,18 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text(
+                              Text(
                                 'Danh Sách Chương',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: onSurface,
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
                                 '${filteredChapters.length} chương',
-                                style: const TextStyle(
-                                  color: Colors.white54,
+                                style: TextStyle(
+                                  color: onSurface.withValues(alpha: 0.54),
                                   fontSize: 12,
                                 ),
                               ),
@@ -6394,7 +6402,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             Icons.swap_vert_rounded,
                             color: _isSortReversed
                                 ? primary
-                                : Colors.white,
+                                : onSurface,
                           ),
                           tooltip: _isSortReversed
                               ? 'Đang xếp: Mới nhất trước'
@@ -6419,7 +6427,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             state.isFollowed
                                 ? Icons.favorite
                                 : Icons.favorite_border,
-                            color: state.isFollowed ? Colors.red : Colors.white,
+                            color: state.isFollowed ? Colors.red : onSurface,
                           ),
                           onPressed: () async {
                             HapticFeedback.lightImpact();
@@ -6458,9 +6466,9 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
 
                         // Biểu tượng đổi kích thước
                         IconButton(
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.unfold_more_rounded,
-                            color: Colors.white,
+                            color: onSurface,
                           ),
                           tooltip: 'Phóng to/Thu nhỏ',
                           onPressed: _toggleSize,
@@ -6476,24 +6484,24 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: TextField(
                   controller: _searchController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  style: TextStyle(color: onSurface, fontSize: 13),
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     hintText: 'Tìm nhanh số chương (vd: 12, Chapter 50)...',
-                    hintStyle: const TextStyle(
-                      color: Colors.white38,
+                    hintStyle: TextStyle(
+                      color: onSurface.withValues(alpha: 0.38),
                       fontSize: 12,
                     ),
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                       Icons.search,
-                      color: Colors.white54,
+                      color: onSurface.withValues(alpha: 0.54),
                       size: 18,
                     ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.clear,
-                              color: Colors.white54,
+                              color: onSurface.withValues(alpha: 0.54),
                               size: 16,
                             ),
                             onPressed: () {
@@ -6503,7 +6511,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                           )
                         : null,
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.08),
+                    fillColor: onSurface.withValues(alpha: 0.08),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
@@ -6532,10 +6540,10 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
               // Danh sách
               Expanded(
                 child: filteredChapters.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
                           'Không tìm thấy chương phù hợp',
-                          style: TextStyle(color: Colors.white38),
+                          style: TextStyle(color: onSurface.withValues(alpha: 0.38)),
                         ),
                       )
                     : ListView.builder(
@@ -6567,7 +6575,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                             },
                             child: Container(
                               color: isSelected
-                                  ? Colors.white.withValues(alpha: 0.08)
+                                  ? onSurface.withValues(alpha: 0.08)
                                   : null,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -6595,8 +6603,8 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                         color: isSelected
                                             ? primary
                                             : isRead
-                                            ? Colors.white38
-                                            : Colors.white,
+                                            ? onSurface.withValues(alpha: 0.38)
+                                            : onSurface,
                                         fontWeight: isSelected || !isRead
                                             ? FontWeight.bold
                                             : FontWeight.normal,
@@ -6646,8 +6654,8 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                       date,
                                       style: TextStyle(
                                         color: isRead
-                                            ? Colors.white24
-                                            : Colors.grey,
+                                            ? onSurface.withValues(alpha: 0.24)
+                                            : onSurface.withValues(alpha: 0.6),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -6673,7 +6681,9 @@ class _ReaderSheetSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final divider = theme.dividerColor;
     return Padding(
       padding: const EdgeInsets.only(top: 22, bottom: 8),
       child: Row(
@@ -6690,7 +6700,7 @@ class _ReaderSheetSectionHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          const Expanded(child: Divider(color: Colors.white12, height: 1)),
+          Expanded(child: Divider(color: divider, height: 1)),
         ],
       ),
     );
@@ -6714,6 +6724,9 @@ class _EyeCarePresetBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final divider = theme.dividerColor;
 
     return InkWell(
       onTap: onTap,
@@ -6723,10 +6736,10 @@ class _EyeCarePresetBtn extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? activeColor.withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.05),
+              : onSurface.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isSelected ? activeColor : Colors.white12,
+            color: isSelected ? activeColor : divider,
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -6736,13 +6749,13 @@ class _EyeCarePresetBtn extends StatelessWidget {
             Icon(
               icon,
               size: 18,
-              color: isSelected ? activeColor : Colors.white70,
+              color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? activeColor : Colors.white70,
+                color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
                 fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               ),

@@ -485,18 +485,30 @@ class _DriveRequestsTab extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                         onPressed: () async {
-                          await FirebaseFirestore.instance
-                              .collection('drive_access_requests')
-                              .doc(docId)
-                              .update({'status': 'done'});
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Đã đánh dấu xong cho $email'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
+                          try {
+                            await FirebaseFirestore.instance
+                                .collection('drive_access_requests')
+                                .doc(docId)
+                                .update({'status': 'done'});
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Đã đánh dấu xong cho $email'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Lỗi: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
                           }
                         },
                       ),

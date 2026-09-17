@@ -123,14 +123,20 @@ class _MainScaffoldState extends State<MainScaffold> {
                               color: Theme.of(context).colorScheme.primary,
                             );
                           }
-                          return const IconThemeData(color: Colors.white54);
+                          return IconThemeData(
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                          );
                         }),
-                        labelTextStyle: WidgetStateProperty.all(
-                          const TextStyle(
+                        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                          final color = states.contains(WidgetState.selected)
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
+                          return TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                            color: color,
+                          );
+                        }),
                       ),
                       child: NavigationBar(
                         selectedIndex: navIndex,

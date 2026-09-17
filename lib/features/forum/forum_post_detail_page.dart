@@ -331,7 +331,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                         }
                         final node = _commentTree[index - 1];
                         return Padding(
-                          padding: EdgeInsets.only(left: node.depth * 44.0),
+                          padding: EdgeInsets.only(left: (node.depth.clamp(0, 3)) * 20.0),
                           child: ForumCommentTile(
                             postId: widget.postId,
                             comment: node.comment,

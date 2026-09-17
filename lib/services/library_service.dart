@@ -194,7 +194,7 @@ class LibraryService {
       }
     }
 
-    controller = StreamController<List<String>>(
+    controller = StreamController<List<String>>.broadcast(
       onListen: () {
         fetch();
         // Lắng nghe sự kiện mapping thay đổi để re-fetch

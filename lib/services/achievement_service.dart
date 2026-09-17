@@ -509,7 +509,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -540,24 +540,30 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Thành Tựu Độc Giả',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: Theme.of(ctx).colorScheme.onSurface,
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             Text(
                               'Đã mở khóa $unlockedCount / $totalCount thành tựu (${(percent * 100).toStringAsFixed(0)}%)',
-                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                              style: TextStyle(
+                                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
                       ],
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
                       onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
@@ -613,17 +619,18 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                       final badge = badges[index];
                       final isUnlocked = badge.isUnlocked;
 
+                      final onSurface = Theme.of(ctx).colorScheme.onSurface;
                       return Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isUnlocked
                               ? badge.color.withValues(alpha: 0.08)
-                              : Colors.white.withValues(alpha: 0.02),
+                              : onSurface.withValues(alpha: 0.03),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: isUnlocked
                                 ? badge.color.withValues(alpha: 0.45)
-                                : Colors.white10,
+                                : Theme.of(ctx).dividerColor.withValues(alpha: 0.15),
                             width: isUnlocked ? 1.3 : 1.0,
                           ),
                           boxShadow: isUnlocked
@@ -645,16 +652,16 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                               decoration: BoxDecoration(
                                 color: isUnlocked
                                     ? badge.color.withValues(alpha: 0.22)
-                                    : Colors.white.withValues(alpha: 0.05),
+                                    : onSurface.withValues(alpha: 0.06),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: isUnlocked ? badge.color : Colors.white24,
+                                  color: isUnlocked ? badge.color : onSurface.withValues(alpha: 0.2),
                                   width: isUnlocked ? 1.5 : 1.0,
                                 ),
                               ),
                               child: Icon(
                                 badge.icon,
-                                color: isUnlocked ? badge.color : Colors.white24,
+                                color: isUnlocked ? badge.color : onSurface.withValues(alpha: 0.3),
                                 size: 24,
                               ),
                             ),
@@ -672,7 +679,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                                         child: Text(
                                           badge.title,
                                           style: TextStyle(
-                                            color: isUnlocked ? Colors.white : Colors.white54,
+                                            color: isUnlocked ? onSurface : onSurface.withValues(alpha: 0.5),
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -708,7 +715,9 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                                   Text(
                                     badge.description,
                                     style: TextStyle(
-                                      color: isUnlocked ? Colors.white70 : Colors.white38,
+                                      color: isUnlocked
+                                          ? onSurface.withValues(alpha: 0.75)
+                                          : onSurface.withValues(alpha: 0.4),
                                       fontSize: 12,
                                     ),
                                   ),
@@ -724,9 +733,9 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                                                 ? (badge.progress / badge.maxProgress).clamp(0.0, 1.0)
                                                 : 0.0,
                                             minHeight: 4,
-                                            backgroundColor: Colors.white10,
+                                            backgroundColor: onSurface.withValues(alpha: 0.1),
                                             valueColor: AlwaysStoppedAnimation<Color>(
-                                              isUnlocked ? badge.color : Colors.white30,
+                                              isUnlocked ? badge.color : onSurface.withValues(alpha: 0.3),
                                             ),
                                           ),
                                         ),
@@ -735,7 +744,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                                       Text(
                                         '${badge.progress}/${badge.maxProgress}',
                                         style: TextStyle(
-                                          color: isUnlocked ? badge.color : Colors.white38,
+                                          color: isUnlocked ? badge.color : onSurface.withValues(alpha: 0.4),
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
                                         ),

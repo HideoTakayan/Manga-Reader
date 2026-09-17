@@ -240,7 +240,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             width: 36,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: Colors.white24,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -248,8 +248,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         const SizedBox(height: 6),
                         TabBar(
                           indicatorColor: primaryColor,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: Colors.grey,
+                          labelColor: Theme.of(context).colorScheme.onSurface,
+                          unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                           tabs: const [
                             Tab(text: 'Bộ lọc'),
                             Tab(text: 'Sắp xếp'),
@@ -263,10 +263,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
-                            const Text(
+                            Text(
                               'Trạng thái truyện',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -275,10 +275,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             _buildFilterItem('Đã hoàn thành', setModalState),
                             _buildFilterItem('Drop', setModalState),
                             const SizedBox(height: 16),
-                            const Text(
+                            Text(
                               'Trạng thái đọc',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -291,10 +291,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             ),
                             if (allTags.isNotEmpty) ...[
                               const SizedBox(height: 16),
-                              const Text(
+                              Text(
                                 'Tag tùy chỉnh',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -308,11 +308,11 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                     label: Text(tag),
                                     selected: selected,
                                     selectedColor: primaryColor,
-                                    checkmarkColor: Colors.white,
+                                    checkmarkColor: Theme.of(context).colorScheme.onPrimary,
                                     labelStyle: TextStyle(
                                       color: selected
-                                          ? Colors.white
-                                          : Colors.white70,
+                                          ? Theme.of(context).colorScheme.onPrimary
+                                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
                                     ),
                                     backgroundColor: Theme.of(context).cardColor,
                                     onSelected: (value) {
@@ -330,10 +330,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                               ),
                             ],
                             const SizedBox(height: 16),
-                            const Text(
+                            Text(
                               'Ngoại tuyến & Tải xuống',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -342,13 +342,20 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               activeColor: primaryColor,
-                              title: const Text(
+                              checkColor: Theme.of(context).colorScheme.onPrimary,
+                              title: Text(
                                 'Chỉ truyện đã tải về (Offline)',
-                                style: TextStyle(color: Colors.white, fontSize: 13),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 13,
+                                ),
                               ),
-                              subtitle: const Text(
+                              subtitle: Text(
                                 'Chỉ hiện các truyện có chương tải về hoặc file CBZ/EPUB nội bộ',
-                                style: TextStyle(color: Colors.white54, fontSize: 11),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontSize: 11,
+                                ),
                               ),
                               value: _filterDownloadedOnly,
                               onChanged: (val) {
@@ -436,10 +443,13 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
   Widget _buildFilterItem(String title, StateSetter setModalState) {
     final isSelected = _selectedStatuses.contains(title);
     return CheckboxListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
+      title: Text(
+        title,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+      ),
       value: isSelected,
       activeColor: Theme.of(context).colorScheme.primary,
-      checkColor: Colors.white,
+      checkColor: Theme.of(context).colorScheme.onPrimary,
       onChanged: (val) {
         setState(() {
           if (val == true) {
@@ -461,9 +471,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
   ) {
     final selected = _sortMode == mode;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return ListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      leading: Icon(icon, color: selected ? primaryColor : Colors.white70),
+      title: Text(title, style: TextStyle(color: onSurface)),
+      leading: Icon(icon, color: selected ? primaryColor : onSurface.withValues(alpha: 0.6)),
       trailing: selected
           ? Icon(Icons.check, color: primaryColor)
           : null,
@@ -479,9 +490,10 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
   ) {
     final selected = _viewMode == mode;
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return ListTile(
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      leading: Icon(icon, color: selected ? primaryColor : Colors.white70),
+      title: Text(title, style: TextStyle(color: onSurface)),
+      leading: Icon(icon, color: selected ? primaryColor : onSurface.withValues(alpha: 0.6)),
       trailing: selected
           ? Icon(Icons.check, color: primaryColor)
           : null,
@@ -497,11 +509,11 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
     return CheckboxListTile(
       title: Text(
         _readingStatusLabel(status),
-        style: const TextStyle(color: Colors.white),
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
       ),
       value: isSelected,
       activeColor: Theme.of(context).colorScheme.primary,
-      checkColor: Colors.white,
+      checkColor: Theme.of(context).colorScheme.onPrimary,
       onChanged: (val) {
         setState(() {
           if (val == true) {

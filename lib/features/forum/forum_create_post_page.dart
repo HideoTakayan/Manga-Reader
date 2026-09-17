@@ -187,55 +187,10 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
   }
 
   Future<void> _showAddCustomTagDialog() async {
-    final controller = TextEditingController();
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Icon(Icons.tag_rounded, color: Theme.of(ctx).colorScheme.primary),
-            const SizedBox(width: 8),
-            const Text('Thêm Hashtag Tự Do', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Ví dụ: review, trinhtham, onepiece...',
-            prefixText: '#',
-            prefixStyle: TextStyle(color: Theme.of(ctx).colorScheme.primary, fontWeight: FontWeight.bold),
-            filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.05),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onSubmitted: (val) {
-            if (val.trim().isNotEmpty) Navigator.pop(ctx, val.trim());
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy', style: TextStyle(color: Colors.white60)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(ctx, controller.text.trim());
-              }
-            },
-            child: const Text('Thêm'),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
+      builder: (_) => const _AddCustomTagDialog(),
+    );
 
     if (result != null && result.isNotEmpty && mounted) {
       final clean = result.toLowerCase().replaceAll('#', '').trim();
@@ -246,142 +201,10 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
   }
 
   Future<void> _showPollCreatorDialog() async {
-    final questionCtrl = TextEditingController();
-    final optionCtrls = [
-      TextEditingController(),
-      TextEditingController(),
-    ];
-
     final createdPoll = await showDialog<ForumPoll>(
       context: context,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
-          return AlertDialog(
-            backgroundColor: Theme.of(dialogCtx).cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Row(
-              children: [
-                Icon(Icons.poll_rounded, color: Theme.of(dialogCtx).colorScheme.primary),
-                const SizedBox(width: 8),
-                const Text('Tạo bình chọn', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: questionCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Câu hỏi bình chọn...',
-                      hintStyle: const TextStyle(color: Colors.white54),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.05),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text('Các lựa chọn (Tối thiểu 2, tối đa 6):', style: TextStyle(fontSize: 12, color: Colors.white70)),
-                  const SizedBox(height: 8),
-                  ...List.generate(optionCtrls.length, (idx) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: optionCtrls[idx],
-                              style: const TextStyle(color: Colors.white),
-                              decoration: InputDecoration(
-                                hintText: 'Lựa chọn ${idx + 1}',
-                                hintStyle: const TextStyle(color: Colors.white54),
-                                filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.05),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              ),
-                            ),
-                          ),
-                          if (optionCtrls.length > 2) ...[
-                            const SizedBox(width: 6),
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
-                              onPressed: () {
-                                setDialogState(() {
-                                  optionCtrls.removeAt(idx);
-                                });
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  }),
-                  if (optionCtrls.length < 6)
-                    TextButton.icon(
-                      onPressed: () {
-                        setDialogState(() {
-                          optionCtrls.add(TextEditingController());
-                        });
-                      },
-                      icon: Icon(Icons.add, size: 18, color: Theme.of(dialogCtx).colorScheme.primary),
-                      label: Text('Thêm lựa chọn', style: TextStyle(color: Theme.of(dialogCtx).colorScheme.primary)),
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx),
-                child: const Text('Hủy', style: TextStyle(color: Colors.white54)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(dialogCtx).colorScheme.primary,
-                  foregroundColor: Theme.of(dialogCtx).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () {
-                  final question = questionCtrl.text.trim();
-                  if (question.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Vui lòng nhập câu hỏi bình chọn')),
-                    );
-                    return;
-                  }
-                  final validOptions = optionCtrls
-                      .map((c) => c.text.trim())
-                      .where((text) => text.isNotEmpty)
-                      .toList();
-                  if (validOptions.length < 2) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Vui lòng nhập ít nhất 2 lựa chọn')),
-                    );
-                    return;
-                  }
-                  Navigator.pop(
-                    dialogCtx,
-                    ForumPoll(
-                      question: question,
-                      options: validOptions,
-                    ),
-                  );
-                },
-                child: const Text('Tạo', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    ).whenComplete(() {
-      questionCtrl.dispose();
-      for (final ctrl in optionCtrls) {
-        ctrl.dispose();
-      }
-    });
+      builder: (_) => const _PollCreatorDialog(),
+    );
 
     if (createdPoll != null && mounted) {
       setState(() => _poll = createdPoll);
@@ -425,21 +248,21 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Yêu cầu đăng nhập',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Bạn cần đăng nhập tài khoản để có thể đăng bài viết và chia sẻ truyện trên diễn đàn.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.white60,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                     height: 1.4,
                   ),
                 ),
@@ -535,9 +358,11 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Bạn không thể tạo bài viết mới.',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
@@ -568,7 +393,9 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                     const SizedBox(height: 8),
                     Text(
                       'Thời hạn: ${mutedUntil != null ? "${mutedUntil.day}/${mutedUntil.month}/${mutedUntil.year} ${mutedUntil.hour}:${mutedUntil.minute.toString().padLeft(2, '0')}" : "Không rõ"}',
-                      style: const TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
@@ -882,3 +709,257 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
   );
 }
 }
+
+class _AddCustomTagDialog extends StatefulWidget {
+  const _AddCustomTagDialog();
+
+  @override
+  State<_AddCustomTagDialog> createState() => _AddCustomTagDialogState();
+}
+
+class _AddCustomTagDialogState extends State<_AddCustomTagDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final text = _controller.text.trim();
+    if (text.isNotEmpty) {
+      Navigator.pop(context, text);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return AlertDialog(
+      backgroundColor: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Row(
+        children: [
+          Icon(Icons.tag_rounded, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            'Thêm Hashtag Tự Do',
+            style: TextStyle(color: onSurface, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: TextStyle(color: onSurface),
+        decoration: InputDecoration(
+          hintText: 'Ví dụ: review, trinhtham, onepiece...',
+          hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.4)),
+          prefixText: '#',
+          prefixStyle: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+          filled: true,
+          fillColor: onSurface.withValues(alpha: 0.05),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: _submit,
+          child: const Text('Thêm'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PollCreatorDialog extends StatefulWidget {
+  const _PollCreatorDialog();
+
+  @override
+  State<_PollCreatorDialog> createState() => _PollCreatorDialogState();
+}
+
+class _PollCreatorDialogState extends State<_PollCreatorDialog> {
+  late final TextEditingController _questionCtrl;
+  late final List<TextEditingController> _optionCtrls;
+
+  @override
+  void initState() {
+    super.initState();
+    _questionCtrl = TextEditingController();
+    _optionCtrls = [
+      TextEditingController(),
+      TextEditingController(),
+    ];
+  }
+
+  @override
+  void dispose() {
+    _questionCtrl.dispose();
+    for (final ctrl in _optionCtrls) {
+      ctrl.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addOption() {
+    if (_optionCtrls.length < 6) {
+      setState(() {
+        _optionCtrls.add(TextEditingController());
+      });
+    }
+  }
+
+  void _removeOption(int index) {
+    if (_optionCtrls.length > 2) {
+      setState(() {
+        final removed = _optionCtrls.removeAt(index);
+        removed.dispose();
+      });
+    }
+  }
+
+  void _submit() {
+    final question = _questionCtrl.text.trim();
+    if (question.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập câu hỏi bình chọn')),
+      );
+      return;
+    }
+    final validOptions = _optionCtrls
+        .map((c) => c.text.trim())
+        .where((text) => text.isNotEmpty)
+        .toList();
+    if (validOptions.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập ít nhất 2 lựa chọn')),
+      );
+      return;
+    }
+    Navigator.pop(
+      context,
+      ForumPoll(
+        question: question,
+        options: validOptions,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return AlertDialog(
+      backgroundColor: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Icon(Icons.poll_rounded, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            'Tạo bình chọn',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: onSurface),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _questionCtrl,
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                hintText: 'Câu hỏi bình chọn...',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.4)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Các lựa chọn (Tối thiểu 2, tối đa 6):',
+              style: TextStyle(fontSize: 12, color: onSurface.withValues(alpha: 0.7)),
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(_optionCtrls.length, (idx) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _optionCtrls[idx],
+                        style: TextStyle(color: onSurface),
+                        decoration: InputDecoration(
+                          hintText: 'Lựa chọn ${idx + 1}',
+                          hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.4)),
+                          filled: true,
+                          fillColor: onSurface.withValues(alpha: 0.05),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                    ),
+                    if (_optionCtrls.length > 2) ...[
+                      const SizedBox(width: 6),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
+                        onPressed: () => _removeOption(idx),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+            if (_optionCtrls.length < 6)
+              TextButton.icon(
+                onPressed: _addOption,
+                icon: Icon(Icons.add, size: 18, color: theme.colorScheme.primary),
+                label: Text('Thêm lựa chọn', style: TextStyle(color: theme.colorScheme.primary)),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: _submit,
+          child: const Text('Tạo', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+

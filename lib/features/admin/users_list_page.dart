@@ -897,98 +897,15 @@ class _UsersListPageState extends State<UsersListPage> {
   }
 
   void _showEditUserDialog(BuildContext context, String uid, String currentName, String currentBio) {
-    final nameCtrl = TextEditingController(text: currentName);
-    final bioCtrl = TextEditingController(text: currentBio);
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Chỉnh sửa thông tin',
-          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.next,
-              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
-              decoration: const InputDecoration(
-                labelText: 'Tên hiển thị',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: bioCtrl,
-              maxLines: 2,
-              textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.done,
-              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
-              decoration: const InputDecoration(
-                labelText: 'Tiểu sử (Bio)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = nameCtrl.text.trim();
-              final newBio = bioCtrl.text.trim();
-              if (newName.isEmpty) return;
-
-              try {
-                await FirebaseFirestore.instance.collection('users').doc(uid).update({
-                  'name': newName,
-                  'displayName': newName,
-                  'bio': newBio,
-                  'updatedAt': FieldValue.serverTimestamp(),
-                });
-
-                _fetchUsers(isRefresh: true);
-
-                if (context.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Đã cập nhật thông tin người dùng'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+      builder: (ctx) => _EditUserDialog(
+        uid: uid,
+        currentName: currentName,
+        currentBio: currentBio,
+        onSaved: () => _fetchUsers(isRefresh: true),
       ),
-    ).whenComplete(() {
-      nameCtrl.dispose();
-      bioCtrl.dispose();
-    });
+    );
   }
 
 
@@ -1055,6 +972,140 @@ class _UsersListPageState extends State<UsersListPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _EditUserDialog extends StatefulWidget {
+  final String uid;
+  final String currentName;
+  final String currentBio;
+  final VoidCallback onSaved;
+
+  const _EditUserDialog({
+    required this.uid,
+    required this.currentName,
+    required this.currentBio,
+    required this.onSaved,
+  });
+
+  @override
+  State<_EditUserDialog> createState() => _EditUserDialogState();
+}
+
+class _EditUserDialogState extends State<_EditUserDialog> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _bioCtrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.currentName);
+    _bioCtrl = TextEditingController(text: widget.currentBio);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _bioCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final newName = _nameCtrl.text.trim();
+    final newBio = _bioCtrl.text.trim();
+    if (newName.isEmpty) return;
+
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(widget.uid).update({
+        'name': newName,
+        'displayName': newName,
+        'bio': newBio,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      widget.onSaved();
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã cập nhật thông tin người dùng'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Theme.of(context).dialogTheme.backgroundColor ?? Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Chỉnh sửa thông tin',
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameCtrl,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.next,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            decoration: const InputDecoration(
+              labelText: 'Tên hiển thị',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _bioCtrl,
+            maxLines: 2,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            decoration: const InputDecoration(
+              labelText: 'Tiểu sử (Bio)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Text('Lưu', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
     );
   }
 }

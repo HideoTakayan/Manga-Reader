@@ -198,7 +198,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                   color: Theme.of(context).colorScheme.primary,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                                child: Icon(
+                                  Icons.camera_alt,
+                                  color: Theme.of(context).colorScheme.onPrimary,
+                                  size: 20,
+                                ),
                               ),
                             ],
                           ),
@@ -242,14 +246,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         onPressed: _saveChanges,
-                        icon: const Icon(Icons.save_rounded, color: Colors.white),
-                        label: const Text(
+                        icon: Icon(
+                          Icons.save_rounded,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                        label: Text(
                           'Lưu thay đổi',
-                          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(context).colorScheme.primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),

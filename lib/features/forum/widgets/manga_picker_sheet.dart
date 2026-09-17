@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../data/models_cloud.dart';
 import '../../../data/drive_service.dart';
 import '../../catalog/catalog_cache_service.dart';
+import '../../shared/drive_image.dart';
 
 class MangaPickerSheet extends StatefulWidget {
   const MangaPickerSheet({super.key});
@@ -33,18 +34,20 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final availableHeight = (screenHeight - bottomInset) * 0.75;
+
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SizedBox(
+          height: availableHeight.clamp(280.0, screenHeight * 0.85),
+          child: Material(
             color: theme.scaffoldBackgroundColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: FutureBuilder<List<CloudManga>>(
+            clipBehavior: Clip.antiAlias,
+            child: FutureBuilder<List<CloudManga>>(
             future: _mangasFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -232,25 +235,16 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                         itemCount: filteredMangas.length,
                         itemBuilder: (context, index) {
                           final manga = filteredMangas[index];
-                          final coverUrl = DriveService.instance.getThumbnailLink(manga.coverFileId);
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                             leading: ClipRRect(
                               borderRadius: BorderRadius.circular(6),
-                              child: Image.network(
-                                coverUrl,
+                              child: SizedBox(
                                 width: 46,
                                 height: 62,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  width: 46,
-                                  height: 62,
-                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                                  child: Icon(
-                                    Icons.book_rounded,
-                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
-                                    size: 22,
-                                  ),
+                                child: DriveImage(
+                                  fileId: manga.coverFileId,
+                                  fit: BoxFit.cover,
                                 ),
                               ),
                             ),
@@ -280,6 +274,7 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

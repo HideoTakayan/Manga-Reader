@@ -799,7 +799,7 @@ class _SearchPageState extends State<SearchPage> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: Colors.white24,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -853,7 +853,7 @@ class _SearchPageState extends State<SearchPage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
@@ -913,11 +913,11 @@ class _SearchPageState extends State<SearchPage> {
 
                           if (filterState == GenreFilterState.included) {
                             backgroundColor = Theme.of(context).colorScheme.primary;
-                            labelColor = Colors.white;
-                            icon = const Icon(
+                            labelColor = Theme.of(context).colorScheme.onPrimary;
+                            icon = Icon(
                               Icons.check,
                               size: 16,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onPrimary,
                             );
                           } else if (filterState == GenreFilterState.excluded) {
                             backgroundColor = Colors.red;
@@ -1478,7 +1478,7 @@ class _SearchPageState extends State<SearchPage> {
                           }).toList(),
                         ),
                         const SizedBox(height: 8),
-                        const Divider(color: Colors.white10, height: 1),
+                        Divider(color: Theme.of(context).dividerColor, height: 1),
                       ],
                     ),
                   ),
@@ -1522,8 +1522,8 @@ class _SearchPageState extends State<SearchPage> {
                             contentType.isNovel
                                 ? 'Không tìm thấy novel phù hợp'
                                 : 'Không tìm thấy truyện tranh phù hợp',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1538,8 +1538,8 @@ class _SearchPageState extends State<SearchPage> {
                                   ? 'Thử thay đổi từ khóa hoặc xóa bớt các tiêu chí lọc thể loại/trạng thái.'
                                   : 'Danh mục hiện chưa có nội dung. Vui lòng thử lại sau.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white54,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                                 fontSize: 13,
                                 height: 1.4,
                               ),

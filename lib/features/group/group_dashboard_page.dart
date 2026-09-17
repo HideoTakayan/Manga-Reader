@@ -94,19 +94,19 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Lỗi tải thông tin nhóm',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       '${snapshot.error}',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12, color: Colors.white54),
+                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                     ),
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
@@ -114,8 +114,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                       icon: const Icon(Icons.refresh_rounded, size: 16),
                       label: const Text('Thử lại'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                        side: BorderSide(color: theme.colorScheme.onSurface.withValues(alpha: 0.2)),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
@@ -631,13 +631,24 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         builder: (ctx) => AlertDialog(
           backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Ngắt kết nối Drive?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          title: Text(
+            'Ngắt kết nối Drive?',
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           content: Text(
             'Tài khoản hiện tại: ${_driveAccount!.email}',
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
@@ -655,83 +666,10 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   }
 
   void _showDriveRequestDialog(ScanlationGroup group) {
-    final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
-    final user = FirebaseAuth.instance.currentUser;
-    // ✅ FIX: Khai báo controller ở ngoài để có thể dispose() khi dialog đóng
-    final emailController = TextEditingController(text: user?.email ?? '');
-    final messenger = ScaffoldMessenger.of(context);
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Yêu cầu quyền truy cập Drive', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Tài khoản Google của bạn chưa được Admin thêm vào Test Users.\nNhập email bên dưới để gửi yêu cầu cho Admin cấp quyền:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: emailController,
-              style: const TextStyle(color: Colors.white),
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                labelText: 'Email Google',
-                labelStyle: TextStyle(color: primary),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              final email = emailController.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                await FirebaseFirestore.instance.collection('drive_access_requests').doc(user?.uid ?? email).set({
-                  'email': email,
-                  'uid': user?.uid ?? '',
-                  'displayName': user?.displayName ?? '',
-                  'groupId': group.id,
-                  'groupName': group.name,
-                  'status': 'pending',
-                  'createdAt': FieldValue.serverTimestamp(),
-                });
-                if (mounted) {
-                  messenger.showSnackBar(
-                    const SnackBar(
-                      content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin phê duyệt.'),
-                      duration: Duration(seconds: 4),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
-                }
-              }
-            },
-            child: const Text('Gửi yêu cầu', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    ).whenComplete(() => emailController.dispose()); // ✅ FIX: Dispose controller sau khi dialog đóng
+      builder: (ctx) => _DriveRequestDialog(group: group),
+    );
   }
 
   // ── 4. LEADER INVITE CODE (FIXED OVERFLOW & CLEAN STYLING) ────────────────
@@ -808,7 +746,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 ),
                 IconButton(
                   tooltip: 'Sao chép mã',
-                  icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 18),
+                  icon: Icon(Icons.copy_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.7), size: 18),
                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   padding: EdgeInsets.zero,
                   onPressed: () {
@@ -821,7 +759,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 ),
                 IconButton(
                   tooltip: 'Tạo mã mới',
-                  icon: const Icon(Icons.refresh_rounded, color: Colors.white54, size: 18),
+                  icon: Icon(Icons.refresh_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.54), size: 18),
                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   padding: EdgeInsets.zero,
                   onPressed: () async {
@@ -840,7 +778,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           const SizedBox(height: 6),
           Text(
             'Thành viên nhập mã này trong Cài đặt → Tham gia nhóm dịch.',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11),
+            style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.55), fontSize: 11),
           ),
         ],
       ),
@@ -859,9 +797,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Truyện của Nhóm',
-              style: TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w800),
+              style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 16.5, fontWeight: FontWeight.w800),
             ),
             if (mangas.isNotEmpty)
               TextButton.icon(
@@ -890,17 +828,17 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             decoration: BoxDecoration(
               color: theme.cardColor,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              border: Border.all(color: theme.colorScheme.onSurface.withValues(alpha: 0.08)),
             ),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.library_add_rounded, size: 36, color: Colors.white.withValues(alpha: 0.25)),
+                  Icon(Icons.library_add_rounded, size: 36, color: theme.colorScheme.onSurface.withValues(alpha: 0.25)),
                   const SizedBox(height: 8),
                   Text(
                     'Nhóm chưa đăng bộ truyện nào',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w600, fontSize: 13.5),
+                    style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7), fontWeight: FontWeight.w600, fontSize: 13.5),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -1031,16 +969,17 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
   // ── 6. MEMBERS SECTION ───────────────────────────────────────────────────
 
   Widget _buildMembersSection(BuildContext context, ScanlationGroup group, String? currentUid, bool isLeader) {
-    final primary = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               'Thành viên trong nhóm',
-              style: TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w800),
+              style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 16.5, fontWeight: FontWeight.w800),
             ),
             const SizedBox(width: 8),
             Container(
@@ -1089,8 +1028,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Xác nhận', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text('Bạn có chắc chắn muốn xóa "$name" khỏi nhóm dịch không?', style: const TextStyle(color: Colors.white70)),
+        title: Text('Xác nhận', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
+        content: Text('Bạn có chắc chắn muốn xóa "$name" khỏi nhóm dịch không?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
@@ -1133,8 +1072,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           builder: (ctx) => AlertDialog(
             backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text('Xác nhận rời nhóm?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            content: Text('Bạn sẽ không còn là thành viên của "${group.name}".', style: const TextStyle(color: Colors.white70)),
+            title: Text('Xác nhận rời nhóm?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
+            content: Text('Bạn sẽ không còn là thành viên của "${group.name}".', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
               ElevatedButton(
@@ -1339,3 +1278,118 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
     );
   }
 }
+
+class _DriveRequestDialog extends StatefulWidget {
+  final ScanlationGroup group;
+  const _DriveRequestDialog({required this.group});
+
+  @override
+  State<_DriveRequestDialog> createState() => _DriveRequestDialogState();
+}
+
+class _DriveRequestDialogState extends State<_DriveRequestDialog> {
+  late final TextEditingController _emailController;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    _emailController = TextEditingController(text: user?.email ?? '');
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || _isSubmitting) return;
+
+    setState(() => _isSubmitting = true);
+    final user = FirebaseAuth.instance.currentUser;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('drive_access_requests')
+          .doc(user?.uid ?? email)
+          .set({
+        'email': email,
+        'uid': user?.uid ?? '',
+        'displayName': user?.displayName ?? '',
+        'groupId': widget.group.id,
+        'groupName': widget.group.name,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin phê duyệt.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final onSurface = theme.colorScheme.onSurface;
+
+    return AlertDialog(
+      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Yêu cầu quyền truy cập Drive',
+        style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Tài khoản Google của bạn chưa được Admin thêm vào Test Users.\nNhập email bên dưới để gửi yêu cầu cho Admin cấp quyền:',
+            style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _emailController,
+            style: TextStyle(color: onSurface),
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: 'Email Google',
+              labelStyle: TextStyle(color: primary),
+              filled: true,
+              fillColor: onSurface.withValues(alpha: 0.05),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: _submit,
+          child: const Text('Gửi yêu cầu', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
+}
+

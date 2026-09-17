@@ -1288,93 +1288,99 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * 0.68,
-          child: Column(
-            children: [
-              const ListTile(
-                leading: Icon(Icons.bookmarks, color: Colors.amber),
-                title: Text(
-                  'Danh sách bookmark & trích dẫn',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final onSurface = theme.colorScheme.onSurface;
+        final divider = theme.dividerColor;
+
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.68,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.bookmarks, color: Colors.amber),
+                  title: Text(
+                    'Danh sách bookmark & trích dẫn',
+                    style: TextStyle(
+                      color: onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: bookmarks.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Chưa có bookmark nào',
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: bookmarks.length,
-                        separatorBuilder: (_, _) =>
-                            const Divider(height: 1, color: Colors.white12),
-                        itemBuilder: (context, index) {
-                          final bookmark = bookmarks[index];
-                          final isQuote = bookmark.note != null && bookmark.note!.isNotEmpty;
-                          final parsed = _decodePosition(bookmark.epubCfi);
-                          final bookChapters = _book?.chapters;
-                          final chapterIndex = (parsed != null && bookChapters != null && bookChapters.isNotEmpty)
-                              ? parsed.$1.clamp(0, bookChapters.length - 1)
-                              : null;
-                          final chapter = chapterIndex == null
-                              ? null
-                              : _chapterAt(chapterIndex);
-                          return ListTile(
-                            leading: Icon(
-                              isQuote ? Icons.format_quote : Icons.bookmark,
-                              color: isQuote ? Colors.cyanAccent : Colors.amber,
-                            ),
-                            title: Text(
-                              isQuote ? '“${bookmark.note}”' : (chapter?.title ?? 'Vị trí đã lưu'),
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
-                                fontWeight: isQuote ? FontWeight.w500 : FontWeight.normal,
+                Expanded(
+                  child: bookmarks.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Chưa có bookmark nào',
+                            style: TextStyle(color: onSurface.withValues(alpha: 0.6)),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: bookmarks.length,
+                          separatorBuilder: (_, _) =>
+                              Divider(height: 1, color: divider),
+                          itemBuilder: (context, index) {
+                            final bookmark = bookmarks[index];
+                            final isQuote = bookmark.note != null && bookmark.note!.isNotEmpty;
+                            final parsed = _decodePosition(bookmark.epubCfi);
+                            final bookChapters = _book?.chapters;
+                            final chapterIndex = (parsed != null && bookChapters != null && bookChapters.isNotEmpty)
+                                ? parsed.$1.clamp(0, bookChapters.length - 1)
+                                : null;
+                            final chapter = chapterIndex == null
+                                ? null
+                                : _chapterAt(chapterIndex);
+                            return ListTile(
+                              leading: Icon(
+                                isQuote ? Icons.format_quote : Icons.bookmark,
+                                color: isQuote ? Colors.cyanAccent : Colors.amber,
                               ),
-                              maxLines: isQuote ? 3 : 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              isQuote
-                                  ? (chapter?.title ?? 'Trích dẫn')
-                                  : (chapter == null
-                                      ? 'Không xác định được chương'
-                                      : _chapterPreview(chapter)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white60, fontSize: 12),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.white38, size: 20),
-                              onPressed: () async {
-                                await DatabaseHelper.instance.deleteBookmark(bookmark.id);
-                                if (context.mounted) {
-                                  Navigator.pop(context);
-                                  _showBookmarks();
-                                }
+                              title: Text(
+                                isQuote ? '“${bookmark.note}”' : (chapter?.title ?? 'Vị trí đã lưu'),
+                                style: TextStyle(
+                                  color: onSurface,
+                                  fontStyle: isQuote ? FontStyle.italic : FontStyle.normal,
+                                  fontWeight: isQuote ? FontWeight.w500 : FontWeight.normal,
+                                ),
+                                maxLines: isQuote ? 3 : 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                isQuote
+                                    ? (chapter?.title ?? 'Trích dẫn')
+                                    : (chapter == null
+                                        ? 'Không xác định được chương'
+                                        : _chapterPreview(chapter)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12),
+                              ),
+                              trailing: IconButton(
+                                icon: Icon(Icons.delete_outline, color: onSurface.withValues(alpha: 0.38), size: 20),
+                                onPressed: () async {
+                                  await DatabaseHelper.instance.deleteBookmark(bookmark.id);
+                                  if (context.mounted) {
+                                    Navigator.pop(context);
+                                    _showBookmarks();
+                                  }
+                                },
+                              ),
+                              onTap: () {
+                                Navigator.pop(context);
+                                unawaited(
+                                  _jumpToEncodedPosition(bookmark.epubCfi),
+                                );
                               },
-                            ),
-                            onTap: () {
-                              Navigator.pop(context);
-                              unawaited(
-                                _jumpToEncodedPosition(bookmark.epubCfi),
-                              );
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1389,6 +1395,10 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
+        final theme = Theme.of(context);
+        final onSurface = theme.colorScheme.onSurface;
+        final divider = theme.dividerColor;
+
         var results = <int>[];
         var resultChapters = <int, EpubChapter>{};
         var isSearching = false;
@@ -1407,12 +1417,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       child: TextField(
                         controller: controller,
                         autofocus: true,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: onSurface),
                         textInputAction: TextInputAction.search,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Tìm trong sách',
-                          hintStyle: TextStyle(color: Colors.white54),
-                          prefixIcon: Icon(Icons.search),
+                          hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+                          prefixIcon: Icon(Icons.search, color: onSurface.withValues(alpha: 0.54)),
                         ),
                         onChanged: (query) {
                           final normalized = query.trim().toLowerCase();
@@ -1459,14 +1469,14 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                                 controller.text.trim().isEmpty
                                     ? 'Nhập từ khóa để tìm kiếm'
                                     : 'Không tìm thấy nội dung phù hợp',
-                                style: const TextStyle(color: Colors.white70),
+                                style: TextStyle(color: onSurface.withValues(alpha: 0.6)),
                               ),
                             )
                           : ListView.separated(
                               itemCount: results.length,
-                              separatorBuilder: (_, _) => const Divider(
+                              separatorBuilder: (_, _) => Divider(
                                 height: 1,
-                                color: Colors.white12,
+                                color: divider,
                               ),
                               itemBuilder: (context, index) {
                                 final chapterIndex = results[index];
@@ -1474,20 +1484,20 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                                     resultChapters[chapterIndex] ??
                                     _chapterAt(chapterIndex);
                                 return ListTile(
-                                  leading: const Icon(
+                                  leading: Icon(
                                     Icons.menu_book,
-                                    color: Colors.white70,
+                                    color: onSurface.withValues(alpha: 0.7),
                                   ),
                                   title: Text(
                                     chapter.title,
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(color: onSurface),
                                   ),
                                   subtitle: Text(
                                     _chapterPreview(chapter),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white60,
+                                    style: TextStyle(
+                                      color: onSurface.withValues(alpha: 0.6),
                                     ),
                                   ),
                                   onTap: () {
@@ -1829,11 +1839,15 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final onSurface = theme.colorScheme.onSurface;
+        final divider = theme.dividerColor;
+
         var searchQuery = '';
         return StatefulBuilder(
           builder: (context, setModalState) {
@@ -1857,7 +1871,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white24,
+                          color: onSurface.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -1869,12 +1883,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.format_list_numbered_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                              Icon(Icons.format_list_numbered_rounded, color: theme.colorScheme.primary, size: 20),
                               const SizedBox(width: 8),
                               Text(
                                 'Chọn câu đọc (${chunks.length} câu)',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: onSurface,
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -1883,7 +1897,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                           ),
                           Text(
                             'Đang ở câu ${tts.chunkIndex + 1}',
-                            style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12, fontWeight: FontWeight.bold),
+                            style: TextStyle(color: theme.colorScheme.primary, fontSize: 12, fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -1891,13 +1905,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       child: TextField(
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(color: onSurface, fontSize: 13),
                         decoration: InputDecoration(
                           hintText: 'Tìm kiếm câu trong chương...',
-                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 18),
+                          hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38), fontSize: 13),
+                          prefixIcon: Icon(Icons.search, color: onSurface.withValues(alpha: 0.54), size: 18),
                           filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.08),
+                          fillColor: onSurface.withValues(alpha: 0.08),
                           contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1914,7 +1928,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       child: ListView.separated(
                         controller: scrollController,
                         itemCount: filteredChunks.length,
-                        separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                        separatorBuilder: (_, __) => Divider(color: divider, height: 1),
                         itemBuilder: (_, i) {
                           final entry = filteredChunks[i];
                           final chunkIdx = entry.key;
@@ -1922,19 +1936,19 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                           final isCurrent = chunkIdx == tts.chunkIndex;
 
                           return ListTile(
-                            tileColor: isCurrent ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15) : null,
+                            tileColor: isCurrent ? theme.colorScheme.primary.withValues(alpha: 0.15) : null,
                             leading: Container(
                               width: 34,
                               height: 34,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: isCurrent ? Theme.of(context).colorScheme.primary : Colors.white.withValues(alpha: 0.08),
+                                color: isCurrent ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Text(
                                 '${chunkIdx + 1}',
                                 style: TextStyle(
-                                  color: isCurrent ? Theme.of(context).colorScheme.onPrimary : Colors.white70,
+                                  color: isCurrent ? theme.colorScheme.onPrimary : onSurface.withValues(alpha: 0.7),
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -1945,13 +1959,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: isCurrent ? Theme.of(context).colorScheme.primary : Colors.white,
+                                color: isCurrent ? theme.colorScheme.primary : onSurface,
                                 fontSize: 13,
                                 fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
                             trailing: isCurrent
-                                ? Icon(Icons.graphic_eq_rounded, color: Theme.of(context).colorScheme.primary, size: 18)
+                                ? Icon(Icons.graphic_eq_rounded, color: theme.colorScheme.primary, size: 18)
                                 : null,
                             onTap: () {
                               Navigator.pop(ctx);
@@ -2001,22 +2015,37 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Màu nền', style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 12),
-            _buildColorRow(bgColors, _bgColor, _setBgColor),
-            const SizedBox(height: 24),
-            const Text('Màu chữ', style: TextStyle(color: Colors.white)),
-            const SizedBox(height: 12),
-            _buildColorRow(textColors, _textColor, _setTextColor),
-          ],
-        ),
-      ),
+      builder: (context) {
+        final onSurface = Theme.of(context).colorScheme.onSurface;
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Màu nền',
+                style: TextStyle(
+                  color: onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildColorRow(bgColors, _bgColor, _setBgColor),
+              const SizedBox(height: 24),
+              Text(
+                'Màu chữ',
+                style: TextStyle(
+                  color: onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildColorRow(textColors, _textColor, _setTextColor),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2025,6 +2054,10 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     int selected,
     Future<void> Function(int) onSelected,
   ) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final divider = theme.dividerColor;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: colors
@@ -2039,8 +2072,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: selected == color
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.white24,
+                        ? primary
+                        : divider,
                     width: selected == color ? 3 : 1,
                   ),
                 ),
@@ -2087,7 +2120,12 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
             color: Theme.of(context).cardColor.withValues(alpha: 0.85),
             child: StatefulBuilder(
         builder: (context, setModalState) {
-          final primary = Theme.of(context).colorScheme.primary;
+          final theme = Theme.of(context);
+          final primary = theme.colorScheme.primary;
+          final onPrimary = theme.colorScheme.onPrimary;
+          final onSurface = theme.colorScheme.onSurface;
+          final divider = theme.dividerColor;
+
           return SafeArea(
           top: false,
           child: SingleChildScrollView(
@@ -2101,7 +2139,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: onSurface.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -2109,11 +2147,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Cài đặt đọc',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: onSurface,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -2121,23 +2159,23 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white70),
+                      icon: Icon(Icons.close, color: onSurface.withValues(alpha: 0.7)),
                     ),
                   ],
                 ),
                 // Progress indicator
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.menu_book,
                       size: 14,
-                      color: Colors.white54,
+                      color: onSurface.withValues(alpha: 0.54),
                     ),
                     const SizedBox(width: 6),
                     Text(
                       'Chương ${_chapterIndex + 1}/$totalChapters  •  ${(progressPercent * 100).round()}%',
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: onSurface.withValues(alpha: 0.54),
                         fontSize: 12,
                       ),
                     ),
@@ -2146,7 +2184,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 const SizedBox(height: 4),
                 LinearProgressIndicator(
                   value: progressPercent,
-                  backgroundColor: Colors.white12,
+                  backgroundColor: divider,
                   color: primary,
                   minHeight: 3,
                   borderRadius: BorderRadius.circular(2),
@@ -2155,7 +2193,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 // Font size
                 Text(
                   'Cỡ chữ $_fontSize',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: onSurface),
                 ),
                 Slider(
                   value: _fontSize.toDouble(),
@@ -2171,7 +2209,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 // Line height
                 Text(
                   'Dãn dòng ${_lineHeight.toStringAsFixed(2)}',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: onSurface),
                 ),
                 Slider(
                   value: _lineHeight,
@@ -2188,7 +2226,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 ),
                 Text(
                   'Lề ngang ${_pageHorizontalPadding.round()}',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: onSurface),
                 ),
                 Slider(
                   value: _pageHorizontalPadding,
@@ -2203,7 +2241,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 ),
                 const SizedBox(height: 4),
                 // Font family
-                const Text('Font chữ', style: TextStyle(color: Colors.white)),
+                Text('Font chữ', style: TextStyle(color: onSurface)),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -2225,18 +2263,18 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                             decoration: BoxDecoration(
                               color: selected
                                   ? primary
-                                  : const Color(0xFF3A3A3C),
+                                  : onSurface.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: selected
                                     ? primary
-                                    : Colors.white24,
+                                    : divider,
                               ),
                             ),
                             child: Text(
                               option.label,
                               style: TextStyle(
-                                color: selected ? Colors.white : Colors.white70,
+                                color: selected ? onPrimary : onSurface.withValues(alpha: 0.7),
                                 fontSize: 13,
                                 fontFamily: option.family == 'Default'
                                     ? null
@@ -2272,9 +2310,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 ),
                 const SizedBox(height: 16),
                 // Theme presets
-                const Text(
+                Text(
                   'Theme nhanh',
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: onSurface),
                 ),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
@@ -2301,7 +2339,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                               border: Border.all(
                                 color: active
                                     ? primary
-                                    : Colors.white24,
+                                    : divider,
                                 width: active ? 2 : 1,
                               ),
                             ),
@@ -2321,11 +2359,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                 const SizedBox(height: 12),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text(
+                  title: Text(
                     'Màu nền/chữ tuỳ chỉnh',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  leading: const Icon(Icons.palette, color: Colors.white54),
+                  leading: Icon(Icons.palette, color: onSurface.withValues(alpha: 0.54)),
                   onTap: _showColorSettings,
                 ),
                 SwitchListTile(
@@ -2339,17 +2377,17 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('reader_volume_page_turn', value);
                   },
-                  title: const Text(
+                  title: Text(
                     'Phím âm lượng chuyển trang',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Dùng nút tăng/giảm âm lượng để lật trang/cuộn',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
-                  secondary: const Icon(
+                  secondary: Icon(
                     Icons.volume_up_rounded,
-                    color: Colors.white54,
+                    color: onSurface.withValues(alpha: 0.54),
                   ),
                 ),
                 if (_volumePageTurn)
@@ -2364,9 +2402,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setBool('reader_invert_volume_keys', value);
                     },
-                    title: const Text(
+                    title: Text(
                       'Đảo ngược chiều phím',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                      style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
                     ),
                   ),
                 SwitchListTile(
@@ -2378,31 +2416,31 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     setState(() => _isIncognito = value);
                     setModalState(() {});
                   },
-                  title: const Text(
+                  title: Text(
                     'Chế độ đọc ẩn danh (Incognito)',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Không lưu lịch sử, tiến trình đọc và không đồng bộ Cloud',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
                   secondary: Icon(
                     _isIncognito ? Icons.visibility_off_rounded : Icons.visibility_outlined,
-                    color: _isIncognito ? Colors.purpleAccent : Colors.white54,
+                    color: _isIncognito ? Colors.purpleAccent : onSurface.withValues(alpha: 0.54),
                   ),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text(
+                  title: Text(
                     'Danh sách bookmark & trích dẫn',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Xem, điều hướng hoặc xoá bookmark',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
                   leading: const Icon(Icons.bookmarks_outlined, color: Colors.amber),
-                  trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+                  trailing: Icon(Icons.chevron_right, color: onSurface.withValues(alpha: 0.38)),
                   onTap: () {
                     Navigator.pop(context);
                     _showBookmarks();
@@ -2415,32 +2453,32 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     setState(() => _showTtsPanel = value);
                     setModalState(() {});
                   },
-                  title: const Text(
+                  title: Text(
                     'Mở bảng TTS',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  secondary: const Icon(
+                  secondary: Icon(
                     Icons.record_voice_over,
-                    color: Colors.white54,
+                    color: onSurface.withValues(alpha: 0.54),
                   ),
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text(
+                  title: Text(
                     'Từ điển sửa từ ngữ hàng loạt',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: onSurface),
                   ),
-                  subtitle: const Text(
+                  subtitle: Text(
                     'Sửa từ dịch sai/Hán hóa (VD: Nã Phá Luân ➔ Napoleon)',
-                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.54), fontSize: 11),
                   ),
                   leading: const Icon(
                     Icons.spellcheck_rounded,
                     color: Colors.purpleAccent,
                   ),
-                  trailing: const Icon(
+                  trailing: Icon(
                     Icons.chevron_right,
-                    color: Colors.white38,
+                    color: onSurface.withValues(alpha: 0.38),
                   ),
                   onTap: () {
                     Navigator.pop(context);
@@ -2492,17 +2530,18 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
+      final theme = Theme.of(context);
       return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+              CircularProgressIndicator(color: theme.colorScheme.primary),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Đang phân tích nội dung EPUB...',
-                style: TextStyle(color: Colors.white70),
+                style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
               ),
             ],
           ),
@@ -2563,7 +2602,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   _errorMessage ?? 'Định dạng file EPUB không hợp lệ hoặc dữ liệu chương bị lỗi.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white60,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     height: 1.45,
                   ),
                 ),
@@ -2576,8 +2615,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       icon: const Icon(Icons.arrow_back_rounded, size: 18),
                       label: const Text('Quay lại'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        foregroundColor: theme.colorScheme.onSurface,
+                        side: BorderSide(color: theme.dividerColor),
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -2589,7 +2628,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       label: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: theme.colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -4026,135 +4065,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     BuildContext context,
     String originalWord,
   ) async {
-    final toController = TextEditingController();
-    bool isMangaOnly = true;
-
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Theme.of(ctx).cardColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: [
-              Icon(Icons.spellcheck_rounded, color: Theme.of(ctx).colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Sửa Từ Ngữ Hàng Loạt',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Từ gốc trong truyện:',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Text(
-                  originalWord,
-                  style: const TextStyle(
-                    color: Colors.orangeAccent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Thay thế thành (chuẩn hiển thị & TTS):',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              TextField(
-                controller: toController,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Ví dụ: Napoleon, Edison, 100%...',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.06),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: isMangaOnly,
-                activeTrackColor: Theme.of(ctx).colorScheme.primary,
-                activeThumbColor: Theme.of(ctx).colorScheme.primary,
-                onChanged: (val) {
-                  setDialogState(() => isMangaOnly = val);
-                },
-                title: const Text(
-                  'Chỉ áp dụng cho bộ truyện này',
-                  style: TextStyle(color: Colors.white, fontSize: 13),
-                ),
-                subtitle: Text(
-                  isMangaOnly
-                      ? 'Chỉ sửa trong truyện hiện tại'
-                      : 'Sửa trong tất cả các truyện trên máy',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Hủy', style: TextStyle(color: Colors.white60)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.primary,
-                foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: () async {
-                final target = toController.text.trim();
-                if (target.isEmpty) return;
-                Navigator.pop(ctx);
-                await GlossaryService.instance.addRule(
-                  from: originalWord,
-                  to: target,
-                  mangaId: isMangaOnly ? widget.storageKey : null,
-                );
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã cập nhật quy tắc: "$originalWord" ➔ "$target"'),
-                      backgroundColor: Colors.purple,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
-              },
-              child: const Text('Lưu & Sửa ngay'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _QuickAddGlossaryDialog(
+        originalWord: originalWord,
+        storageKey: widget.storageKey,
       ),
-    ).whenComplete(toController.dispose);
+    );
   }
 
   Future<void> _showGlossaryManagerSheet() async {
@@ -4212,119 +4129,14 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
   }
 
   Future<void> _showAddEditRuleDialog([GlossaryRule? existingRule, bool defaultMangaOnly = true]) async {
-    final fromController = TextEditingController(text: existingRule?.from ?? '');
-    final toController = TextEditingController(text: existingRule?.to ?? '');
-    bool isMangaOnly = existingRule != null ? existingRule.mangaId != null : defaultMangaOnly;
-
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Theme.of(ctx).cardColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: [
-              Icon(Icons.spellcheck_rounded, color: Theme.of(ctx).colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                existingRule == null ? 'Thêm Từ Sửa Đổi' : 'Chỉnh Sửa Từ',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Từ gốc / Từ bị dịch sai:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 4),
-              TextField(
-                controller: fromController,
-                autofocus: existingRule == null,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Ví dụ: Nã Phá Luân, Ái Nhân Tôn...',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.06),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text('Thay thế thành:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 4),
-              TextField(
-                controller: toController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Ví dụ: Napoleon, Edison...',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.06),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: isMangaOnly,
-                activeTrackColor: Theme.of(ctx).colorScheme.primary,
-                activeThumbColor: Theme.of(ctx).colorScheme.primary,
-                onChanged: (val) {
-                  setDialogState(() => isMangaOnly = val);
-                },
-                title: const Text('Chỉ áp dụng cho truyện này', style: TextStyle(color: Colors.white, fontSize: 13)),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Hủy', style: TextStyle(color: Colors.white60)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.primary,
-                foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () async {
-                final from = fromController.text.trim();
-                final to = toController.text.trim();
-                if (from.isEmpty) return;
-                Navigator.pop(ctx);
-                if (existingRule != null) {
-                  await GlossaryService.instance.updateRule(
-                    GlossaryRule(
-                      id: existingRule.id,
-                      from: from,
-                      to: to,
-                      mangaId: isMangaOnly ? widget.mangaId : null,
-                      isEnabled: existingRule.isEnabled,
-                      createdAt: existingRule.createdAt,
-                    ),
-                  );
-                } else {
-                  await GlossaryService.instance.addRule(
-                    from: from,
-                    to: to,
-                    mangaId: isMangaOnly ? widget.mangaId : null,
-                  );
-                }
-              },
-              child: const Text('Lưu'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _AddEditRuleDialog(
+        existingRule: existingRule,
+        defaultMangaOnly: defaultMangaOnly,
+        mangaId: widget.mangaId,
       ),
-    ).whenComplete(() {
-      fromController.dispose();
-      toController.dispose();
-    });
+    );
   }
 
   Future<void> _showPublishPackDialog() async {
@@ -4336,261 +4148,109 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
       return;
     }
 
-    final allRules = GlossaryService.instance.rules;
-    final mangaRules = allRules.where((r) => r.mangaId == widget.mangaId).toList();
-    final globalRules = allRules.where((r) => r.mangaId == null).toList();
-
-    int selectedScope = mangaRules.isNotEmpty ? 0 : 1; // 0: truyện này, 1: toàn cầu, 2: tất cả
-    final titleCtrl = TextEditingController(
-      text: selectedScope == 0
-          ? 'Từ điển chuẩn hóa: ${widget.mangaTitle}'
-          : 'Bộ từ điển Convert tiếng Trung phổ biến',
-    );
-    final descCtrl = TextEditingController(
-      text: 'Chuẩn hóa tên nhân vật và địa danh bị dịch sai/Hán hóa.',
-    );
-
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          List<GlossaryRule> targetRules;
-          if (selectedScope == 0) {
-            targetRules = mangaRules;
-          } else if (selectedScope == 1) {
-            targetRules = globalRules;
-          } else {
-            targetRules = allRules;
-          }
-
-          return AlertDialog(
-            backgroundColor: Theme.of(ctx).cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            title: const Row(
-              children: [
-                Icon(Icons.cloud_upload_rounded, color: Colors.purpleAccent),
-                SizedBox(width: 8),
-                Text(
-                  'Đăng Gói Từ Điển Lên Cloud',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Chọn nguồn từ cần chia sẻ:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<int>(
-                    initialValue: selectedScope,
-                    dropdownColor: Theme.of(ctx).cardColor,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: 0,
-                        child: Text('Chỉ từ của truyện này (${mangaRules.length} từ)'),
-                      ),
-                      DropdownMenuItem(
-                        value: 1,
-                        child: Text('Chỉ từ toàn cầu (${globalRules.length} từ)'),
-                      ),
-                      DropdownMenuItem(
-                        value: 2,
-                        child: Text('Tất cả từ trên máy (${allRules.length} từ)'),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() {
-                          selectedScope = val;
-                          titleCtrl.text = selectedScope == 0
-                              ? 'Từ điển chuẩn hóa: ${widget.mangaTitle}'
-                              : 'Bộ từ điển Convert tiếng Trung phổ biến';
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Tên gói từ điển:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: titleCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Ví dụ: Chuẩn hóa Convert One Piece...',
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Mô tả ngắn gọn:', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: descCtrl,
-                    maxLines: 2,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Tóm tắt nội dung gói từ điển...',
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sẽ tải lên ${targetRules.length} cặp từ sửa đổi.',
-                    style: TextStyle(color: Theme.of(ctx).colorScheme.primary, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Hủy', style: TextStyle(color: Colors.white60)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(ctx).colorScheme.primary,
-                  foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: targetRules.isEmpty
-                    ? null
-                    : () async {
-                        final title = titleCtrl.text.trim();
-                        final desc = descCtrl.text.trim();
-                        if (title.isEmpty) return;
-                        final messenger = ScaffoldMessenger.of(context);
-                        Navigator.pop(ctx);
-                        try {
-                          await CommunityGlossaryService.instance.publishPack(
-                            title: title,
-                            description: desc,
-                            mangaTitle: selectedScope == 0 ? widget.mangaTitle : null,
-                            rules: targetRules,
-                          );
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('🎉 Đã chia sẻ gói từ điển lên cộng đồng thành công!'),
-                              backgroundColor: Colors.purple,
-                            ),
-                          );
-                        } catch (e) {
-                          messenger.showSnackBar(
-                            SnackBar(content: Text('Lỗi chia sẻ: $e')),
-                          );
-                        }
-                      },
-                child: const Text('Đăng ngay'),
-              ),
-            ],
-          );
-        },
+      builder: (ctx) => _PublishPackDialog(
+        mangaId: widget.mangaId,
+        mangaTitle: widget.mangaTitle,
       ),
-    ).whenComplete(() {
-      titleCtrl.dispose();
-      descCtrl.dispose();
-    });
+    );
   }
 
   Future<void> _showPreviewPackDialog(CommunityGlossaryPack pack) async {
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Icon(Icons.preview_rounded, color: Theme.of(ctx).colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                pack.title,
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 320,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final onSurface = theme.colorScheme.onSurface;
+        return AlertDialog(
+          backgroundColor: theme.cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
             children: [
-              Text(
-                'Tác giả: ${pack.authorName} • ${pack.rules.length} từ',
-                style: const TextStyle(color: Colors.white60, fontSize: 12),
-              ),
-              if (pack.description.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  pack.description,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ],
-              const Divider(color: Colors.white24, height: 16),
+              Icon(Icons.preview_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
               Expanded(
-                child: ListView.separated(
-                  itemCount: pack.rules.length,
-                  separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
-                  itemBuilder: (ctx, idx) {
-                    final r = pack.rules[idx];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              r.from,
-                              style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                          ),
-                          Icon(Icons.arrow_forward_rounded, color: Theme.of(ctx).colorScheme.primary, size: 14),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              r.to,
-                              style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                child: Text(
+                  pack.title,
+                  style: TextStyle(color: onSurface, fontSize: 16, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng', style: TextStyle(color: Colors.white60)),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.primary,
-              foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 320,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tác giả: ${pack.authorName} • ${pack.rules.length} từ',
+                  style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12),
+                ),
+                if (pack.description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    pack.description,
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
+                  ),
+                ],
+                Divider(color: theme.dividerColor, height: 16),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: pack.rules.length,
+                    separatorBuilder: (_, __) => Divider(color: theme.dividerColor, height: 1),
+                    itemBuilder: (ctx, idx) {
+                      final r = pack.rules[idx];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                r.from,
+                                style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                            Icon(Icons.arrow_forward_rounded, color: theme.colorScheme.primary, size: 14),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                r.to,
+                                style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              _importPackDialog(pack);
-            },
-            icon: const Icon(Icons.download_rounded, size: 18),
-            label: const Text('Nhập gói này'),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Đóng', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _importPackDialog(pack);
+              },
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text('Nhập gói này'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -4600,132 +4260,136 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Theme.of(ctx).cardColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: [
-              Icon(Icons.download_rounded, color: Theme.of(ctx).colorScheme.primary),
-              const SizedBox(width: 8),
-              const Text(
-                'Nhập Gói Từ Điển',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Bạn muốn áp dụng ${pack.rules.length} từ trong gói "${pack.title}" vào đâu?',
-                style: const TextStyle(color: Colors.white70, fontSize: 13.5),
-              ),
-              const SizedBox(height: 12),
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setDialogState(() => isMangaOnly = true),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isMangaOnly
-                        ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isMangaOnly ? Theme.of(ctx).colorScheme.primary : Colors.white12,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                        color: isMangaOnly ? Theme.of(ctx).colorScheme.primary : Colors.white54,
-                        size: 20,
+        builder: (ctx, setDialogState) {
+          final theme = Theme.of(ctx);
+          final onSurface = theme.colorScheme.onSurface;
+          return AlertDialog(
+            backgroundColor: theme.cardColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Row(
+              children: [
+                Icon(Icons.download_rounded, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Nhập Gói Từ Điển',
+                  style: TextStyle(color: onSurface, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Bạn muốn áp dụng ${pack.rules.length} từ trong gói "${pack.title}" vào đâu?',
+                  style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13.5),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setDialogState(() => isMangaOnly = true),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isMangaOnly
+                          ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                          : onSurface.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isMangaOnly ? theme.colorScheme.primary : theme.dividerColor,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Chỉ áp dụng cho truyện này (${widget.mangaTitle})',
-                          style: TextStyle(
-                            color: isMangaOnly ? Colors.white : Colors.white70,
-                            fontSize: 13,
-                            fontWeight: isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          color: isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Chỉ áp dụng cho truyện này (${widget.mangaTitle})',
+                            style: TextStyle(
+                              color: isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
+                              fontSize: 13,
+                              fontWeight: isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setDialogState(() => isMangaOnly = false),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: !isMangaOnly
-                        ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: !isMangaOnly ? Theme.of(ctx).colorScheme.primary : Colors.white12,
+                      ],
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        !isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                        color: !isMangaOnly ? Theme.of(ctx).colorScheme.primary : Colors.white54,
-                        size: 20,
+                ),
+                const SizedBox(height: 8),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setDialogState(() => isMangaOnly = false),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: !isMangaOnly
+                          ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                          : onSurface.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: !isMangaOnly ? theme.colorScheme.primary : theme.dividerColor,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Áp dụng toàn cầu (Tất cả các truyện)',
-                          style: TextStyle(
-                            color: !isMangaOnly ? Colors.white : Colors.white70,
-                            fontSize: 13,
-                            fontWeight: !isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          !isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          color: !isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Áp dụng toàn cầu (Tất cả các truyện)',
+                            style: TextStyle(
+                              color: !isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
+                              fontSize: 13,
+                              fontWeight: !isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.pop(ctx);
+                  final count = await CommunityGlossaryService.instance.importPackToLocal(
+                    pack,
+                    targetMangaId: isMangaOnly ? widget.mangaId : null,
+                  );
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('✅ Đã nhập thành công $count từ vào từ điển!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                child: const Text('Xác nhận nhập'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Hủy', style: TextStyle(color: Colors.white60)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.primary,
-                foregroundColor: Theme.of(ctx).colorScheme.onPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.pop(ctx);
-                final count = await CommunityGlossaryService.instance.importPackToLocal(
-                  pack,
-                  targetMangaId: isMangaOnly ? widget.mangaId : null,
-                );
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('✅ Đã nhập thành công $count từ vào từ điển!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              },
-              child: const Text('Xác nhận nhập'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -4754,7 +4418,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   height: 4,
                   margin: const EdgeInsets.only(top: 12, bottom: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -4766,17 +4430,24 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   children: [
                     Icon(Icons.spellcheck_rounded, color: Theme.of(context).colorScheme.primary, size: 24),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'Từ Điển Sửa Từ Ngữ (Glossary)',
-                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             'Tự động thay thế từ khi đọc & khi nghe TTS',
-                            style: TextStyle(color: Colors.white54, fontSize: 11),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -4798,7 +4469,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                 controller: _tabController,
                 indicatorColor: Theme.of(context).colorScheme.primary,
                 labelColor: Theme.of(context).colorScheme.primary,
-                unselectedLabelColor: Colors.white60,
+                unselectedLabelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                 tabs: [
                   Tab(text: 'Truyện này (${mangaRules.length})'),
                   Tab(text: 'Toàn cầu (${globalRules.length})'),
@@ -4836,20 +4507,20 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                 child: Container(
                   height: 38,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: TextField(
                     controller: _communitySearchCtrl,
-                    style: const TextStyle(fontSize: 13, color: Colors.white),
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Tìm gói theo tên truyện, tác giả, từ...',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                      prefixIcon: const Icon(Icons.search, size: 16, color: Colors.white38),
+                      hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38), fontSize: 12),
+                      prefixIcon: Icon(Icons.search, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                       suffixIcon: _communitySearchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear, size: 14),
+                              icon: Icon(Icons.clear, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                               onPressed: () {
                                 _communitySearchCtrl.clear();
                                 setState(() => _communitySearchQuery = '');
@@ -4883,9 +4554,9 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   height: 38,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Row(
                     children: [
@@ -4899,7 +4570,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.arrow_drop_down, size: 18, color: Colors.white54),
+                      Icon(Icons.arrow_drop_down, size: 18, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                     ],
                   ),
                 ),
@@ -4935,12 +4606,12 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.white24),
+                        Icon(Icons.cloud_off_rounded, size: 48, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24)),
                         const SizedBox(height: 12),
-                        const Text(
+                        Text(
                           'Chưa có gói từ điển cộng đồng nào',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white54, fontSize: 14),
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 14),
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
@@ -4971,7 +4642,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                     color: Theme.of(context).cardColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                      side: BorderSide(color: Theme.of(context).dividerColor),
                     ),
                     margin: const EdgeInsets.only(bottom: 12),
                     child: Padding(
@@ -5001,11 +4672,11 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                                   children: [
                                     Text(
                                       pack.title,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 14),
                                     ),
                                     Text(
                                       '${pack.authorName} • ${pack.rules.length} từ',
-                                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 11),
                                     ),
                                   ],
                                 ),
@@ -5019,10 +4690,10 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                                       builder: (ctx) => AlertDialog(
                                         backgroundColor: Theme.of(ctx).cardColor,
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                        title: const Text('Xóa gói từ điển?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                        content: Text('Bạn có chắc muốn xóa gói "${pack.title}" khỏi cộng đồng?', style: const TextStyle(color: Colors.white70)),
+                                        title: Text('Xóa gói từ điển?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
+                                        content: Text('Bạn có chắc muốn xóa gói "${pack.title}" khỏi cộng đồng?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
                                         actions: [
-                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.white60))),
+                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Hủy', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)))),
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
                                             onPressed: () => Navigator.pop(ctx, true),
@@ -5042,7 +4713,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                             const SizedBox(height: 6),
                             Text(
                               pack.description,
-                              style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7), fontSize: 12.5),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -5056,12 +4727,12 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                               ...pack.rules.take(2).map((r) => Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.05),
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
                                       '${r.from} ➔ ${r.to}',
-                                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)),
                                     ),
                                   )),
                               if (pack.rules.length > 2)
@@ -5094,10 +4765,10 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                                           Icon(
                                             isLiked ? Icons.favorite : Icons.favorite_border,
                                             size: 15,
-                                            color: isLiked ? Colors.redAccent : Colors.white54,
+                                            color: isLiked ? Colors.redAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                                           ),
                                           const SizedBox(width: 4),
-                                          Text('${pack.likesCount}', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                          Text('${pack.likesCount}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12)),
                                         ],
                                       ),
                                     ),
@@ -5105,9 +4776,9 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                                   const SizedBox(width: 12),
                                   Row(
                                     children: [
-                                      const Icon(Icons.download_rounded, size: 15, color: Colors.white54),
+                                      Icon(Icons.download_rounded, size: 15, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54)),
                                       const SizedBox(width: 4),
-                                      Text('${pack.downloadsCount}', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                      Text('${pack.downloadsCount}', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12)),
                                     ],
                                   ),
                                 ],
@@ -5116,7 +4787,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                                 children: [
                                   TextButton(
                                     onPressed: () => _showPreviewPackDialog(pack),
-                                    child: const Text('Xem chi tiết', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                                    child: Text('Xem chi tiết', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7))),
                                   ),
                                   const SizedBox(width: 4),
                                   ElevatedButton.icon(
@@ -5148,6 +4819,9 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
   }
 
   Widget _buildRuleList(List<GlossaryRule> rules, {required bool isMangaTab}) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
     if (rules.isEmpty) {
       return Center(
         child: Padding(
@@ -5155,14 +4829,14 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.text_fields_rounded, size: 48, color: Colors.white24),
+              Icon(Icons.text_fields_rounded, size: 48, color: onSurface.withValues(alpha: 0.24)),
               const SizedBox(height: 12),
               Text(
                 isMangaTab
                     ? 'Chưa có từ sửa đổi nào cho bộ truyện này'
                     : 'Chưa có từ sửa đổi toàn cầu nào',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, fontSize: 14),
+                style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 14),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -5187,10 +4861,10 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
       itemBuilder: (context, index) {
         final rule = rules[index];
         return Card(
-          color: Theme.of(context).cardColor,
+          color: theme.cardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+            side: BorderSide(color: theme.dividerColor),
           ),
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
@@ -5201,7 +4875,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   child: Text(
                     rule.from,
                     style: TextStyle(
-                      color: rule.isEnabled ? Colors.orangeAccent : Colors.white38,
+                      color: rule.isEnabled ? Colors.orangeAccent : onSurface.withValues(alpha: 0.38),
                       fontWeight: FontWeight.bold,
                       decoration: rule.isEnabled ? null : TextDecoration.lineThrough,
                     ),
@@ -5215,9 +4889,8 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   child: Text(
                     rule.to,
                     style: TextStyle(
-                      color: rule.isEnabled ? Colors.greenAccent : Colors.white38,
+                      color: rule.isEnabled ? Colors.greenAccent : onSurface.withValues(alpha: 0.38),
                       fontWeight: FontWeight.bold,
-                      decoration: rule.isEnabled ? null : TextDecoration.lineThrough,
                     ),
                   ),
                 ),
@@ -5233,7 +4906,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   onChanged: (_) => GlossaryService.instance.toggleRule(rule.id),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 20, color: Colors.white60),
+                  icon: Icon(Icons.edit_outlined, size: 20, color: onSurface.withValues(alpha: 0.6)),
                   onPressed: () => _showAddEditRuleDialog(rule, isMangaTab),
                 ),
                 IconButton(
@@ -5316,6 +4989,9 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
     final displayChapters =
         _isSortReversed ? filtered.reversed.toList() : filtered;
 
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
     return SafeArea(
       child: Column(
         children: [
@@ -5327,10 +5003,10 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Mục lục',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: onSurface,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -5338,8 +5014,8 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                       const SizedBox(height: 2),
                       Text(
                         '${widget.chapters.length} chương',
-                        style: const TextStyle(
-                          color: Colors.white54,
+                        style: TextStyle(
+                          color: onSurface.withValues(alpha: 0.6),
                           fontSize: 12,
                         ),
                       ),
@@ -5350,7 +5026,7 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                   tooltip: _isSortReversed ? 'Đảo thứ tự (Mới nhất)' : 'Đảo thứ tự (Cũ nhất)',
                   icon: Icon(
                     _isSortReversed ? Icons.arrow_downward : Icons.arrow_upward,
-                    color: Colors.white70,
+                    color: onSurface.withValues(alpha: 0.7),
                     size: 20,
                   ),
                   onPressed: () {
@@ -5364,15 +5040,15 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: TextField(
               controller: _searchController,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+              style: TextStyle(color: onSurface, fontSize: 13),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Tìm kiếm chương...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                prefixIcon: const Icon(Icons.search, color: Colors.white38, size: 18),
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38), fontSize: 13),
+                prefixIcon: Icon(Icons.search, color: onSurface.withValues(alpha: 0.38), size: 18),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white38, size: 18),
+                        icon: Icon(Icons.clear, color: onSurface.withValues(alpha: 0.38), size: 18),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchQuery = '');
@@ -5380,7 +5056,7 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.08),
+                fillColor: onSurface.withValues(alpha: 0.08),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -5396,13 +5072,13 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
             ),
           ),
           const SizedBox(height: 4),
-          const Divider(height: 1, color: Colors.white12),
+          Divider(height: 1, color: theme.dividerColor),
           Expanded(
             child: displayChapters.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Không tìm thấy chương phù hợp',
-                      style: TextStyle(color: Colors.white38, fontSize: 13),
+                      style: TextStyle(color: onSurface.withValues(alpha: 0.38), fontSize: 13),
                     ),
                   )
                 : ListView.builder(
@@ -5415,13 +5091,13 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
 
                       return ListTile(
                         selected: isCurrent,
-                        selectedTileColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                        selectedTileColor: theme.colorScheme.primary.withValues(alpha: 0.15),
                         leading: isCurrent
                             ? Container(
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.primary,
+                                  color: theme.colorScheme.primary,
                                   shape: BoxShape.circle,
                                 ),
                               )
@@ -5430,8 +5106,8 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                           chapter.title.isEmpty ? 'Chương ${originalIndex + 1}' : chapter.title,
                           style: TextStyle(
                             color: isCurrent
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.white70,
+                                ? theme.colorScheme.primary
+                                : onSurface.withValues(alpha: 0.75),
                             fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                             fontSize: 14,
                           ),
@@ -5451,3 +5127,498 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
     );
   }
 }
+
+class _QuickAddGlossaryDialog extends StatefulWidget {
+  final String originalWord;
+  final String? storageKey;
+
+  const _QuickAddGlossaryDialog({
+    required this.originalWord,
+    this.storageKey,
+  });
+
+  @override
+  State<_QuickAddGlossaryDialog> createState() => _QuickAddGlossaryDialogState();
+}
+
+class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
+  late final TextEditingController _toController;
+  bool _isMangaOnly = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _toController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _toController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final target = _toController.text.trim();
+    if (target.isEmpty) return;
+    Navigator.pop(context);
+    await GlossaryService.instance.addRule(
+      from: widget.originalWord,
+      to: target,
+      mangaId: _isMangaOnly ? widget.storageKey : null,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã cập nhật quy tắc: "${widget.originalWord}" ➔ "$target"'),
+          backgroundColor: Colors.purple,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    return AlertDialog(
+      backgroundColor: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Row(
+        children: [
+          Icon(Icons.spellcheck_rounded, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            'Sửa Từ Ngữ Hàng Loạt',
+            style: TextStyle(
+              color: onSurface,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Từ gốc trong truyện:',
+            style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: onSurface.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: onSurface.withValues(alpha: 0.12)),
+            ),
+            child: Text(
+              widget.originalWord,
+              style: const TextStyle(
+                color: Colors.orangeAccent,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Thay thế thành (chuẩn hiển thị & TTS):',
+            style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _toController,
+            autofocus: true,
+            style: TextStyle(color: onSurface),
+            decoration: InputDecoration(
+              hintText: 'Ví dụ: Napoleon, Edison, 100%...',
+              hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+              filled: true,
+              fillColor: onSurface.withValues(alpha: 0.06),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _isMangaOnly,
+            activeTrackColor: theme.colorScheme.primary,
+            activeThumbColor: theme.colorScheme.primary,
+            onChanged: (val) => setState(() => _isMangaOnly = val),
+            title: Text(
+              'Chỉ áp dụng cho bộ truyện này',
+              style: TextStyle(color: onSurface, fontSize: 13),
+            ),
+            subtitle: Text(
+              _isMangaOnly
+                  ? 'Chỉ sửa trong truyện hiện tại'
+                  : 'Sửa trong tất cả các truyện trên máy',
+              style: TextStyle(color: onSurface.withValues(alpha: 0.54), fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: _save,
+          child: const Text('Lưu & Sửa ngay'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AddEditRuleDialog extends StatefulWidget {
+  final GlossaryRule? existingRule;
+  final bool defaultMangaOnly;
+  final String? mangaId;
+
+  const _AddEditRuleDialog({
+    this.existingRule,
+    this.defaultMangaOnly = true,
+    this.mangaId,
+  });
+
+  @override
+  State<_AddEditRuleDialog> createState() => _AddEditRuleDialogState();
+}
+
+class _AddEditRuleDialogState extends State<_AddEditRuleDialog> {
+  late final TextEditingController _fromController;
+  late final TextEditingController _toController;
+  late bool _isMangaOnly;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromController = TextEditingController(text: widget.existingRule?.from ?? '');
+    _toController = TextEditingController(text: widget.existingRule?.to ?? '');
+    _isMangaOnly = widget.existingRule != null
+        ? widget.existingRule!.mangaId != null
+        : widget.defaultMangaOnly;
+  }
+
+  @override
+  void dispose() {
+    _fromController.dispose();
+    _toController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final from = _fromController.text.trim();
+    final to = _toController.text.trim();
+    if (from.isEmpty) return;
+    Navigator.pop(context);
+    if (widget.existingRule != null) {
+      await GlossaryService.instance.updateRule(
+        GlossaryRule(
+          id: widget.existingRule!.id,
+          from: from,
+          to: to,
+          mangaId: _isMangaOnly ? widget.mangaId : null,
+          isEnabled: widget.existingRule!.isEnabled,
+          createdAt: widget.existingRule!.createdAt,
+        ),
+      );
+    } else {
+      await GlossaryService.instance.addRule(
+        from: from,
+        to: to,
+        mangaId: _isMangaOnly ? widget.mangaId : null,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    return AlertDialog(
+      backgroundColor: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Row(
+        children: [
+          Icon(Icons.spellcheck_rounded, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            widget.existingRule == null ? 'Thêm Từ Sửa Đổi' : 'Chỉnh Sửa Từ',
+            style: TextStyle(
+              color: onSurface,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Từ gốc / Từ bị dịch sai:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _fromController,
+            autofocus: widget.existingRule == null,
+            style: TextStyle(color: onSurface),
+            decoration: InputDecoration(
+              hintText: 'Ví dụ: Nã Phá Luân, Ái Nhân Tôn...',
+              hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+              filled: true,
+              fillColor: onSurface.withValues(alpha: 0.06),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text('Thay thế thành:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _toController,
+            style: TextStyle(color: onSurface),
+            decoration: InputDecoration(
+              hintText: 'Ví dụ: Napoleon, Edison...',
+              hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+              filled: true,
+              fillColor: onSurface.withValues(alpha: 0.06),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _isMangaOnly,
+            activeTrackColor: theme.colorScheme.primary,
+            activeThumbColor: theme.colorScheme.primary,
+            onChanged: (val) => setState(() => _isMangaOnly = val),
+            title: Text('Chỉ áp dụng cho truyện này', style: TextStyle(color: onSurface, fontSize: 13)),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: _save,
+          child: const Text('Lưu'),
+        ),
+      ],
+    );
+  }
+}
+
+class _PublishPackDialog extends StatefulWidget {
+  final String mangaId;
+  final String mangaTitle;
+
+  const _PublishPackDialog({
+    required this.mangaId,
+    required this.mangaTitle,
+  });
+
+  @override
+  State<_PublishPackDialog> createState() => _PublishPackDialogState();
+}
+
+class _PublishPackDialogState extends State<_PublishPackDialog> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _descCtrl;
+  late int _selectedScope;
+  late final List<GlossaryRule> _allRules;
+  late final List<GlossaryRule> _mangaRules;
+  late final List<GlossaryRule> _globalRules;
+
+  @override
+  void initState() {
+    super.initState();
+    _allRules = GlossaryService.instance.rules;
+    _mangaRules = _allRules.where((r) => r.mangaId == widget.mangaId).toList();
+    _globalRules = _allRules.where((r) => r.mangaId == null).toList();
+    _selectedScope = _mangaRules.isNotEmpty ? 0 : 1;
+    _titleCtrl = TextEditingController(
+      text: _selectedScope == 0
+          ? 'Từ điển chuẩn hóa: ${widget.mangaTitle}'
+          : 'Bộ từ điển Convert tiếng Trung phổ biến',
+    );
+    _descCtrl = TextEditingController(
+      text: 'Chuẩn hóa tên nhân vật và địa danh bị dịch sai/Hán hóa.',
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  List<GlossaryRule> get _targetRules {
+    if (_selectedScope == 0) return _mangaRules;
+    if (_selectedScope == 1) return _globalRules;
+    return _allRules;
+  }
+
+  Future<void> _publish() async {
+    final title = _titleCtrl.text.trim();
+    final desc = _descCtrl.text.trim();
+    if (title.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.pop(context);
+    try {
+      await CommunityGlossaryService.instance.publishPack(
+        title: title,
+        description: desc,
+        mangaTitle: _selectedScope == 0 ? widget.mangaTitle : null,
+        rules: _targetRules,
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('🎉 Đã chia sẻ gói từ điển lên cộng đồng thành công!'),
+          backgroundColor: Colors.purple,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Lỗi chia sẻ: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final targetRules = _targetRules;
+
+    return AlertDialog(
+      backgroundColor: theme.cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Row(
+        children: [
+          const Icon(Icons.cloud_upload_rounded, color: Colors.purpleAccent),
+          const SizedBox(width: 8),
+          Text(
+            'Đăng Gói Từ Điển Lên Cloud',
+            style: TextStyle(color: onSurface, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Chọn nguồn từ cần chia sẻ:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<int>(
+              initialValue: _selectedScope,
+              dropdownColor: theme.cardColor,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              items: [
+                DropdownMenuItem(
+                  value: 0,
+                  child: Text('Chỉ từ của truyện này (${_mangaRules.length} từ)'),
+                ),
+                DropdownMenuItem(
+                  value: 1,
+                  child: Text('Chỉ từ toàn cầu (${_globalRules.length} từ)'),
+                ),
+                DropdownMenuItem(
+                  value: 2,
+                  child: Text('Tất cả từ trên máy (${_allRules.length} từ)'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() {
+                    _selectedScope = val;
+                    _titleCtrl.text = _selectedScope == 0
+                        ? 'Từ điển chuẩn hóa: ${widget.mangaTitle}'
+                        : 'Bộ từ điển Convert tiếng Trung phổ biến';
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            Text('Tên gói từ điển:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _titleCtrl,
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                hintText: 'Ví dụ: Chuẩn hóa Convert One Piece...',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('Mô tả ngắn gọn:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _descCtrl,
+              maxLines: 2,
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                hintText: 'Tóm tắt nội dung gói từ điển...',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sẽ tải lên ${targetRules.length} cặp từ sửa đổi.',
+              style: TextStyle(color: theme.colorScheme.primary, fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primary,
+            foregroundColor: theme.colorScheme.onPrimary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: targetRules.isEmpty ? null : _publish,
+          child: const Text('Đăng ngay'),
+        ),
+      ],
+    );
+  }
+}
+

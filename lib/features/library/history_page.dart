@@ -681,12 +681,12 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                   ),
                 ),
                 const Spacer(),
-                Icon(Icons.access_time_rounded, size: 12, color: Colors.white.withValues(alpha: 0.6)),
+                Icon(Icons.access_time_rounded, size: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                 const SizedBox(width: 4),
                 Text(
                   relativeTime,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                     fontSize: 11,
                   ),
                 ),
@@ -762,8 +762,8 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                         onTap: () => context.push('/detail/${item.mangaId}'),
                         child: Text(
                           manga.title,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
                             height: 1.25,
@@ -837,10 +837,14 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                           const SizedBox(width: 8),
                           IconButton(
                             onPressed: () => context.push('/detail/${item.mangaId}'),
-                            icon: const Icon(Icons.info_outline_rounded, color: Colors.white70, size: 20),
+                            icon: Icon(
+                              Icons.info_outline_rounded,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                              size: 20,
+                            ),
                             tooltip: 'Chi tiết truyện',
                             style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
+                              backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
@@ -1086,14 +1090,18 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                 children: [
                   Text(
                     '${filtered.length} mục',
-                    style: const TextStyle(
-                      color: Colors.white54,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Container(width: 1, height: 16, color: Colors.white24),
+                  Container(
+                    width: 1,
+                    height: 16,
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
                   const SizedBox(width: 10),
                   _buildFilterChip(
                     label: 'Tất cả',
@@ -1113,7 +1121,11 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                     onTap: () => setState(() => _progressFilter = HistoryProgressFilter.completed),
                   ),
                   const SizedBox(width: 10),
-                  Container(width: 1, height: 16, color: Colors.white24),
+                  Container(
+                    width: 1,
+                    height: 16,
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
                   const SizedBox(width: 10),
                   _buildFilterChip(
                     label: 'Tất cả định dạng',
@@ -1143,13 +1155,13 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
               child: filtered.isEmpty
                   ? ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: const [
-                        SizedBox(height: 120),
+                      children: [
+                        const SizedBox(height: 120),
                         Center(
                           child: Text(
                             'Không tìm thấy truyện phù hợp',
                             style: TextStyle(
-                              color: Colors.white54,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                               fontSize: 14,
                             ),
                           ),
@@ -1538,7 +1550,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
             border: Border.all(
               color: isSelected
                   ? Theme.of(context).colorScheme.primary
-                  : Colors.white.withValues(alpha: 0.12),
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.2),
             ),
           ),
           child: Text(

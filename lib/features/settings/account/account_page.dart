@@ -60,7 +60,7 @@ class AccountPage extends StatelessWidget {
                   'Đăng nhập để đồng bộ tiến trình đọc truyện, tham gia cộng đồng diễn đàn và quản lý tài khoản.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.white60,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                     height: 1.45,
                   ),
                 ),
@@ -133,10 +133,13 @@ class AccountPage extends StatelessWidget {
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Không tìm thấy thông tin hồ sơ trên hệ thống máy chủ.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -287,7 +290,7 @@ class AccountPage extends StatelessWidget {
                               trailing: const Icon(Icons.chevron_right, color: Colors.grey),
                               onTap: () => context.go('/settings/account/edit'),
                             ),
-                            Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+                            Divider(color: Theme.of(context).dividerColor, height: 1),
                             ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               leading: Container(

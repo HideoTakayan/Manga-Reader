@@ -209,18 +209,21 @@ class _HelpPageState extends State<HelpPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
+                    Text(
                       'Không tìm thấy kết quả phù hợp',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Thử tìm kiếm với từ khóa khác như "tải xuống", "đăng nhập", "TTS"...',
-                      style: TextStyle(color: Colors.white54, fontSize: 13),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontSize: 13,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -255,7 +258,7 @@ class _HelpPageState extends State<HelpPage> {
   Widget _buildSearchBar() {
     return TextField(
       controller: _searchController,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Tìm câu hỏi, hướng dẫn, định dạng...',
@@ -291,8 +294,8 @@ class _HelpPageState extends State<HelpPage> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Text(
         title,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
           fontSize: 18,
           fontWeight: FontWeight.bold,
         ),
@@ -454,7 +457,7 @@ class _HelpPageState extends State<HelpPage> {
               }
             },
           ),
-          Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+          Divider(color: Theme.of(context).dividerColor, height: 1),
           ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             leading: Container(

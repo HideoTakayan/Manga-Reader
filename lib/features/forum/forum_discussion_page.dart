@@ -387,10 +387,10 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                   _searchQuery.isEmpty
                                       ? 'Chưa có bài viết nào'
                                       : 'Không tìm thấy bài viết phù hợp',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -399,7 +399,10 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                       ? 'Hãy là người đầu tiên bắt đầu một chủ đề thảo luận sôi nổi!'
                                       : 'Thử tìm kiếm với từ khóa hoặc thẻ khác',
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 13, color: Colors.white54),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  ),
                                 ),
                                 if (_searchQuery.isEmpty) ...[
                                   const SizedBox(height: 16),

@@ -185,10 +185,18 @@ class _HomeContentState extends State<_HomeContent>
         builder: (ctx) => AlertDialog(
           backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Cấp quyền truy cập', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          content: const Text(
+          title: Text(
+            'Cấp quyền truy cập',
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Text(
             'Để lưu truyện vào thư mục "/MangaReader" ở bộ nhớ máy và dễ dàng quản lý file, ứng dụng cần quyền truy cập bộ nhớ.',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
           ),
           actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
@@ -386,7 +394,7 @@ class _HomeContentState extends State<_HomeContent>
       width: width,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        color: Colors.white.withValues(alpha: alpha),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: alpha * 0.4),
       ),
     );
   }
@@ -444,14 +452,18 @@ class _HomeContentState extends State<_HomeContent>
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: Theme.of(context).colorScheme.onSurface,
                                     ),
                               ),
                               const SizedBox(height: 8),
-                              const Text(
+                              Text(
                                 'Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau giây lát.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.white54, fontSize: 13, height: 1.4),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
                               ),
                               const SizedBox(height: 22),
                               ElevatedButton.icon(

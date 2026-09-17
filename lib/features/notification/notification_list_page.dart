@@ -78,13 +78,18 @@ class _NotificationListPageState extends State<NotificationListPage>
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Dọn dẹp thông báo?',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(ctx).colorScheme.onSurface,
+          ),
         ),
         content: Text(
           'Bạn có muốn xóa ${readNotes.length} thông báo đã đọc khỏi hòm thư?',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
@@ -238,20 +243,20 @@ class _NotificationListPageState extends State<NotificationListPage>
                           ),
                         ),
                         const SizedBox(height: 20),
-                        const Text(
+                        Text(
                           'Không thể tải thông báo',
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           '${snapshot.error}',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white54,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                             fontSize: 13,
                             height: 1.4,
                           ),
@@ -288,20 +293,20 @@ class _NotificationListPageState extends State<NotificationListPage>
                           ),
                         ),
                         const SizedBox(height: 20),
-                        const Text(
+                        Text(
                           'Hòm thư thông báo trống',
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Bạn sẽ nhận được thông báo khi các bộ truyện đang theo dõi có chương mới hoặc có cập nhật quan trọng.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.white54,
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                             fontSize: 13,
                             height: 1.4,
                           ),
@@ -491,7 +496,7 @@ class _NotificationListPageState extends State<NotificationListPage>
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: isRead
-                                        ? Colors.white.withValues(alpha: 0.05)
+                                        ? theme.dividerColor.withValues(alpha: 0.15)
                                         : theme.colorScheme.primary.withValues(alpha: 0.15),
                                   ),
                                 ),

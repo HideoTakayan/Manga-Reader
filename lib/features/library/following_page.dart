@@ -87,8 +87,19 @@ class _FollowingPageState extends State<FollowingPage> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Bỏ theo dõi?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        content: Text('Bạn có chắc muốn bỏ theo dõi "${manga.title}"?', style: const TextStyle(color: Colors.white70)),
+        title: Text(
+          'Bỏ theo dõi?',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Theme.of(ctx).colorScheme.onSurface,
+          ),
+        ),
+        content: Text(
+          'Bạn có chắc muốn bỏ theo dõi "${manga.title}"?',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -319,21 +330,21 @@ class _FollowingPageState extends State<FollowingPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Theo dõi truyện yêu thích',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Đăng nhập để lưu danh sách theo dõi, đồng bộ tiến độ đọc và nhận thông báo chương mới.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.white60,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                     height: 1.4,
                   ),
                 ),
@@ -400,12 +411,12 @@ class _FollowingPageState extends State<FollowingPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Lỗi kết nối máy chủ',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -414,7 +425,10 @@ class _FollowingPageState extends State<FollowingPage> {
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Colors.white54),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
                   ),
                 ],
               ),
@@ -537,12 +551,12 @@ class _FollowingPageState extends State<FollowingPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Không thể tải dữ liệu truyện',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -551,7 +565,10 @@ class _FollowingPageState extends State<FollowingPage> {
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12, color: Colors.white54),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       OutlinedButton.icon(
@@ -559,8 +576,8 @@ class _FollowingPageState extends State<FollowingPage> {
                         icon: const Icon(Icons.refresh_rounded, size: 16),
                         label: const Text('Thử lại'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                          foregroundColor: Theme.of(context).colorScheme.onSurface,
+                          side: BorderSide(color: Theme.of(context).dividerColor),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
@@ -754,30 +771,33 @@ class _FollowingPageState extends State<FollowingPage> {
                             color: Theme.of(context).cardColor,
                             borderRadius: BorderRadius.circular(19),
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.1),
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
                             ),
                           ),
                           child: TextField(
                             controller: _searchController,
-                            style: const TextStyle(fontSize: 13, color: Colors.white),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
                             textInputAction: TextInputAction.search,
                             decoration: InputDecoration(
                               hintText: 'Tìm theo tên truyện, tác giả hoặc thể loại...',
-                              hintStyle: const TextStyle(
-                                color: Colors.white38,
+                              hintStyle: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                                 fontSize: 12.5,
                               ),
-                              prefixIcon: const Icon(
+                              prefixIcon: Icon(
                                 Icons.search,
                                 size: 16,
-                                color: Colors.white54,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                               ),
                               suffixIcon: _searchQuery.isNotEmpty
                                   ? IconButton(
-                                      icon: const Icon(
+                                      icon: Icon(
                                         Icons.clear,
                                         size: 14,
-                                        color: Colors.white54,
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                                       ),
                                       onPressed: () {
                                         _searchController.clear();
@@ -1150,8 +1170,8 @@ class _FollowingPageState extends State<FollowingPage> {
                                                   Expanded(
                                                     child: Text(
                                                       manga.title,
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
+                                                      style: TextStyle(
+                                                        color: Theme.of(context).colorScheme.onSurface,
                                                         fontWeight: FontWeight.bold,
                                                         fontSize: 14,
                                                         height: 1.25,
@@ -1352,15 +1372,18 @@ class _FollowingPageState extends State<FollowingPage> {
                                                           Container(
                                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                                             decoration: BoxDecoration(
-                                                              color: Colors.white.withValues(alpha: 0.06),
+                                                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
                                                               borderRadius: BorderRadius.circular(5),
-                                                              border: Border.all(color: Colors.white12, width: 0.8),
+                                                              border: Border.all(
+                                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
+                                                                width: 0.8,
+                                                              ),
                                                             ),
                                                             child: Text(
                                                               manga.genres.first,
-                                                              style: const TextStyle(
+                                                              style: TextStyle(
                                                                 fontSize: 9.5,
-                                                                color: Colors.white60,
+                                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                                               ),
                                                             ),
                                                           ),
@@ -1451,7 +1474,7 @@ class _FollowingPageState extends State<FollowingPage> {
           color: isSelected ? activeColor.withValues(alpha: 0.2) : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? activeColor : Colors.white.withValues(alpha: 0.1),
+            color: isSelected ? activeColor : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.12),
             width: isSelected ? 1.2 : 1.0,
           ),
         ),
@@ -1460,7 +1483,9 @@ class _FollowingPageState extends State<FollowingPage> {
           style: TextStyle(
             fontSize: 11.5,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            color: isSelected ? (highlightColor ?? Colors.white) : Colors.white70,
+            color: isSelected
+                ? (highlightColor ?? Theme.of(context).colorScheme.primary)
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
           ),
         ),
       ),

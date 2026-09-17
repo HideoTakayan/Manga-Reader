@@ -43,33 +43,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
-  InputDecoration _inputDeco(String label, {IconData? icon, Widget? suffix}) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: Theme.of(context).textTheme.bodyMedium,
-      prefixIcon: icon != null ? Icon(icon, color: Colors.white54) : null,
-      suffixIcon: suffix,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-    );
-  }
-
   Future<void> _editProfileDialog(BuildContext context) async {
     final currentUser = user;
     if (currentUser == null) return;
-
-    final nameController = TextEditingController(
-      text: currentUser.displayName ?? '',
-    );
-    final bioController = TextEditingController();
-    File? newAvatar;
 
     final doc = await FirebaseFirestore.instance
         .collection('users')
         .doc(currentUser.uid)
         .get();
-    if (doc.exists) {
-      bioController.text = doc.data()?['bio'] ?? '';
-    }
+    final initialBio = doc.exists ? (doc.data()?['bio'] ?? '') : '';
     if (!context.mounted) return;
 
     await showModalBottomSheet(
@@ -79,138 +61,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          left: 20,
-          right: 20,
-          top: 12,
-        ),
-        child: StatefulBuilder(
-          builder: (context, setStateSheet) {
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Chỉnh sửa thông tin",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  GestureDetector(
-                    onTap: () async {
-                      final picked = await ImagePicker().pickImage(
-                        source: ImageSource.gallery,
-                      );
-                      if (picked != null) {
-                        setStateSheet(() => newAvatar = File(picked.path));
-                      }
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.orange.withValues(alpha: 0.2),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        radius: 45,
-                        backgroundColor: Theme.of(context).cardColor,
-                        backgroundImage: newAvatar != null
-                            ? FileImage(newAvatar!)
-                            : _getUserAvatar(doc),
-                        child:
-                            (newAvatar == null && _getUserAvatar(doc) == null)
-                            ? Icon(
-                                Icons.camera_alt,
-                                size: 30,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: nameController,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textInputAction: TextInputAction.next,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: _inputDeco(
-                      'Tên hiển thị',
-                      icon: Icons.person_outline,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: bioController,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textInputAction: TextInputAction.done,
-                    decoration: _inputDeco(
-                      'Mô tả ngắn',
-                      icon: Icons.description_outlined,
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 32),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final trimmedName = nameController.text.trim();
-                        if (trimmedName.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Tên hiển thị không được để trống'),
-                            ),
-                          );
-                          return;
-                        }
-                        Navigator.pop(ctx);
-                        await _saveProfile(
-                          trimmedName,
-                          bioController.text.trim(),
-                          newAvatar,
-                        );
-                      },
-                      icon: const Icon(Icons.save),
-                      label: Text(
-                        "Lưu thay đổi",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-            );
-          },
-        ),
+      builder: (ctx) => _EditProfileSheet(
+        initialName: currentUser.displayName ?? '',
+        initialBio: initialBio,
+        currentAvatar: doc.exists ? _getUserAvatar(doc) : null,
+        onSave: (name, bio, avatar) async {
+          await _saveProfile(name, bio, avatar);
+        },
       ),
-    ).whenComplete(() {
-      nameController.dispose();
-      bioController.dispose();
-    });
+    );
   }
 
   ImageProvider? _getUserAvatar(DocumentSnapshot doc) {
@@ -807,7 +666,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ],
                 ),
                 const SizedBox(height: 20),
-                const Divider(color: Colors.white10),
+                Divider(color: Theme.of(context).dividerColor),
                 const SizedBox(height: 12),
                 Text(
                   'Số chương mới tải mỗi truyện:',
@@ -867,9 +726,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.25),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -883,7 +744,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         child: Text(
                           'Áp dụng cho tất cả các truyện trong Thư viện và danh sách Theo dõi của bạn. Tiến trình tải sẽ chạy ngầm không làm phiền.',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
                             fontSize: 12,
                           ),
                         ),
@@ -904,6 +765,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     required bool selected,
     required VoidCallback? onTap,
   }) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -913,10 +776,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           decoration: BoxDecoration(
             color: selected
                 ? Colors.lightBlueAccent.withValues(alpha: 0.2)
-                : Colors.white.withValues(alpha: 0.05),
+                : onSurface.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: selected ? Colors.lightBlueAccent : Colors.white12,
+              color: selected ? Colors.lightBlueAccent : theme.dividerColor,
               width: selected ? 1.5 : 1,
             ),
           ),
@@ -924,7 +787,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? Colors.lightBlueAccent : Colors.white60,
+              color: selected ? Colors.lightBlueAccent : onSurface.withValues(alpha: 0.6),
               fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               fontSize: 13,
             ),
@@ -990,15 +853,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Text(
                       'Tần suất kiểm tra chương mới cho truyện trong Thư viện & Theo dõi',
-                      style: TextStyle(fontSize: 12, color: Colors.white54),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Divider(color: Colors.white10),
+                  Divider(color: Theme.of(context).dividerColor),
                   ...options.map((opt) {
                     final isSelected = currentInterval == opt.$1;
                     return ListTile(
@@ -1011,14 +877,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? Colors.deepOrangeAccent.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.05),
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           Icons.schedule_rounded,
                           color: isSelected
                               ? Colors.deepOrangeAccent
-                              : Colors.white60,
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           size: 20,
                         ),
                       ),
@@ -1027,7 +893,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         style: TextStyle(
                           color: isSelected
                               ? Colors.deepOrangeAccent
-                              : Colors.white,
+                              : Theme.of(context).colorScheme.onSurface,
                           fontWeight: isSelected
                               ? FontWeight.bold
                               : FontWeight.normal,
@@ -1080,680 +946,89 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _showJoinGroupDialog(BuildContext context) async {
-    final codeController = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                const SizedBox(height: 12),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Icon hero
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFFFF7043),
-                        Color(0xFFFF9800),
-                        Color(0xFFFF5252),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFF9800).withValues(alpha: 0.5),
-                        blurRadius: 20,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.groups_rounded,
-                    color: Theme.of(context).colorScheme.onSurface,
-                    size: 36,
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                Text(
-                  'Tham gia Nhóm Dịch',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Nhập mã mời 6 ký tự từ Trưởng nhóm',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 28),
-
-                // Code input
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFFFF7043).withValues(alpha: 0.15),
-                          const Color(0xFFFF9800).withValues(alpha: 0.1),
-                        ],
-                      ),
-                      border: Border.all(
-                        color: const Color(0xFFFF9800).withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: TextField(
-                      controller: codeController,
-                      textCapitalization: TextCapitalization.characters,
-                      textAlign: TextAlign.center,
-                      textInputAction: TextInputAction.done,
-                      onChanged: (val) {
-                        setSheet(() {});
-                        // Auto-submit when 6 chars are entered
-                        if (val.length == 6) {
-                          FocusScope.of(ctx).unfocus();
-                        }
-                      },
-                      style: TextStyle(
-                        color: Color(0xFFFBBF24),
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 8,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: '• • • • • •',
-                        hintStyle: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          fontSize: 22,
-                          letterSpacing: 6,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 18,
-                          horizontal: 16,
-                        ),
-                        counterText: '',
-                      ),
-                      maxLength: 6,
-                    ),
-                  ),
-                ),
-
-                // Character count indicator
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(6, (i) {
-                    final filled = i < codeController.text.length;
-                    return Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: filled
-                            ? const Color(0xFFFF9800)
-                            : Colors.white12,
-                        boxShadow: filled
-                            ? [
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFFFF9800,
-                                  ).withValues(alpha: 0.6),
-                                  blurRadius: 6,
-                                ),
-                              ]
-                            : null,
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: 28),
-
-                // Action buttons
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
+      builder: (ctx) => _JoinGroupSheet(
+        onJoin: (code) async {
+          try {
+            setState(() => _loading = true);
+            await GroupService.instance.joinGroupByCode(code);
+            if (mounted) {
+              _refreshUserDoc();
+              setState(() {});
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Row(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white60,
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          onPressed: () => Navigator.pop(ctx),
-                          child: Text(
-                            'Hủy',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            gradient: codeController.text.length == 6
-                                ? const LinearGradient(
-                                    colors: [
-                                      Color(0xFFFF7043),
-                                      Color(0xFFFF9800),
-                                      Color(0xFFFF5252),
-                                    ],
-                                  )
-                                : null,
-                            color: codeController.text.length == 6
-                                ? null
-                                : Colors.white10,
-                            boxShadow: codeController.text.length == 6
-                                ? [
-                                    BoxShadow(
-                                      color: const Color(
-                                        0xFFFF7043,
-                                      ).withValues(alpha: 0.4),
-                                      blurRadius: 14,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            onPressed: codeController.text.length == 6
-                                ? () async {
-                                    final code = codeController.text
-                                        .trim()
-                                        .toUpperCase();
-                                    Navigator.pop(ctx);
-                                    try {
-                                      setState(() => _loading = true);
-                                      await GroupService.instance
-                                          .joinGroupByCode(code);
-                                      if (mounted) {
-                                        _refreshUserDoc();
-                                        setState(() {});
-                                        messenger.showSnackBar(
-                                          const SnackBar(
-                                            content: Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.check_circle,
-                                                  color: Colors.green,
-                                                ),
-                                                SizedBox(width: 10),
-                                                Text(
-                                                  'Đã tham gia nhóm thành công!',
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        messenger.showSnackBar(
-                                          SnackBar(content: Text('Lỗi: $e')),
-                                        );
-                                      }
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _loading = false);
-                                      }
-                                    }
-                                  }
-                                : null,
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.login_rounded, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Gia nhập ngay',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                      Icon(Icons.check_circle, color: Colors.green),
+                      SizedBox(width: 10),
+                      Text('Đã tham gia nhóm thành công!'),
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
-              ],
-            ),
-          ),
-        ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _loading = false);
+            }
+          }
+        },
       ),
-    ).whenComplete(codeController.dispose);
+    );
   }
 
   Future<void> _showCreateGroupDialog(BuildContext context) async {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
     final messenger = ScaffoldMessenger.of(context);
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Handle bar
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Icon hero
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFF59E0B),
-                          Color(0xFFD97706),
-                          Color(0xFFEA580C),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+      builder: (ctx) => _CreateGroupSheet(
+        onCreate: (name, desc) async {
+          try {
+            setState(() => _loading = true);
+            await GroupService.instance.registerGroup(
+              name: name,
+              description: desc,
+            );
+            if (mounted) {
+              messenger.showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(Icons.hourglass_top_rounded, color: Colors.amber),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text('Đã đăng ký! Chờ Admin duyệt nhé.'),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.add_moderator_rounded,
-                      color: Theme.of(context).colorScheme.onSurface,
-                      size: 36,
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-
-                  Text(
-                    'Đăng ký Tạo Nhóm Dịch',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Yêu cầu sẽ gửi cho Admin duyệt',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Info banner
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 24),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.info_outline_rounded,
-                          color: Color(0xFFFBBF24),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Sau khi Admin phê duyệt, bạn sẽ trở thành Trưởng nhóm và có toàn quyền quản lý nhóm dịch.',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.75),
-                              fontSize: 12,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Form fields
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      children: [
-                        // Group name
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            color: Colors.white.withValues(alpha: 0.05),
-                            border: Border.all(
-                              color: nameController.text.isNotEmpty
-                                  ? const Color(
-                                      0xFFFF9800,
-                                    ).withValues(alpha: 0.5)
-                                  : Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: TextField(
-                            controller: nameController,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setSheet(() {}),
-                            decoration: InputDecoration(
-                              labelText: 'Tên nhóm dịch *',
-                              labelStyle: TextStyle(
-                                color: nameController.text.isNotEmpty
-                                    ? const Color(0xFFFFB74D)
-                                    : Colors.white38,
-                              ),
-                              prefixIcon: Container(
-                                margin: const EdgeInsets.all(10),
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFFFF9800,
-                                  ).withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.group_rounded,
-                                  color: Color(0xFFFFB74D),
-                                  size: 18,
-                                ),
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 12,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Group description
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            color: Colors.white.withValues(alpha: 0.05),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                          child: TextField(
-                            controller: descController,
-                            style: Theme.of(context).textTheme.bodyMedium,
-                            maxLines: 3,
-                            textInputAction: TextInputAction.done,
-                            onChanged: (_) => setSheet(() {}),
-                            decoration: InputDecoration(
-                              labelText: 'Mô tả nhóm (không bắt buộc)',
-                              labelStyle: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
-                              ),
-                              prefixIcon: Container(
-                                margin: const EdgeInsets.only(
-                                  left: 10,
-                                  right: 10,
-                                  top: 10,
-                                  bottom: 56,
-                                ),
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.05),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.description_rounded,
-                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
-                                  size: 18,
-                                ),
-                              ),
-                              alignLabelWithHint: true,
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                                horizontal: 12,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Action buttons
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white60,
-                              side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.15),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            onPressed: () => Navigator.pop(ctx),
-                            child: Text(
-                              'Hủy',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              gradient: nameController.text.trim().isNotEmpty
-                                  ? const LinearGradient(
-                                      colors: [
-                                        Color(0xFFF59E0B),
-                                        Color(0xFFD97706),
-                                        Color(0xFFEA580C),
-                                      ],
-                                    )
-                                  : null,
-                              color: nameController.text.trim().isNotEmpty
-                                  ? null
-                                  : Colors.white10,
-                              boxShadow: nameController.text.trim().isNotEmpty
-                                  ? [
-                                      BoxShadow(
-                                        color: const Color(
-                                          0xFFF59E0B,
-                                        ).withValues(alpha: 0.4),
-                                        blurRadius: 14,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                shadowColor: Colors.transparent,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              onPressed: nameController.text.trim().isNotEmpty
-                                  ? () async {
-                                      Navigator.pop(ctx);
-                                      try {
-                                        setState(() => _loading = true);
-                                        await GroupService.instance
-                                            .registerGroup(
-                                              name: nameController.text.trim(),
-                                              description: descController.text
-                                                  .trim(),
-                                            );
-                                        if (mounted) {
-                                          messenger.showSnackBar(
-                                            const SnackBar(
-                                              content: Row(
-                                                children: [
-                                                  Icon(
-                                                    Icons.hourglass_top_rounded,
-                                                    color: Colors.amber,
-                                                  ),
-                                                  SizedBox(width: 10),
-                                                  Expanded(
-                                                    child: Text(
-                                                      'Đã đăng ký! Chờ Admin duyệt nhé.',
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              duration: Duration(seconds: 4),
-                                            ),
-                                          );
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
-                                          messenger.showSnackBar(
-                                            SnackBar(content: Text('Lỗi: $e')),
-                                          );
-                                        }
-                                      } finally {
-                                        if (mounted) {
-                                          setState(() => _loading = false);
-                                        }
-                                      }
-                                    }
-                                  : null,
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.send_rounded, size: 18),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Gửi Đăng Ký',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                ],
-              ),
-            ),
-          ),
-        ),
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _loading = false);
+            }
+          }
+        },
       ),
-    ).whenComplete(() {
-      nameController.dispose();
-      descController.dispose();
-    });
+    );
   }
 
   Future<void> _showThemeSelectorSheet(BuildContext context) async {
@@ -1776,7 +1051,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               decoration: BoxDecoration(
                 color: theme.scaffoldBackgroundColor,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+                border: Border(top: BorderSide(color: theme.dividerColor)),
               ),
               child: SafeArea(
                 child: Column(
@@ -1792,7 +1067,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             width: 48,
                             height: 5,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.24),
                               borderRadius: BorderRadius.circular(3),
                             ),
                           ),
@@ -1812,7 +1087,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 onPressed: () => Navigator.of(context).pop(),
                                 icon: Icon(Icons.close_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                                 style: IconButton.styleFrom(
-                                  backgroundColor: Colors.white.withValues(alpha: 0.05),
+                                  backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
                                 ),
                               ),
                             ],
@@ -1942,9 +1217,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       const SizedBox(width: 6),
                       Text('MangaHub', style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 12, fontWeight: FontWeight.w800)),
                       const Spacer(),
-                      Icon(Icons.search_rounded, color: Colors.white60, size: 16),
+                      Icon(Icons.search_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), size: 16),
                       const SizedBox(width: 10),
-                      Icon(Icons.notifications_none_rounded, color: Colors.white60, size: 16),
+                      Icon(Icons.notifications_none_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), size: 16),
                     ],
                   ),
                 ),
@@ -1977,7 +1252,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           children: [
                             Container(height: 10, width: 120, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface, borderRadius: BorderRadius.circular(5))),
                             const SizedBox(height: 5),
-                            Container(height: 8, width: 80, decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(4))),
+                            Container(height: 8, width: 80, decoration: BoxDecoration(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(4))),
                             const SizedBox(height: 10),
                             Row(
                               children: [
@@ -2047,9 +1322,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: active ? primary : Colors.white24, size: 14),
+        Icon(icon, color: active ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 14),
         const SizedBox(height: 2),
-        Text(label, style: TextStyle(color: active ? primary : Colors.white24, fontSize: 7, fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+        Text(
+          label,
+          style: TextStyle(
+            color: active ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+            fontSize: 7,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
       ],
     );
   }
@@ -2080,7 +1362,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               color: isSelected ? null : mode.cardColor,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: isSelected ? currentPrimary : Colors.white.withValues(alpha: 0.07),
+                color: isSelected ? currentPrimary : Theme.of(context).dividerColor.withValues(alpha: 0.3),
                 width: isSelected ? 1.5 : 1.0,
               ),
               boxShadow: isSelected
@@ -2177,7 +1459,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     shape: BoxShape.circle,
                     color: isSelected ? currentPrimary : Colors.transparent,
                     border: Border.all(
-                      color: isSelected ? currentPrimary : Colors.white24,
+                      color: isSelected ? currentPrimary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
                       width: 2,
                     ),
                   ),
@@ -2208,9 +1490,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: isOn ? Colors.black : Colors.white.withValues(alpha: 0.04),
+          color: isOn ? Colors.black : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isOn ? primary : Colors.white.withValues(alpha: 0.08), width: isOn ? 1.5 : 1.0),
+          border: Border.all(color: isOn ? primary : Theme.of(context).dividerColor, width: isOn ? 1.5 : 1.0),
         ),
         child: Row(
           children: [
@@ -2218,10 +1500,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: isOn ? primary.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+                color: isOn ? primary.withValues(alpha: 0.15) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.contrast_rounded, color: isOn ? primary : Colors.white38, size: 20),
+              child: Icon(Icons.contrast_rounded, color: isOn ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -2230,12 +1512,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 children: [
                   Text(
                     'Pure Black',
-                    style: TextStyle(color: isOn ? Colors.white : Colors.white70, fontWeight: FontWeight.w700, fontSize: 14, letterSpacing: -0.2),
+                    style: TextStyle(
+                      color: isOn ? Colors.white : Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                   const SizedBox(height: 1),
                   Text(
                     'Đen tuyệt đối · Tối ưu OLED · Tiết kiệm pin',
-                    style: TextStyle(color: isOn ? Colors.white54 : Colors.white30, fontSize: 10.5),
+                    style: TextStyle(
+                      color: isOn ? Colors.white54 : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      fontSize: 10.5,
+                    ),
                   ),
                 ],
               ),
@@ -2279,10 +1569,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: isSelected ? displayColor.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.05),
+              color: isSelected
+                  ? displayColor.withValues(alpha: 0.18)
+                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: isSelected ? displayColor : Colors.white.withValues(alpha: 0.1),
+                color: isSelected ? displayColor : Theme.of(context).dividerColor,
                 width: isSelected ? 1.5 : 1.0,
               ),
               boxShadow: isSelected
@@ -2316,7 +1608,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 Text(
                   item.label,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : Colors.white54,
+                    color: isSelected
+                        ? displayColor
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                     fontSize: 12,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                   ),
@@ -2332,157 +1626,37 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   // Thêm mật khẩu cho Google user — dùng Firebase Auth credential linking
   Future<void> _showAddPasswordDialog(BuildContext context) async {
-    final passwordController = TextEditingController();
-    final confirmController = TextEditingController();
-    bool obscurePassword = true;
-    bool obscureConfirm = true;
-
     await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor:
-              Theme.of(ctx).dialogTheme.backgroundColor ??
-              Theme.of(ctx).cardColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          title: Text(
-            'Thêm mật khẩu',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Thêm mật khẩu để có thể đăng nhập bằng email/password',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: passwordController,
-                obscureText: obscurePassword,
-                textInputAction: TextInputAction.next,
-                style: Theme.of(context).textTheme.bodyMedium,
-                decoration: _inputDeco(
-                  'Mật khẩu mới',
-                  icon: Icons.lock_outline,
-                  suffix: IconButton(
-                    icon: Icon(
-                      obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                    ),
-                    onPressed: () => setDialogState(
-                      () => obscurePassword = !obscurePassword,
-                    ),
+      builder: (ctx) => _AddPasswordDialog(
+        onAddPassword: (password) async {
+          try {
+            await AuthService().linkEmailPassword(password);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Đã thêm mật khẩu thành công!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+              _refreshUserDoc();
+              setState(() {});
+            }
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    e.toString().replaceAll('Exception: ', ''),
                   ),
+                  backgroundColor: Colors.red,
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: confirmController,
-                obscureText: obscureConfirm,
-                textInputAction: TextInputAction.done,
-                style: Theme.of(context).textTheme.bodyMedium,
-                decoration: _inputDeco(
-                  'Xác nhận mật khẩu',
-                  icon: Icons.lock_outline,
-                  suffix: IconButton(
-                    icon: Icon(
-                      obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                    ),
-                    onPressed: () =>
-                        setDialogState(() => obscureConfirm = !obscureConfirm),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Hủy', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final password = passwordController.text.trim();
-                final confirm = confirmController.text.trim();
-
-                // Validate trước khi gọi API
-                if (password.isEmpty || confirm.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Vui lòng nhập đầy đủ')),
-                  );
-                  return;
-                }
-                if (password != confirm) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Mật khẩu không khớp')),
-                  );
-                  return;
-                }
-                if (password.length < 6) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Mật khẩu phải ít nhất 6 ký tự'),
-                    ),
-                  );
-                  return;
-                }
-
-                Navigator.pop(ctx);
-
-                try {
-                  // AuthService.linkEmailPassword: link credential email/password vào account Google hiện tại
-                  // Sau đó user có thể đăng nhập bằng cả Google lẫn email/password
-                  await AuthService().linkEmailPassword(password);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('✅ Đã thêm mật khẩu thành công!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    _refreshUserDoc();
-                    setState(() {}); // Refresh FutureBuilder → tile "Thêm mật khẩu" biến mất
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          e.toString().replaceAll('Exception: ', ''),
-                        ),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-              child: Text(
-                'Thêm',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
+              );
+            }
+          }
+        },
       ),
-    ).whenComplete(() {
-      passwordController.dispose();
-      confirmController.dispose();
-    });
+    );
   }
 
   // Confirm dialog trước khi đăng xuất — showDialog<bool> trả về bool từ Navigator.pop(ctx, value)
@@ -2534,5 +1708,983 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       context.go('/login');
     }
   }
-
 }
+
+class _EditProfileSheet extends StatefulWidget {
+  final String initialName;
+  final String initialBio;
+  final ImageProvider? currentAvatar;
+  final Future<void> Function(String name, String bio, File? newAvatar) onSave;
+
+  const _EditProfileSheet({
+    required this.initialName,
+    required this.initialBio,
+    required this.currentAvatar,
+    required this.onSave,
+  });
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _bioController;
+  File? _newAvatar;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+    _bioController = TextEditingController(text: widget.initialBio);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _bioController.dispose();
+    super.dispose();
+  }
+
+  InputDecoration _inputDeco(BuildContext context, String label, {IconData? icon, Widget? suffix}) {
+    final theme = Theme.of(context);
+    return InputDecoration(
+      labelText: label,
+      labelStyle: theme.textTheme.bodyMedium,
+      prefixIcon: icon != null
+          ? Icon(
+              icon,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+            )
+          : null,
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 20,
+        right: 20,
+        top: 12,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: onSurface.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Chỉnh sửa thông tin",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: onSurface,
+              ),
+            ),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: () async {
+                final picked = await ImagePicker().pickImage(
+                  source: ImageSource.gallery,
+                );
+                if (picked != null && mounted) {
+                  setState(() => _newAvatar = File(picked.path));
+                }
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.orange.withValues(alpha: 0.2),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 45,
+                  backgroundColor: theme.cardColor,
+                  backgroundImage: _newAvatar != null
+                      ? FileImage(_newAvatar!)
+                      : widget.currentAvatar,
+                  child: (_newAvatar == null && widget.currentAvatar == null)
+                      ? Icon(
+                          Icons.camera_alt,
+                          size: 30,
+                          color: onSurface.withValues(alpha: 0.54),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _nameController,
+              style: theme.textTheme.bodyMedium,
+              textInputAction: TextInputAction.next,
+              textCapitalization: TextCapitalization.words,
+              decoration: _inputDeco(
+                context,
+                'Tên hiển thị',
+                icon: Icons.person_outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _bioController,
+              style: theme.textTheme.bodyMedium,
+              textInputAction: TextInputAction.done,
+              decoration: _inputDeco(
+                context,
+                'Mô tả ngắn',
+                icon: Icons.description_outlined,
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final trimmedName = _nameController.text.trim();
+                  if (trimmedName.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tên hiển thị không được để trống'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context);
+                  await widget.onSave(
+                    trimmedName,
+                    _bioController.text.trim(),
+                    _newAvatar,
+                  );
+                },
+                icon: const Icon(Icons.save),
+                label: const Text(
+                  "Lưu thay đổi",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _JoinGroupSheet extends StatefulWidget {
+  final Future<void> Function(String code) onJoin;
+
+  const _JoinGroupSheet({required this.onJoin});
+
+  @override
+  State<_JoinGroupSheet> createState() => _JoinGroupSheetState();
+}
+
+class _JoinGroupSheetState extends State<_JoinGroupSheet> {
+  late final TextEditingController _codeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _codeController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: onSurface.withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFFFF7043),
+                    Color(0xFFFF9800),
+                    Color(0xFFFF5252),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF9800).withValues(alpha: 0.5),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.groups_rounded,
+                color: onSurface,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tham gia Nhóm Dịch',
+              style: TextStyle(
+                color: onSurface,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Nhập mã mời 6 ký tự từ Trưởng nhóm',
+              style: TextStyle(
+                color: onSurface.withValues(alpha: 0.55),
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 28),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFFF7043).withValues(alpha: 0.15),
+                      const Color(0xFFFF9800).withValues(alpha: 0.1),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: const Color(0xFFFF9800).withValues(alpha: 0.4),
+                  ),
+                ),
+                child: TextField(
+                  controller: _codeController,
+                  textCapitalization: TextCapitalization.characters,
+                  textAlign: TextAlign.center,
+                  textInputAction: TextInputAction.done,
+                  onChanged: (val) {
+                    setState(() {});
+                    if (val.length == 6) {
+                      FocusScope.of(context).unfocus();
+                    }
+                  },
+                  style: const TextStyle(
+                    color: Color(0xFFFBBF24),
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 8,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '• • • • • •',
+                    hintStyle: TextStyle(
+                      color: onSurface.withValues(alpha: 0.2),
+                      fontSize: 22,
+                      letterSpacing: 6,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 16,
+                    ),
+                    counterText: '',
+                  ),
+                  maxLength: 6,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(6, (i) {
+                final filled = i < _codeController.text.length;
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: filled
+                        ? const Color(0xFFFF9800)
+                        : onSurface.withValues(alpha: 0.12),
+                    boxShadow: filled
+                        ? [
+                            BoxShadow(
+                              color: const Color(0xFFFF9800).withValues(alpha: 0.6),
+                              blurRadius: 6,
+                            ),
+                          ]
+                        : null,
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 28),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: onSurface.withValues(alpha: 0.6),
+                        side: BorderSide(
+                          color: onSurface.withValues(alpha: 0.15),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'Hủy',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: _codeController.text.length == 6
+                            ? const LinearGradient(
+                                colors: [
+                                  Color(0xFFFF7043),
+                                  Color(0xFFFF9800),
+                                  Color(0xFFFF5252),
+                                ],
+                              )
+                            : null,
+                        color: _codeController.text.length == 6
+                            ? null
+                            : onSurface.withValues(alpha: 0.1),
+                        boxShadow: _codeController.text.length == 6
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFFF7043).withValues(alpha: 0.4),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _codeController.text.length == 6
+                            ? () {
+                                final code = _codeController.text.trim().toUpperCase();
+                                Navigator.pop(context);
+                                widget.onJoin(code);
+                              }
+                            : null,
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.login_rounded, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Gia nhập ngay',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateGroupSheet extends StatefulWidget {
+  final Future<void> Function(String name, String desc) onCreate;
+
+  const _CreateGroupSheet({required this.onCreate});
+
+  @override
+  State<_CreateGroupSheet> createState() => _CreateGroupSheetState();
+}
+
+class _CreateGroupSheetState extends State<_CreateGroupSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _descController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _descController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: onSurface.withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFFF59E0B),
+                      Color(0xFFD97706),
+                      Color(0xFFEA580C),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.add_moderator_rounded,
+                  color: onSurface,
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Đăng ký Tạo Nhóm Dịch',
+                style: TextStyle(
+                  color: onSurface,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Yêu cầu sẽ gửi cho Admin duyệt',
+                style: TextStyle(
+                  color: onSurface.withValues(alpha: 0.55),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: Color(0xFFFBBF24),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Sau khi Admin phê duyệt, bạn sẽ trở thành Trưởng nhóm và có toàn quyền quản lý nhóm dịch.',
+                        style: TextStyle(
+                          color: onSurface.withValues(alpha: 0.75),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: onSurface.withValues(alpha: 0.05),
+                        border: Border.all(
+                          color: _nameController.text.isNotEmpty
+                              ? const Color(0xFFFF9800).withValues(alpha: 0.5)
+                              : onSurface.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _nameController,
+                        style: TextStyle(
+                          color: onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Tên nhóm dịch *',
+                          labelStyle: TextStyle(
+                            color: _nameController.text.isNotEmpty
+                                ? const Color(0xFFFFB74D)
+                                : onSurface.withValues(alpha: 0.38),
+                          ),
+                          prefixIcon: Container(
+                            margin: const EdgeInsets.all(10),
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF9800).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.group_rounded,
+                              color: Color(0xFFFFB74D),
+                              size: 18,
+                            ),
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16,
+                            horizontal: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: onSurface.withValues(alpha: 0.05),
+                        border: Border.all(
+                          color: onSurface.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _descController,
+                        style: theme.textTheme.bodyMedium,
+                        maxLines: 3,
+                        textInputAction: TextInputAction.done,
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Mô tả nhóm (không bắt buộc)',
+                          labelStyle: TextStyle(
+                            color: onSurface.withValues(alpha: 0.38),
+                          ),
+                          prefixIcon: Container(
+                            margin: const EdgeInsets.only(
+                              left: 10,
+                              right: 10,
+                              top: 10,
+                              bottom: 56,
+                            ),
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: onSurface.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.description_rounded,
+                              color: onSurface.withValues(alpha: 0.38),
+                              size: 18,
+                            ),
+                          ),
+                          alignLabelWithHint: true,
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16,
+                            horizontal: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: onSurface.withValues(alpha: 0.6),
+                          side: BorderSide(
+                            color: onSurface.withValues(alpha: 0.15),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          'Hủy',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: _nameController.text.trim().isNotEmpty
+                              ? const LinearGradient(
+                                  colors: [
+                                    Color(0xFFF59E0B),
+                                    Color(0xFFD97706),
+                                    Color(0xFFEA580C),
+                                  ],
+                                )
+                              : null,
+                          color: _nameController.text.trim().isNotEmpty
+                              ? null
+                              : onSurface.withValues(alpha: 0.1),
+                          boxShadow: _nameController.text.trim().isNotEmpty
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                                    blurRadius: 14,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: _nameController.text.trim().isNotEmpty
+                              ? () {
+                                  final name = _nameController.text.trim();
+                                  final desc = _descController.text.trim();
+                                  Navigator.pop(context);
+                                  widget.onCreate(name, desc);
+                                }
+                              : null,
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.send_rounded, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'Gửi Đăng Ký',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddPasswordDialog extends StatefulWidget {
+  final Future<void> Function(String password) onAddPassword;
+
+  const _AddPasswordDialog({required this.onAddPassword});
+
+  @override
+  State<_AddPasswordDialog> createState() => _AddPasswordDialogState();
+}
+
+class _AddPasswordDialogState extends State<_AddPasswordDialog> {
+  late final TextEditingController _passwordController;
+  late final TextEditingController _confirmController;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordController = TextEditingController();
+    _confirmController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  InputDecoration _inputDeco(BuildContext context, String label, {IconData? icon, Widget? suffix}) {
+    final theme = Theme.of(context);
+    return InputDecoration(
+      labelText: label,
+      labelStyle: theme.textTheme.bodyMedium,
+      prefixIcon: icon != null
+          ? Icon(
+              icon,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+            )
+          : null,
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.05),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: theme.dividerColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.orange, width: 1.5),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return AlertDialog(
+      backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+      ),
+      title: Text(
+        'Thêm mật khẩu',
+        style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Thêm mật khẩu để có thể đăng nhập bằng email/password',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.next,
+            style: theme.textTheme.bodyMedium,
+            decoration: _inputDeco(
+              context,
+              'Mật khẩu mới',
+              icon: Icons.lock_outline,
+              suffix: IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                  color: onSurface.withValues(alpha: 0.54),
+                ),
+                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _confirmController,
+            obscureText: _obscureConfirm,
+            textInputAction: TextInputAction.done,
+            style: theme.textTheme.bodyMedium,
+            decoration: _inputDeco(
+              context,
+              'Xác nhận mật khẩu',
+              icon: Icons.lock_outline,
+              suffix: IconButton(
+                icon: Icon(
+                  _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                  color: onSurface.withValues(alpha: 0.54),
+                ),
+                onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final password = _passwordController.text.trim();
+            final confirm = _confirmController.text.trim();
+
+            if (password.isEmpty || confirm.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Vui lòng nhập đầy đủ')),
+              );
+              return;
+            }
+            if (password != confirm) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Mật khẩu không khớp')),
+              );
+              return;
+            }
+            if (password.length < 6) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Mật khẩu phải ít nhất 6 ký tự'),
+                ),
+              );
+              return;
+            }
+
+            Navigator.pop(context);
+            await widget.onAddPassword(password);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 12,
+            ),
+          ),
+          child: const Text(
+            'Thêm',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    );
+  }
+}
+

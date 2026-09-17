@@ -338,7 +338,7 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -388,13 +388,13 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
+                            color: theme.colorScheme.primary.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             info.fileType.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: theme.colorScheme.primary,
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 1,
@@ -404,8 +404,8 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
                         const SizedBox(width: 8),
                         Text(
                           info.formattedSize,
-                          style: const TextStyle(
-                            color: Colors.white38,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                             fontSize: 12,
                           ),
                         ),
@@ -415,7 +415,7 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
                     Text(
                       info.cleanTitle,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
+                        color: theme.colorScheme.onSurface,
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 2,
@@ -431,8 +431,9 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
             ),
             child: Row(
               children: [
@@ -442,7 +443,7 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
                   child: Text(
                     'Phát hiện file truyện từ ứng dụng ngoài. Bạn có thể đọc ngay hoặc lưu vào Thư viện của máy.',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                       fontSize: 12,
                     ),
                   ),
@@ -460,8 +461,8 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                    foregroundColor: theme.colorScheme.onSurface,
+                    side: BorderSide(color: theme.dividerColor),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

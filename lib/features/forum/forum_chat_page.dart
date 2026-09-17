@@ -420,8 +420,19 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           builder: (dialogCtx) => AlertDialog(
                             backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            title: const Text('Xóa tin nhắn', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            content: const Text('Bạn có chắc muốn xóa tin nhắn này?', style: TextStyle(color: Colors.white70)),
+                            title: Text(
+                              'Xóa tin nhắn',
+                              style: TextStyle(
+                                color: Theme.of(dialogCtx).colorScheme.onSurface,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            content: Text(
+                              'Bạn có chắc muốn xóa tin nhắn này?',
+                              style: TextStyle(
+                                color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.75),
+                              ),
+                            ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(dialogCtx, false),

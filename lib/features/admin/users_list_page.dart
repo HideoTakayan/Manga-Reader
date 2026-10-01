@@ -180,30 +180,43 @@ class _UsersListPageState extends State<UsersListPage> {
                     size: 18,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
                   ),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(
-                            Icons.clear,
-                            size: 16,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
-                          ),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
+                  suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, _) {
+                      if (value.text.isEmpty) return const SizedBox.shrink();
+                      return IconButton(
+                        tooltip: 'Xóa',
+                        icon: Icon(
+                          Icons.clear,
+                          size: 16,
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
+                        ),
+                        onPressed: () {
+                          if (_debounce?.isActive ?? false) _debounce!.cancel();
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      );
+                    },
+                  ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 ),
-                  onChanged: (val) {
-                    if (_debounce?.isActive ?? false) _debounce!.cancel();
-                    _debounce = Timer(const Duration(milliseconds: 150), () {
-                      if (mounted) {
-                        setState(() => _searchQuery = val.trim());
-                      }
-                    });
-                  },
+                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                onChanged: (val) {
+                  if (_debounce?.isActive ?? false) _debounce!.cancel();
+                  if (val.trim().isEmpty) {
+                    if (_searchQuery.isNotEmpty) {
+                      setState(() => _searchQuery = '');
+                    }
+                    return;
+                  }
+                  _debounce = Timer(const Duration(milliseconds: 150), () {
+                    if (mounted) {
+                      setState(() => _searchQuery = val.trim());
+                    }
+                  });
+                },
               ),
             ),
           ),
@@ -354,6 +367,7 @@ class _UsersListPageState extends State<UsersListPage> {
                     onRefresh: () => _fetchUsers(isRefresh: true),
                     child: ListView.separated(
                       controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                       itemCount: filteredDocs.length + (_isLoadingMore ? 1 : 0),
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -607,6 +621,7 @@ class _UsersListPageState extends State<UsersListPage> {
                       ),
                     ),
                     IconButton(
+                      tooltip: 'Đóng',
                       icon: Icon(Icons.close, color: theme.colorScheme.onSurface.withValues(alpha: 0.54)),
                       onPressed: () => Navigator.pop(sheetContext),
                     ),
@@ -778,7 +793,7 @@ class _UsersListPageState extends State<UsersListPage> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                            child: Text('Hủy'),
                           ),
                           ElevatedButton(
                             onPressed: () => Navigator.pop(ctx, true),
@@ -849,7 +864,7 @@ class _UsersListPageState extends State<UsersListPage> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                            child: Text('Hủy'),
                           ),
                           ElevatedButton(
                             onPressed: () => Navigator.pop(ctx, true),
@@ -927,9 +942,10 @@ class _UsersListPageState extends State<UsersListPage> {
           'Cấm ngôn $name',
           style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options.map((opt) {
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options.map((opt) {
             final label = opt['label'] as String;
             final duration = opt['duration'] as Duration;
             return ListTile(
@@ -965,10 +981,11 @@ class _UsersListPageState extends State<UsersListPage> {
             );
           }).toList(),
         ),
-        actions: [
+      ),
+      actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng', style: TextStyle(color: Colors.grey)),
+            child: Text('Đóng'),
           ),
         ],
       ),
@@ -1058,37 +1075,41 @@ class _EditUserDialogState extends State<_EditUserDialog> {
         'Chỉnh sửa thông tin',
         style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-            decoration: const InputDecoration(
-              labelText: 'Tên hiển thị',
-              border: OutlineInputBorder(),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+              decoration: const InputDecoration(
+                labelText: 'Tên hiển thị',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _bioCtrl,
-            maxLines: 2,
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.done,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-            decoration: const InputDecoration(
-              labelText: 'Tiểu sử (Bio)',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _bioCtrl,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              maxLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+              decoration: const InputDecoration(
+                labelText: 'Tiểu sử (Bio)',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           onPressed: _saving ? null : _submit,

@@ -41,12 +41,14 @@ class BulkDownloadSheet extends StatefulWidget {
     );
 
     if (count != null && count > 0 && context.mounted) {
+      HapticFeedback.mediumImpact();
       final router = GoRouter.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
           content: Text('Đã thêm $count chương vào hàng đợi tải xuống'),
           backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
           action: SnackBarAction(
             label: 'Xem',
             textColor: Colors.white,
@@ -167,6 +169,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
 
   void _applyRangeSelection() {
     if (widget.chapters.isEmpty) return;
+    HapticFeedback.selectionClick();
     _selectedChapterIds.clear();
     final start = _rangeStartIndex.clamp(0, widget.chapters.length - 1);
     final end = _rangeEndIndex.clamp(start, widget.chapters.length - 1);
@@ -182,6 +185,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
   Future<void> _startDownload() async {
     if (_selectedChapterIds.isEmpty) return;
 
+    HapticFeedback.mediumImpact();
     final selectedList = widget.chapters.where((c) => _selectedChapterIds.contains(c.id)).toList();
     Navigator.pop(context, selectedList.length);
 
@@ -429,55 +433,57 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
 
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isSelected ? primary.withValues(alpha: 0.15) : theme.colorScheme.onSurface.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
-              width: isSelected ? 1.5 : 1,
-            ),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: isSelected ? primary.withValues(alpha: 0.15) : theme.colorScheme.onSurface.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
+            width: isSelected ? 1.5 : 1,
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: isSelected ? Colors.white : theme.colorScheme.onSurface, size: 20),
                 ),
-                child: Icon(icon, color: isSelected ? Colors.white : theme.colorScheme.onSurface, size: 20),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: isSelected ? primary : theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: isSelected ? primary : theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12)),
-                  ],
+                      const SizedBox(height: 3),
+                      Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12)),
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
-            ],
+                Icon(
+                  isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: isSelected ? primary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -679,6 +685,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
               controller: _chapterSearchController,
               style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13),
               textInputAction: TextInputAction.search,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               decoration: InputDecoration(
                 hintText: 'Lọc nhanh tên hoặc số chương...',
                 hintStyle: TextStyle(
@@ -690,24 +697,36 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                   size: 18,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),
-                suffixIcon: _chapterSearchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.clear,
-                          size: 14,
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                        onPressed: () {
-                          _chapterSearchController.clear();
-                          setState(() => _chapterSearchQuery = '');
-                        },
-                      )
-                    : null,
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _chapterSearchController,
+                  builder: (context, value, _) {
+                    if (value.text.isEmpty) return const SizedBox.shrink();
+                    return IconButton(
+                      tooltip: 'Xóa tìm kiếm',
+                      icon: Icon(
+                        Icons.clear,
+                        size: 14,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                      onPressed: () {
+                        if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                        _chapterSearchController.clear();
+                        setState(() => _chapterSearchQuery = '');
+                      },
+                    );
+                  },
+                ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
               onChanged: (val) {
                 if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                if (val.trim().isEmpty) {
+                  if (_chapterSearchQuery.isNotEmpty) {
+                    setState(() => _chapterSearchQuery = '');
+                  }
+                  return;
+                }
                 _searchDebounce = Timer(const Duration(milliseconds: 150), () {
                   if (mounted) setState(() => _chapterSearchQuery = val);
                 });

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
 import '../../../data/database_helper.dart';
 import '../../../data/models.dart';
+import '../../../data/models_cloud.dart';
 import '../../../data/drive_service.dart';
 import '../../../services/folder_service.dart';
 import '../../catalog/catalog_cache_service.dart';
@@ -51,6 +52,7 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
     final titleMap = <String, String>{};
     final typeMap = <String, MangaContentType>{};
 
+    List<CloudManga>? cachedCatalog;
     for (final item in historyItems) {
       // 1. Kiểm tra cache DriveService nếu có
       final cachedManga = DriveService.instance.cachedMangas
@@ -80,8 +82,8 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
 
       // 3. Kiểm tra Catalog Cache Service
       try {
-        final catalog = await CatalogCacheService.instance.getCachedCatalog();
-        final match = catalog.where((m) => m.id == item.mangaId).firstOrNull;
+        cachedCatalog ??= await CatalogCacheService.instance.getCachedCatalog();
+        final match = cachedCatalog.where((m) => m.id == item.mangaId).firstOrNull;
         if (match != null) {
           coverMap[item.mangaId] = match.coverFileId;
           titleMap[item.mangaId] = match.title;
@@ -138,24 +140,11 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                 ),
               ],
             ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () async {
-                  HapticFeedback.selectionClick();
-                  await context.push(
-                    '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}&page=${topItem.lastPageIndex}',
-                  );
-                  if (mounted) {
-                    _load();
-                  }
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
                       // Blurred Background
                       DriveImage(fileId: coverId, fit: BoxFit.cover),
                       BackdropFilter(
@@ -293,12 +282,28 @@ class _ContinueReadingSectionState extends State<ContinueReadingSection> {
                           ),
                         ],
                       ),
+                      // Ripple Overlay
+                      Positioned.fill(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () async {
+                              HapticFeedback.selectionClick();
+                              await context.push(
+                                '/reader/${topItem.chapterId}?mangaId=${Uri.encodeComponent(topItem.mangaId)}&page=${topItem.lastPageIndex}',
+                              );
+                              if (mounted) {
+                                _load();
+                              }
+                            },
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            ),
-          ),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../data/content_type.dart';
 import '../../data/models.dart';
@@ -103,7 +104,7 @@ class _FollowingPageState extends State<FollowingPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -119,6 +120,7 @@ class _FollowingPageState extends State<FollowingPage> {
     );
 
     if (confirm == true) {
+      HapticFeedback.mediumImpact();
       try {
         await FollowService.instance.unfollowManga(manga.id);
         if (mounted) {
@@ -132,6 +134,7 @@ class _FollowingPageState extends State<FollowingPage> {
         }
       } catch (e) {
         if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Lỗi: $e'),
@@ -267,9 +270,11 @@ class _FollowingPageState extends State<FollowingPage> {
     );
 
     if (selected != null) {
+      HapticFeedback.selectionClick();
       await LibraryStatusService.instance.setStatus(manga.id, selected);
       if (mounted) {
         setState(() => _refreshKey++);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Đã cập nhật trạng thái: ${_statusLabel(selected)}'),
@@ -451,24 +456,24 @@ class _FollowingPageState extends State<FollowingPage> {
                       Icon(
                         Icons.favorite_border_rounded,
                         size: 72,
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15),
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'Chưa theo dõi truyện nào',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white70,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Nhấn vào biểu tượng trái tim ở trang chi tiết\nđể nhận thông báo và theo dõi truyện yêu thích',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.white38,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           height: 1.4,
                         ),
                       ),
@@ -609,19 +614,19 @@ class _FollowingPageState extends State<FollowingPage> {
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
                             ),
                             child: Icon(
                               Icons.auto_stories_outlined,
                               size: 48,
-                              color: Colors.white.withValues(alpha: 0.3),
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
                             ),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'Không tìm thấy dữ liệu truyện theo dõi',
                             style: TextStyle(
-                              color: Colors.white70,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                             ),
@@ -776,6 +781,7 @@ class _FollowingPageState extends State<FollowingPage> {
                           ),
                           child: TextField(
                             controller: _searchController,
+                            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                             style: TextStyle(
                               fontSize: 13,
                               color: Theme.of(context).colorScheme.onSurface,
@@ -792,24 +798,38 @@ class _FollowingPageState extends State<FollowingPage> {
                                 size: 16,
                                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                               ),
-                              suffixIcon: _searchQuery.isNotEmpty
-                                  ? IconButton(
-                                      icon: Icon(
-                                        Icons.clear,
-                                        size: 14,
-                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                                      ),
-                                      onPressed: () {
-                                        _searchController.clear();
-                                        setState(() => _searchQuery = '');
-                                      },
-                                    )
-                                  : null,
+                              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _searchController,
+                                builder: (context, value, _) {
+                                  if (value.text.isEmpty) return const SizedBox.shrink();
+                                  return IconButton(
+                                    tooltip: 'Xóa tìm kiếm',
+                                    icon: Icon(
+                                      Icons.clear,
+                                      size: 14,
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                                    ),
+                                    onPressed: () {
+                                      if (_searchDebounce?.isActive ?? false) {
+                                        _searchDebounce!.cancel();
+                                      }
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  );
+                                },
+                              ),
                               border: InputBorder.none,
                               contentPadding: const EdgeInsets.symmetric(vertical: 8),
                             ),
                             onChanged: (val) {
                               if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                              if (val.trim().isEmpty) {
+                                if (_searchQuery.isNotEmpty) {
+                                  setState(() => _searchQuery = '');
+                                }
+                                return;
+                              }
                               _searchDebounce = Timer(const Duration(milliseconds: 200), () {
                                 if (mounted) setState(() => _searchQuery = val);
                               });
@@ -834,37 +854,45 @@ class _FollowingPageState extends State<FollowingPage> {
                               children: [
                                 Icon(Icons.access_time_filled_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
                                 const SizedBox(width: 8),
-                                const Text('Mới theo dõi (mặc định)'),
+                                const Expanded(child: Text('Mới theo dõi (mặc định)')),
+                                if (_sortOrder == FollowSortOrder.recentlyFollowed)
+                                  Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: FollowSortOrder.updated,
                             child: Row(
                               children: [
-                                Icon(Icons.update_rounded, size: 16, color: Colors.orangeAccent),
-                                SizedBox(width: 8),
-                                Text('Mới cập nhật'),
+                                const Icon(Icons.update_rounded, size: 16, color: Colors.orangeAccent),
+                                const SizedBox(width: 8),
+                                const Expanded(child: Text('Mới cập nhật')),
+                                if (_sortOrder == FollowSortOrder.updated)
+                                  Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: FollowSortOrder.recentlyRead,
                             child: Row(
                               children: [
-                                Icon(Icons.history_rounded, size: 16, color: Colors.cyanAccent),
-                                SizedBox(width: 8),
-                                Text('Đọc gần đây nhất'),
+                                const Icon(Icons.history_rounded, size: 16, color: Colors.cyanAccent),
+                                const SizedBox(width: 8),
+                                const Expanded(child: Text('Đọc gần đây nhất')),
+                                if (_sortOrder == FollowSortOrder.recentlyRead)
+                                  Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
                               ],
                             ),
                           ),
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: FollowSortOrder.title,
                             child: Row(
                               children: [
-                                Icon(Icons.sort_by_alpha_rounded, size: 16, color: Colors.tealAccent),
-                                SizedBox(width: 8),
-                                Text('Tên A-Z'),
+                                const Icon(Icons.sort_by_alpha_rounded, size: 16, color: Colors.tealAccent),
+                                const SizedBox(width: 8),
+                                const Expanded(child: Text('Tên A-Z')),
+                                if (_sortOrder == FollowSortOrder.title)
+                                  Icon(Icons.check, size: 16, color: Theme.of(context).colorScheme.primary),
                               ],
                             ),
                           ),
@@ -947,7 +975,7 @@ class _FollowingPageState extends State<FollowingPage> {
                         }),
                       ),
                       const SizedBox(width: 6),
-                      Container(height: 16, width: 1, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 2)),
+                      Container(height: 16, width: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.2), margin: const EdgeInsets.symmetric(horizontal: 2)),
                       const SizedBox(width: 6),
                       _buildFilterChip(
                         label: 'Truyện tranh',
@@ -968,7 +996,7 @@ class _FollowingPageState extends State<FollowingPage> {
                       // Filter theo Custom Tags của user
                       if (allCustomTags.isNotEmpty) ...[
                         const SizedBox(width: 6),
-                        Container(height: 16, width: 1, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 2)),
+                        Container(height: 16, width: 1, color: Theme.of(context).dividerColor, margin: const EdgeInsets.symmetric(horizontal: 2)),
                         const SizedBox(width: 6),
                         ...allCustomTags.map((tag) {
                           final isSelected = _selectedCustomTag == tag;
@@ -993,25 +1021,83 @@ class _FollowingPageState extends State<FollowingPage> {
                     onRefresh: _handleRefresh,
                     child: filteredMangas.isEmpty
                         ? ListView(
+                            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                             physics: const AlwaysScrollableScrollPhysics(),
-                            children: const [
-                              SizedBox(height: 120),
+                            children: [
+                              SizedBox(height: mangas.isEmpty ? 80 : 120),
                               Center(
-                                child: Text(
-                                  'Không tìm thấy truyện phù hợp',
-                                  style: TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 14,
-                                  ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                                  child: mangas.isEmpty
+                                      ? Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(20),
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                Icons.favorite_border_rounded,
+                                                size: 52,
+                                                color: Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              'Chưa theo dõi truyện nào',
+                                              style: TextStyle(
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.bold,
+                                                color: Theme.of(context).colorScheme.onSurface,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              'Nhấn nút Theo dõi ở trang thông tin truyện để nhận thông báo chương mới sớm nhất!',
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                                fontSize: 13,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            ElevatedButton.icon(
+                                              onPressed: () => context.go('/'),
+                                              icon: const Icon(Icons.explore_rounded, size: 16),
+                                              label: const Text('Khám phá ngay', style: TextStyle(fontWeight: FontWeight.bold)),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Theme.of(context).colorScheme.primary,
+                                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(14),
+                                                ),
+                                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Text(
+                                          'Không tìm thấy truyện phù hợp với bộ lọc',
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                            fontSize: 14,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ],
                           )
                         : ListView.builder(
+                            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
+                            padding: const EdgeInsets.fromLTRB(
+                              12,
+                              6,
+                              12,
+                              80,
                             ),
                             itemCount: filteredMangas.length,
                             itemBuilder: (context, index) {
@@ -1043,14 +1129,14 @@ class _FollowingPageState extends State<FollowingPage> {
                                   border: Border.all(
                                     color: hasNew
                                         ? Colors.deepOrangeAccent.withValues(alpha: 0.35)
-                                        : Colors.white.withValues(alpha: 0.06),
+                                        : Theme.of(context).dividerColor.withValues(alpha: 0.15),
                                     width: hasNew ? 1.2 : 1,
                                   ),
                                   boxShadow: [
                                     BoxShadow(
                                       color: hasNew
                                           ? Colors.deepOrangeAccent.withValues(alpha: 0.12)
-                                          : Colors.black.withValues(alpha: 0.2),
+                                          : Theme.of(context).shadowColor.withValues(alpha: 0.08),
                                       blurRadius: 8,
                                       offset: const Offset(0, 3),
                                     ),
@@ -1077,11 +1163,11 @@ class _FollowingPageState extends State<FollowingPage> {
                                                   decoration: BoxDecoration(
                                                     color: Colors.blueGrey.withValues(alpha: 0.2),
                                                   ),
-                                                  child: const Center(
+                                                  child: Center(
                                                     child: Icon(
                                                       Icons.menu_book_rounded,
                                                       size: 36,
-                                                      color: Colors.white38,
+                                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                                                     ),
                                                   ),
                                                 ),
@@ -1185,7 +1271,11 @@ class _FollowingPageState extends State<FollowingPage> {
                                                     constraints: const BoxConstraints(),
                                                     color: Theme.of(context).cardColor,
                                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                    icon: const Icon(Icons.more_vert, size: 18, color: Colors.white38),
+                                                    icon: Icon(
+                                                      Icons.more_vert,
+                                                      size: 18,
+                                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                                                    ),
                                                     onSelected: (val) async {
                                                       if (val == 'detail') {
                                                         context.push('/detail/${manga.id}');
@@ -1260,7 +1350,7 @@ class _FollowingPageState extends State<FollowingPage> {
 
                                                   if (hist != null) {
                                                     progressIcon = Icons.history_rounded;
-                                                    progressColor = hasNew ? Colors.deepOrangeAccent : Colors.white54;
+                                                    progressColor = hasNew ? Colors.deepOrangeAccent : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
                                                     progressText = (hist.chapterTitle != null && hist.chapterTitle!.isNotEmpty)
                                                         ? 'Đã đọc: ${hist.chapterTitle}'
                                                         : 'Đã đọc chương ${hist.chapterId}';
@@ -1283,7 +1373,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                       progressText = 'Bỏ dở';
                                                     } else {
                                                       progressIcon = Icons.auto_stories_outlined;
-                                                      progressColor = Colors.white54;
+                                                      progressColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
                                                       progressText = 'Chưa bắt đầu đọc';
                                                     }
                                                   }
@@ -1296,7 +1386,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                         child: Text(
                                                           progressText,
                                                           style: TextStyle(
-                                                            color: hasNew ? Colors.deepOrangeAccent : (hist != null ? Colors.white70 : progressColor),
+                                                            color: hasNew ? Colors.deepOrangeAccent : (hist != null ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75) : progressColor),
                                                             fontSize: 11,
                                                             fontWeight: (hasNew || currentEntry?.status == MangaReadingStatus.completed) ? FontWeight.w600 : FontWeight.normal,
                                                           ),
@@ -1306,7 +1396,7 @@ class _FollowingPageState extends State<FollowingPage> {
                                                       ),
                                                       Text(
                                                         timeAgoText,
-                                                        style: const TextStyle(color: Colors.white38, fontSize: 10),
+                                                        style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45), fontSize: 10),
                                                       ),
                                                     ],
                                                   );
@@ -1393,11 +1483,10 @@ class _FollowingPageState extends State<FollowingPage> {
                                                   const SizedBox(width: 4),
 
                                                   // Quick Action Button
-                                                  InkWell(
-                                                    onTap: () => context.push('/detail/${manga.id}'),
+                                                  Material(
+                                                    color: Colors.transparent,
                                                     borderRadius: BorderRadius.circular(8),
-                                                    child: Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                                    child: Ink(
                                                       decoration: BoxDecoration(
                                                         color: hasNew
                                                             ? Colors.deepOrangeAccent.withValues(alpha: 0.2)
@@ -1410,28 +1499,44 @@ class _FollowingPageState extends State<FollowingPage> {
                                                           width: 0.9,
                                                         ),
                                                       ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            hasNew ? 'Đọc ngay' : 'Đọc tiếp',
-                                                            style: TextStyle(
-                                                              color: hasNew
-                                                                  ? Colors.deepOrangeAccent
-                                                                  : Theme.of(context).colorScheme.primary,
-                                                              fontSize: 10.5,
-                                                              fontWeight: FontWeight.bold,
-                                                            ),
+                                                      child: InkWell(
+                                                        onTap: () {
+                                                          HapticFeedback.selectionClick();
+                                                          if (hist != null && hist.chapterId.isNotEmpty) {
+                                                            context.push(
+                                                              '/reader/${hist.chapterId}?mangaId=${Uri.encodeComponent(manga.id)}&page=${hist.lastPageIndex}',
+                                                            );
+                                                          } else {
+                                                            context.push('/detail/${manga.id}');
+                                                          }
+                                                        },
+                                                        borderRadius: BorderRadius.circular(8),
+                                                        child: Padding(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                                          child: Row(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            children: [
+                                                              Text(
+                                                                hasNew ? 'Đọc ngay' : 'Đọc tiếp',
+                                                                style: TextStyle(
+                                                                  color: hasNew
+                                                                      ? Colors.deepOrangeAccent
+                                                                      : Theme.of(context).colorScheme.primary,
+                                                                  fontSize: 10.5,
+                                                                  fontWeight: FontWeight.bold,
+                                                                ),
+                                                              ),
+                                                              const SizedBox(width: 2),
+                                                              Icon(
+                                                                Icons.arrow_forward_ios_rounded,
+                                                                color: hasNew
+                                                                    ? Colors.deepOrangeAccent
+                                                                    : Theme.of(context).colorScheme.primary,
+                                                                size: 9,
+                                                              ),
+                                                            ],
                                                           ),
-                                                          const SizedBox(width: 2),
-                                                          Icon(
-                                                            Icons.arrow_forward_ios_rounded,
-                                                            color: hasNew
-                                                                ? Colors.deepOrangeAccent
-                                                                : Theme.of(context).colorScheme.primary,
-                                                            size: 9,
-                                                          ),
-                                                        ],
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
@@ -1466,10 +1571,10 @@ class _FollowingPageState extends State<FollowingPage> {
   }) {
     final activeColor = highlightColor ?? Theme.of(context).colorScheme.primary;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: Ink(
         decoration: BoxDecoration(
           color: isSelected ? activeColor.withValues(alpha: 0.2) : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(12),
@@ -1478,14 +1583,21 @@ class _FollowingPageState extends State<FollowingPage> {
             width: isSelected ? 1.2 : 1.0,
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            color: isSelected
-                ? (highlightColor ?? Theme.of(context).colorScheme.primary)
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected
+                    ? (highlightColor ?? Theme.of(context).colorScheme.primary)
+                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+              ),
+            ),
           ),
         ),
       ),

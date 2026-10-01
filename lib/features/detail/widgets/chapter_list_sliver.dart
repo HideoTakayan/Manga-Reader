@@ -37,9 +37,17 @@ class ChapterListSliver extends StatelessWidget {
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
-    if (diff.inDays > 0) return '${diff.inDays} ngày trước';
-    if (diff.inHours > 0) return '${diff.inHours} giờ trước';
-    return 'Mới đây';
+    if (diff.inDays > 30) {
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } else if (diff.inDays > 0) {
+      return '${diff.inDays} ngày trước';
+    } else if (diff.inHours > 0) {
+      return '${diff.inHours} giờ trước';
+    } else if (diff.inMinutes > 0) {
+      return '${diff.inMinutes} phút trước';
+    } else {
+      return 'Mới đây';
+    }
   }
 
   void _showChapterActionSheet({
@@ -137,6 +145,18 @@ class ChapterListSliver extends StatelessWidget {
                     );
                   }
                   onChapterRead();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          isRead ? 'Đã đánh dấu là chưa đọc' : 'Đã đánh dấu là đã đọc',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
                 },
               ),
               ListTile(
@@ -163,6 +183,16 @@ class ChapterListSliver extends StatelessWidget {
                       userId: uid,
                     );
                     onChapterRead();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Đã đánh dấu các chương trước là đã đọc'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   }
                 },
               ),
@@ -193,6 +223,16 @@ class ChapterListSliver extends StatelessWidget {
                       userId: uid,
                     );
                     onChapterRead();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Đã đánh dấu các chương sau là chưa đọc'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   }
                 },
               ),
@@ -242,40 +282,42 @@ class ChapterListSliver extends StatelessWidget {
             currentProgress!.chapterId == ch.id &&
             !isRead;
 
-        return InkWell(
-          onTap: () async {
-            HapticFeedback.selectionClick();
-            await context.push(
-              '/reader/${ch.id}?mangaId=${Uri.encodeComponent(mangaId)}',
-            );
-            // Khi quay lại, làm mới toàn bộ dữ liệu để cập nhật views/history
-            onChapterRead();
-          },
-          onLongPress: () {
-            _showChapterActionSheet(
-              context: context,
-              chapter: ch,
-              index: index,
-              isRead: isRead,
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: isCurrentlyReading
-                  ? theme.colorScheme.primary.withValues(alpha: 0.08)
-                  : Colors.transparent,
-              border: Border(
-                left: isCurrentlyReading
-                    ? BorderSide(color: theme.colorScheme.primary, width: 3.5)
-                    : BorderSide.none,
-                bottom: BorderSide(
-                  color: isCurrentlyReading
-                      ? theme.colorScheme.primary.withValues(alpha: 0.25)
-                      : theme.dividerColor.withValues(alpha: 0.1),
+        return Material(
+          color: isCurrentlyReading
+              ? theme.colorScheme.primary.withValues(alpha: 0.08)
+              : Colors.transparent,
+          child: InkWell(
+            onTap: () async {
+              HapticFeedback.selectionClick();
+              await context.push(
+                '/reader/${ch.id}?mangaId=${Uri.encodeComponent(mangaId)}',
+              );
+              // Khi quay lại, làm mới toàn bộ dữ liệu để cập nhật views/history
+              onChapterRead();
+            },
+            onLongPress: () {
+              _showChapterActionSheet(
+                context: context,
+                chapter: ch,
+                index: index,
+                isRead: isRead,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.transparent, // Fix: Use transparent to allow ripple effect from Material parent
+                border: Border(
+                  left: isCurrentlyReading
+                      ? BorderSide(color: theme.colorScheme.primary, width: 3.5)
+                      : BorderSide.none,
+                  bottom: BorderSide(
+                    color: isCurrentlyReading
+                        ? theme.colorScheme.primary.withValues(alpha: 0.25)
+                        : theme.dividerColor.withValues(alpha: 0.1),
+                  ),
                 ),
               ),
-            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -417,9 +459,10 @@ class ChapterListSliver extends StatelessWidget {
               ],
             ),
           ),
-        );
-      }, childCount: displayChapters.length),
-    );
+        ),
+      );
+    }, childCount: displayChapters.length),
+  );
   }
 }
 
@@ -535,6 +578,10 @@ class _ChapterDownloadButton extends StatelessWidget {
 
         // 5. Kiểm tra đã tải chưa (Database / Cache)
         return FutureBuilder<bool>(
+          initialData: DownloadService.instance.isDownloadedSync(
+            chapter.id,
+            mangaId: mangaId,
+          ),
           future: DownloadService.instance.isDownloaded(
             chapter.id,
             mangaId: mangaId,
@@ -543,6 +590,7 @@ class _ChapterDownloadButton extends StatelessWidget {
             final isDownloaded = snapshot.data ?? false;
 
             return IconButton(
+              tooltip: isDownloaded ? 'Đã tải xuống (nhấn để xóa)' : 'Tải xuống chương',
               icon: Icon(
                 isDownloaded ? Icons.check_circle : Icons.download_outlined,
                 size: 28,
@@ -579,9 +627,9 @@ class _ChapterDownloadButton extends StatelessWidget {
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(dialogCtx, false),
-                          child: const Text(
+                          child: Text(
                             'Hủy',
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.6)),
                           ),
                         ),
                         ElevatedButton(
@@ -603,6 +651,7 @@ class _ChapterDownloadButton extends StatelessWidget {
                   );
 
                   if (confirm == true) {
+                    HapticFeedback.mediumImpact();
                     await DownloadService.instance.deleteDownload(chapter.id);
                     onStatusChanged?.call();
                     if (context.mounted) {
@@ -611,12 +660,14 @@ class _ChapterDownloadButton extends StatelessWidget {
                         SnackBar(
                           content: Text('Đã xóa "${chapter.title}" khỏi máy'),
                           backgroundColor: Colors.green,
+                          behavior: SnackBarBehavior.floating,
                         ),
                       );
                     }
                   }
                 } else {
                   // Tải chương
+                  HapticFeedback.lightImpact();
                   await DownloadService.instance.addToQueue(
                     chapterId: chapter.id,
                     mangaId: mangaId,
@@ -635,6 +686,7 @@ class _ChapterDownloadButton extends StatelessWidget {
                         content: const Text('Đã thêm vào hàng đợi tải'),
                         backgroundColor: Colors.green,
                         duration: const Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
                         action: SnackBarAction(
                           label: 'Xem',
                           textColor: Colors.white,

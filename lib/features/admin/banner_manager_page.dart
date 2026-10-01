@@ -239,6 +239,7 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: TextField(
                     controller: _searchController,
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     textInputAction: TextInputAction.search,
                     style: const TextStyle(fontSize: 13.5),
                     decoration: InputDecoration(
@@ -246,6 +247,7 @@ class _BannerManagerPageState extends State<BannerManagerPage> {
                       suffixIcon: _searchController.text.isEmpty
                           ? null
                           : IconButton(
+                              tooltip: 'Xóa tìm kiếm',
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() => _searchQuery = '');

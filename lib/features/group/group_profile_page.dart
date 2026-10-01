@@ -109,7 +109,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            tooltip: 'Quay lại',
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: theme.colorScheme.onSurface),
             onPressed: () => context.pop(),
           ),
         ),
@@ -126,7 +127,8 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            tooltip: 'Quay lại',
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: theme.colorScheme.onSurface),
             onPressed: () => context.pop(),
           ),
         ),
@@ -212,6 +214,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
               pinned: true,
               backgroundColor: theme.cardColor,
               leading: IconButton(
+                tooltip: 'Quay lại',
                 icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
                   color: theme.colorScheme.onSurface,
@@ -339,6 +342,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                                   await GroupService.instance.unfollowGroup(_group!.id);
                                                 } catch (e) {
                                                   if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                                     ScaffoldMessenger.of(context).showSnackBar(
                                                       SnackBar(content: Text('Lỗi: $e')),
                                                     );
@@ -369,6 +373,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                                                   );
                                                 } catch (e) {
                                                   if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                                     ScaffoldMessenger.of(context).showSnackBar(
                                                       SnackBar(content: Text('Lỗi: $e')),
                                                     );
@@ -463,6 +468,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                       ),
                       child: TextField(
                         controller: _searchController,
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         style:
                             TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                         textInputAction: TextInputAction.search,
@@ -479,6 +485,7 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
                           ),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
+                                  tooltip: 'Xóa tìm kiếm',
                                   icon: Icon(
                                     Icons.clear,
                                     size: 14,
@@ -657,28 +664,33 @@ class _GroupProfilePageState extends State<GroupProfilePage> {
   Widget _buildFilterChip(String label, MangaContentType? type) {
     final theme = Theme.of(context);
     final isSelected = _selectedTypeFilter == type;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedTypeFilter = type;
-          _applyFilter();
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? theme.colorScheme.primary : theme.dividerColor.withValues(alpha: 0.15),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () {
+          setState(() {
+            _selectedTypeFilter = type;
+            _applyFilter();
+          });
+        },
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? theme.colorScheme.primary : theme.colorScheme.onSurface.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? theme.colorScheme.primary : theme.dividerColor.withValues(alpha: 0.15),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
         ),
       ),
@@ -693,86 +705,89 @@ class _GroupMangaItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: () {
-        context.push('/detail/${manga.id}', extra: manga);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 6,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  DriveImage(
-                    fileId: manga.coverFileId,
-                    fit: BoxFit.cover,
-                  ),
-                  Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        manga.contentType.label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.15)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            context.push('/detail/${manga.id}', extra: manga);
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DriveImage(
+                      fileId: manga.coverFileId,
+                      fit: BoxFit.cover,
+                    ),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          manga.contentType.label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    manga.title,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      manga.title,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    manga.author.isNotEmpty ? manga.author : 'Không rõ tác giả',
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                      fontSize: 11,
+                    const SizedBox(height: 2),
+                    Text(
+                      manga.author.isNotEmpty ? manga.author : 'Không rõ tác giả',
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

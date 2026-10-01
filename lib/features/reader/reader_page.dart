@@ -45,7 +45,7 @@ class ReaderPage extends ConsumerStatefulWidget {
 // SingleTickerProviderStateMixin: cung cấp vsync cho AnimationController
 // → tiết kiệm tài nguyên, chỉ dùng khi có đúng 1 AnimationController
 class _ReaderPageState extends ConsumerState<ReaderPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late PageController _pageController;
   late ScrollController _scrollController;
   final FocusNode _focusNode = FocusNode();
@@ -59,6 +59,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   bool _isInPrevChapterZone = false; // Đang trong vùng trên (overscroll ngược)
   bool _isHoldingForNextChapter = false; // Đang đếm ngược để sang chương sau
   bool _isHoldingForPrevChapter = false; // Đang đếm ngược để về chương trước
+  bool _showErrorDetails = false;
 
   Timer? _holdTimer;
   Timer? _progressSaveTimer;
@@ -94,6 +95,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   static const double _nextChapterThreshold = 100.0;
   static const double _prevChapterThreshold = -60.0;
+  double _lastEvaluatedScrollPixels = 0.0;
 
   StreamSubscription<ClaimExpResult>? _levelUpSub;
 
@@ -116,6 +118,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     _scrollController = ScrollController();
 
@@ -126,6 +129,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               0,
               LevelService.levelTitles.length - 1,
             )];
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
@@ -196,6 +200,23 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     });
   }
 
+  @override
+  void didUpdateWidget(covariant ReaderPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chapterId != widget.chapterId ||
+        oldWidget.mangaId != widget.mangaId) {
+      _restoredScrollChapterId = null;
+      ref
+          .read(readerProvider.notifier)
+          .init(
+            widget.chapterId,
+            mangaId: widget.mangaId,
+            initialPageIndex: widget.initialPageIndex,
+          );
+      _applyOrientation(ref.read(readerProvider).orientation);
+    }
+  }
+
   void _applyOrientation(ReaderOrientation orientation) {
     switch (orientation) {
       case ReaderOrientation.portrait:
@@ -246,6 +267,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     } else if (!isOverscrollTop && _isInPrevChapterZone) {
       _exitPrevChapterZone();
     }
+
+    if ((pixels - _lastEvaluatedScrollPixels).abs() < 16.0 &&
+        !isNearEnd &&
+        !isOverscrollTop) {
+      return;
+    }
+    _lastEvaluatedScrollPixels = pixels;
 
     final pageCount = state.pages.length;
     int estimatedPage = _currentPageNotifier.value;
@@ -425,12 +453,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           _autoScrollSpeedMultiplier *
           safeDeltaSeconds;
 
+      if (_isChapterTransitionLocked ||
+          ref.read(readerProvider).isLoadingNextChapter) {
+        return;
+      }
+
       if (state.isPdf) {
         // PDF cuộn dọc mượt mà từng pixel qua PdfReaderView
         final canContinue =
             _pdfReaderKey.currentState?.scrollBy(deltaPixels) ?? false;
         if (!canContinue) {
-          _stopAutoScroll();
+          final notifier = ref.read(readerProvider.notifier);
+          if (notifier.getNextChapterId() != null &&
+              !_isChapterTransitionLocked) {
+            _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
+              if (!changed && mounted && _isAutoScrolling) {
+                _stopAutoScroll();
+              }
+            });
+          } else {
+            _stopAutoScroll();
+          }
         }
       } else {
         // Truyện tranh CBZ / ZIP cuộn dọc qua ScrollController
@@ -440,7 +483,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         }
         final position = _scrollController.position;
         if (position.pixels >= position.maxScrollExtent) {
-          _stopAutoScroll();
+          final notifier = ref.read(readerProvider.notifier);
+          if (notifier.getNextChapterId() != null &&
+              !_isChapterTransitionLocked) {
+            _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
+              if (!changed && mounted && _isAutoScrolling) {
+                _stopAutoScroll();
+              }
+            });
+          } else {
+            _stopAutoScroll();
+          }
           return;
         }
         final nextOffset = position.pixels + deltaPixels;
@@ -468,7 +521,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     final canContinue = _pdfReaderKey.currentState?.autoScrollNext() ?? false;
     if (!canContinue) {
-      _stopAutoScroll();
+      final changedChapter =
+          await _triggerNextChapter(resumeHorizontalAuto: true);
+      if (!changedChapter) {
+        _stopAutoScroll();
+      }
       return;
     }
 
@@ -574,18 +631,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text(
+          title: Text(
             'Hủy Theo Dõi?',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
           ),
-          content: const Text(
+          content: Text(
             'Bạn có chắc chắn muốn hủy theo dõi truyện này?',
-            style: TextStyle(color: Colors.white70),
+            style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7)),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+              child: Text('Hủy'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -608,6 +665,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     try {
       final isNowFollowed = await notifier.toggleFollow();
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -618,6 +676,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', '')),
@@ -722,10 +781,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           }
           if (resumeHorizontalAuto &&
               _isAutoScrolling &&
-              changedChapter &&
-              ref.read(readerProvider).readingMode == ReadingMode.horizontal &&
-              !ref.read(readerProvider).isPdf) {
-            _scheduleHorizontalAutoPageTurn(_autoPageTurnRunId);
+              changedChapter) {
+            final currentState = ref.read(readerProvider);
+            if (currentState.readingMode == ReadingMode.horizontal) {
+              if (currentState.isPdf) {
+                _schedulePdfAutoPageTurn(_autoPageTurnRunId);
+              } else {
+                _scheduleHorizontalAutoPageTurn(_autoPageTurnRunId);
+              }
+            }
           }
         });
       }
@@ -798,6 +862,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
@@ -806,7 +871,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _levelUpSub?.cancel();
     _scrollController.removeListener(_onVerticalScroll);
     _cancelHoldTimer();
+    // Flush pending progress save ngay trước khi dispose để không mất tiến độ
+    // khi user thoát trong vòng 600ms debounce window
     _progressSaveTimer?.cancel();
+    _flushVerticalProgressSave();
     _precacheDebounceTimer?.cancel();
     _precachedPaths.clear();
     _imageSizeCache.clear();
@@ -823,6 +891,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       SyncService.instance.syncPendingHistory();
     }
     super.dispose();
+  }
+
+  /// Lưu tiến độ cuộn ngay lập tức (không debounce) nếu có dữ liệu pending.
+  /// Gọi khi app vào background hoặc khi dispose để không mất vị trí đọc.
+  void _flushVerticalProgressSave() {
+    final offset = _lastVerticalProgressSaveOffset;
+    final page = _lastVerticalProgressSavePage;
+    if (offset != null && page != null) {
+      // PDF vertical: ưu tiên lấy offset thực tế từ PdfReaderViewState
+      final pdfOffset = _pdfReaderKey.currentState?.currentScrollOffset;
+      final effectiveOffset = pdfOffset ?? offset;
+      ref
+          .read(readerProvider.notifier)
+          .saveScrollProgress(effectiveOffset, pageIndex: page);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // Dừng auto-scroll khi app vào background
+      if (_isAutoScrolling) {
+        _stopAutoScroll();
+      }
+      // Flush tiến độ đọc ngay lập tức để không mất khi app bị kill
+      _progressSaveTimer?.cancel();
+      _flushVerticalProgressSave();
+    }
   }
 
   void _handleKeyEvent(KeyEvent event, ReaderState state) {
@@ -880,15 +977,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       } else if (key == LogicalKeyboardKey.keyF) {
         _toggleFollowWithFeedback(state, notifier);
       } else if (key == LogicalKeyboardKey.bracketLeft) {
-        final prevId = notifier.getPrevChapterId();
-        if (prevId != null) {
-          context.pushReplacement(_readerRoute(prevId, state.mangaId));
-        }
+        _triggerPrevChapter();
       } else if (key == LogicalKeyboardKey.bracketRight) {
-        final nextId = notifier.getNextChapterId();
-        if (nextId != null) {
-          context.pushReplacement(_readerRoute(nextId, state.mangaId));
-        }
+        _triggerNextChapter();
       } else if (key == LogicalKeyboardKey.equal ||
           key == LogicalKeyboardKey.add ||
           key == LogicalKeyboardKey.numpadAdd) {
@@ -978,33 +1069,64 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
       );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final targetCtx = _pageKeys[target]?.currentContext;
+        if (targetCtx != null) {
+          Scrollable.ensureVisible(
+            targetCtx,
+            alignment: 0.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     }
   }
 
-  Object _initialPhotoScale(ReaderImageFit fit, {String? filePath}) {
-    if (fit == ReaderImageFit.smart && filePath != null) {
-      try {
-        final size = ImageSizeGetter.getSizeResult(
-          FileInput(File(filePath)),
-        ).size;
-        final imageRatio = size.width / size.height;
-        final screenSize = MediaQuery.of(context).size;
-        final screenRatio = screenSize.width / screenSize.height;
+  Object _initialPhotoScale(
+    ReaderImageFit fit, {
+    String? filePath,
+    bool isRotated = false,
+  }) {
+    if (filePath != null) {
+      final size = _getImageSize(filePath);
+      if (size != null && size.width > 0 && size.height > 0) {
+        final imageRatio = isRotated
+            ? (size.height / size.width)
+            : (size.width / size.height);
+        final screenSize = MediaQuery.sizeOf(context);
+        if (screenSize.height > 0 && screenSize.width > 0) {
+          final screenRatio = screenSize.width / screenSize.height;
 
-        // Nếu ảnh dài hơn màn hình nhiều (ví dụ webtoon) -> Fit width (covered)
-        // Nếu ảnh ngang hoặc tỷ lệ gần bằng màn hình -> Fit screen (contained)
-        if (imageRatio < screenRatio * 0.8) {
-          return PhotoViewComputedScale.covered;
-        } else {
-          return PhotoViewComputedScale.contained;
+          if (fit == ReaderImageFit.width) {
+            if (imageRatio < screenRatio) {
+              return PhotoViewComputedScale.contained *
+                  (screenRatio / imageRatio);
+            } else {
+              return PhotoViewComputedScale.contained;
+            }
+          } else if (fit == ReaderImageFit.height) {
+            if (imageRatio > screenRatio) {
+              return PhotoViewComputedScale.contained *
+                  (imageRatio / screenRatio);
+            } else {
+              return PhotoViewComputedScale.contained;
+            }
+          } else if (fit == ReaderImageFit.smart) {
+            if (imageRatio < screenRatio * 0.8) {
+              return PhotoViewComputedScale.contained *
+                  (screenRatio / imageRatio);
+            } else {
+              return PhotoViewComputedScale.contained;
+            }
+          }
         }
-      } catch (_) {
-        return PhotoViewComputedScale.contained;
       }
     }
 
     switch (fit) {
-      case ReaderImageFit.smart: // Fallback
+      case ReaderImageFit.smart:
       case ReaderImageFit.width:
         return PhotoViewComputedScale.covered;
       case ReaderImageFit.height:
@@ -1015,16 +1137,24 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  Alignment _getZoomAlignment(ReaderZoomStart zoomStart) {
+  Alignment _getZoomAlignment(
+    ReaderZoomStart zoomStart, {
+    ReaderDirection? direction,
+    bool anchorTop = false,
+  }) {
+    final double y = anchorTop ? -1.0 : 0.0;
     switch (zoomStart) {
       case ReaderZoomStart.left:
-        return Alignment.centerLeft;
+        return Alignment(-1.0, y);
       case ReaderZoomStart.right:
-        return Alignment.centerRight;
+        return Alignment(1.0, y);
       case ReaderZoomStart.center:
-        return Alignment.center;
+        return Alignment(0.0, y);
       case ReaderZoomStart.auto:
-        return Alignment.center;
+        return Alignment(
+          direction == ReaderDirection.rtl ? 1.0 : -1.0,
+          y,
+        );
     }
   }
 
@@ -1067,10 +1197,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _readerPageForward(ReaderState state) {
     if (state.isPdf) {
       if (state.readingMode == ReadingMode.horizontal) {
-        _pdfReaderKey.currentState?.nextPage();
+        final pageCount = state.pdfPageCount;
+        if (pageCount > 0 && state.currentPageIndex >= pageCount - 1) {
+          _triggerNextChapter();
+        } else {
+          _pdfReaderKey.currentState?.nextPage();
+        }
       } else {
         final screenHeight = MediaQuery.of(context).size.height;
-        _pdfReaderKey.currentState?.scrollBy(screenHeight * 0.65);
+        final moved = _pdfReaderKey.currentState
+                ?.scrollBy(screenHeight * 0.65, animated: true) ??
+            false;
+        if (!moved) {
+          _triggerNextChapter();
+        }
       }
       return;
     }
@@ -1080,7 +1220,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       final currentSpread = _pageController.hasClients
           ? _pageController.page?.round() ?? 0
           : 0;
-      if (currentSpread < spreads.length - 1) {
+      if (currentSpread < spreads.length) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
@@ -1091,15 +1231,20 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
-        final screenHeight = MediaQuery.of(context).size.height;
-        _scrollController.animateTo(
-          (currentOffset + (screenHeight * 0.65)).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-        );
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        if (currentOffset >= maxScroll - 20.0) {
+          _triggerNextChapter();
+        } else {
+          final screenHeight = MediaQuery.of(context).size.height;
+          _scrollController.animateTo(
+            (currentOffset + (screenHeight * 0.65)).clamp(
+              0.0,
+              maxScroll,
+            ),
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+          );
+        }
       }
     }
   }
@@ -1107,10 +1252,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _readerPageBackward(ReaderState state) {
     if (state.isPdf) {
       if (state.readingMode == ReadingMode.horizontal) {
-        _pdfReaderKey.currentState?.previousPage();
+        if (state.currentPageIndex <= 0) {
+          _triggerPrevChapter();
+        } else {
+          _pdfReaderKey.currentState?.previousPage();
+        }
       } else {
         final screenHeight = MediaQuery.of(context).size.height;
-        _pdfReaderKey.currentState?.scrollBy(-(screenHeight * 0.65));
+        final moved = _pdfReaderKey.currentState
+                ?.scrollBy(-(screenHeight * 0.65), animated: true) ??
+            false;
+        if (!moved) {
+          _triggerPrevChapter();
+        }
       }
       return;
     }
@@ -1130,15 +1284,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
-        final screenHeight = MediaQuery.of(context).size.height;
-        _scrollController.animateTo(
-          (currentOffset - (screenHeight * 0.65)).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-        );
+        if (currentOffset <= 20.0) {
+          _triggerPrevChapter();
+        } else {
+          final screenHeight = MediaQuery.of(context).size.height;
+          _scrollController.animateTo(
+            (currentOffset - (screenHeight * 0.65)).clamp(
+              0.0,
+              _scrollController.position.maxScrollExtent,
+            ),
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+          );
+        }
       }
     }
   }
@@ -1177,11 +1335,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     ReaderState state,
     ReaderNotifier notifier,
   ) {
-    if (state.isPdf) {
-      notifier.toggleControls();
-      return;
-    }
-
     final size = MediaQuery.of(context).size;
     final screenWidth = size.width;
     final screenHeight = size.height;
@@ -1363,9 +1516,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       }
 
       if (_isAutoScrolling &&
-          (false ||
-              (prev?.currentChapter?.id != next.currentChapter?.id &&
-                  next.readingMode != ReadingMode.horizontal))) {
+          !_isChapterTransitionLocked &&
+          prev?.currentChapter?.id != next.currentChapter?.id &&
+          next.readingMode != ReadingMode.horizontal) {
         _stopAutoScroll();
       }
 
@@ -1377,23 +1530,45 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         }
       }
 
-      if (prev?.currentPageIndex != next.currentPageIndex &&
-          next.readingMode == ReadingMode.horizontal) {
-        if (_pageController.hasClients) {
-          final spreads = _calculateSpreads(
-            next.pages.length,
-            next.dualPageMode,
-          );
-          final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
-          final targetSpread = spreads.indexWhere(
-            (s) => s.contains(next.currentPageIndex),
-          );
-          final safeSpread = targetSpread != -1
-              ? targetSpread
-              : next.currentPageIndex.clamp(0, maxSpread);
-          if (_pageController.page?.round() != safeSpread) {
-            _pageController.jumpToPage(safeSpread);
+      if (!next.isPdf &&
+          next.readingMode == ReadingMode.horizontal &&
+          (prev?.currentPageIndex != next.currentPageIndex ||
+              prev?.dualPageMode != next.dualPageMode ||
+              prev?.direction != next.direction ||
+              prev?.imageFit != next.imageFit ||
+              prev?.zoomStart != next.zoomStart ||
+              prev?.cropBorders != next.cropBorders ||
+              prev?.rotateLandscapeImages != next.rotateLandscapeImages)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_pageController.hasClients) {
+            final spreads = _calculateSpreads(
+              next.pages.length,
+              next.dualPageMode,
+            );
+            final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
+            final targetSpread = spreads.indexWhere(
+              (s) => s.contains(next.currentPageIndex),
+            );
+            final safeSpread = targetSpread != -1
+                ? targetSpread
+                : next.currentPageIndex.clamp(0, maxSpread);
+            if (_pageController.page?.round() != safeSpread) {
+              _pageController.jumpToPage(safeSpread);
+            }
           }
+        });
+      }
+
+      if (prev?.imageFit != next.imageFit ||
+          prev?.rotateLandscapeImages != next.rotateLandscapeImages ||
+          prev?.cropBorders != next.cropBorders ||
+          prev?.zoomStart != next.zoomStart) {
+        if (next.isVerticalMode) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _jumpToPage(next.currentPageIndex);
+          });
         }
       }
 
@@ -1403,28 +1578,51 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
       // Xử lý khi chuyển đổi giữa chế độ dọc và ngang
       if (prev != null && prev.readingMode != next.readingMode) {
+        if (_isAutoScrolling) {
+          _stopAutoScroll();
+        }
+
+        void syncToHorizontal(int retry) {
+          if (!mounted) return;
+          if (_pageController.hasClients) {
+            final spreads = _calculateSpreads(
+              next.pages.length,
+              next.dualPageMode,
+            );
+            final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
+            final targetSpread = spreads.indexWhere(
+              (s) => s.contains(next.currentPageIndex),
+            );
+            final safeSpread = targetSpread != -1
+                ? targetSpread
+                : next.currentPageIndex.clamp(0, maxSpread);
+            if (_pageController.page?.round() != safeSpread) {
+              _pageController.jumpToPage(safeSpread);
+            }
+          } else if (retry > 0) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => syncToHorizontal(retry - 1),
+            );
+          }
+        }
+
+        void syncToVertical(int retry) {
+          if (!mounted) return;
+          if (_scrollController.hasClients) {
+            _jumpToPage(next.currentPageIndex);
+          } else if (retry > 0) {
+            WidgetsBinding.instance.addPostFrameCallback(
+              (_) => syncToVertical(retry - 1),
+            );
+          }
+        }
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-
           if (next.readingMode == ReadingMode.horizontal) {
-            if (_pageController.hasClients) {
-              final spreads = _calculateSpreads(
-                next.pages.length,
-                next.dualPageMode,
-              );
-              final maxSpread = spreads.isEmpty ? 0 : spreads.length - 1;
-              final targetSpread = spreads.indexWhere(
-                (s) => s.contains(next.currentPageIndex),
-              );
-              final safeSpread = targetSpread != -1
-                  ? targetSpread
-                  : next.currentPageIndex.clamp(0, maxSpread);
-              if (_pageController.page?.round() != safeSpread) {
-                _pageController.jumpToPage(safeSpread);
-              }
-            }
+            syncToHorizontal(5);
           } else if (next.isVerticalMode) {
-            _jumpToPage(next.currentPageIndex);
+            syncToVertical(5);
           }
         });
       }
@@ -1484,6 +1682,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             localFilePath: s.localFilePath,
                             currentPageIndex: s.currentPageIndex,
                             imageFit: s.imageFit,
+                            zoomStart: s.zoomStart,
                             background: s.background,
                             invertColors: s.invertColors,
                             cropBorders: s.cropBorders,
@@ -1491,6 +1690,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             direction: s.direction,
                             isNovel: s.isNovel,
                             currentChapter: s.currentChapter,
+                            rotateLandscapeImages: s.rotateLandscapeImages,
                           ),
                         ),
                       );
@@ -1498,6 +1698,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       final contentFullState = ref.read(readerProvider);
 
                       Widget readerView = GestureDetector(
+                        behavior: HitTestBehavior.opaque,
                         onTapUp: (details) => _handleReaderTap(
                           details,
                           contentFullState,
@@ -1508,25 +1709,59 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                 contentState.localFilePath != null
                             ? PdfReaderView(
                                 key: _pdfReaderKey,
-                                scrollDirection:
-                                    contentState.readingMode ==
-                                        ReadingMode.horizontal
-                                    ? Axis.horizontal
-                                    : Axis.vertical,
                                 pdfPath: contentState.localFilePath!,
                                 initialPage: contentState.currentPageIndex,
+                                readingMode: contentState.readingMode,
+                                imageFit: contentState.imageFit,
+                                zoomStart: contentState.zoomStart,
+                                direction: contentState.direction,
+                                backgroundColor: _readerBackgroundColor(
+                                  contentState.background,
+                                ),
+                                cropBorders: contentState.cropBorders,
+                                rotateLandscapeImages:
+                                    contentState.rotateLandscapeImages,
+                                onTapUp: (details) => _handleReaderTap(
+                                  details,
+                                  contentFullState,
+                                  contentNotifier,
+                                ),
                                 onDocumentLoaded: (pageCount) {
                                   contentNotifier.setPdfPageCount(pageCount);
                                 },
                                 onPageChanged: (pageIndex) {
                                   contentNotifier.onPageChanged(pageIndex);
+                                  // Chỉ save page-change cho PDF ngang; dọc dùng onScrollProgress
+                                  if (contentState.readingMode ==
+                                      ReadingMode.horizontal) {
+                                    _scheduleVerticalProgressSaveIfNeeded(
+                                      0.0,
+                                      pageIndex,
+                                    );
+                                  }
+                                },
+                                onScrollProgress: (offset, pageIndex) {
+                                  // Nhận offset cuộn thực tế từ PDF vertical view
                                   _scheduleVerticalProgressSaveIfNeeded(
-                                    0.0,
+                                    offset,
                                     pageIndex,
                                   );
+                                  if (_currentPageNotifier.value != pageIndex) {
+                                    _currentPageNotifier.value = pageIndex;
+                                  }
                                 },
+                                initialScrollOffset: contentFullState.scrollOffset > 0
+                                    ? contentFullState.scrollOffset
+                                    : null,
                                 onToggleControls:
                                     contentNotifier.toggleControls,
+                                onReloadRequested: () =>
+                                    _reloadCurrentChapter(contentNotifier),
+                                onUserScrollStart: () {
+                                  if (_isAutoScrolling) {
+                                    _stopAutoScroll();
+                                  }
+                                },
                               )
                             : contentState.readingMode == ReadingMode.horizontal
                             ? _buildHorizontalView(
@@ -1748,99 +1983,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   ),
                                 ),
 
-                                // Nút Lưu ảnh trang về máy
-                                if (!state.isPdf &&
-                                    !state.isNovel &&
-                                    state.pages.isNotEmpty)
+                                // Nút Lưới trang (Thumbnails)
+                                if (!state.isPdf) ...[
                                   IconButton(
                                     icon: const Icon(
-                                      Icons.download_rounded,
-                                      color: Colors.white,
-                                      size: 22,
-                                    ),
-                                    tooltip: 'Lưu ảnh trang này về Thư viện',
-                                    onPressed: () =>
-                                        _saveCurrentPageImage(state),
-                                    padding: const EdgeInsets.all(6),
-                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                  ),
-                                if (!state.isPdf &&
-                                    !state.isNovel &&
-                                    state.pages.isNotEmpty)
-                                  const SizedBox(width: 4),
-                                // Nút Menu (Ngăn kéo)
-                                if (!state
-                                    .isPdf) // Ẩn Thumbnail grid khi đọc PDF
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.grid_view,
+                                      Icons.grid_view_rounded,
                                       color: Colors.white,
                                       size: 22,
                                     ),
                                     tooltip: 'Danh sách trang',
                                     onPressed: () =>
                                         _showPageThumbnailSheet(state),
-                                    padding: const EdgeInsets.all(6),
-                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                    padding: const EdgeInsets.all(8),
                                   ),
-                                if (!state.isPdf)
-                                  const SizedBox(width: 4),
-                                // Nút Chế độ Ẩn danh (Incognito)
-                                IconButton(
-                                  icon: Icon(
-                                    state.isIncognito
-                                        ? Icons.visibility_off_rounded
-                                        : Icons.visibility_outlined,
-                                    color: state.isIncognito
-                                        ? Colors.purpleAccent
-                                        : Colors.white,
-                                    size: 22,
-                                  ),
-                                  tooltip: state.isIncognito
-                                      ? 'Đang bật Chế độ ẩn danh'
-                                      : 'Bật Chế độ ẩn danh',
-                                  onPressed: () {
-                                    HapticFeedback.mediumImpact();
-                                    notifier.toggleIncognito();
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).hideCurrentSnackBar();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Row(
-                                          children: [
-                                            Icon(
-                                              !state.isIncognito
-                                                  ? Icons.visibility_off_rounded
-                                                  : Icons.visibility_outlined,
-                                              color: Colors.white,
-                                              size: 18,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                !state.isIncognito
-                                                    ? 'Đã bật Chế độ ẩn danh (Không lưu lịch sử & tiến độ)'
-                                                    : 'Đã tắt Chế độ ẩn danh (Tiến trình sẽ được lưu)',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        backgroundColor: !state.isIncognito
-                                            ? Colors.deepPurple
-                                            : Colors.grey[850],
-                                        behavior: SnackBarBehavior.floating,
-                                        duration: const Duration(seconds: 2),
-                                      ),
-                                    );
-                                  },
-                                  padding: const EdgeInsets.all(6),
-                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                ),
-                                const SizedBox(width: 4),
+                                  const SizedBox(width: 2),
+                                ],
+                                // Nút Cài đặt đọc
                                 IconButton(
                                   icon: const Icon(
-                                    Icons.tune,
+                                    Icons.tune_rounded,
                                     color: Colors.white,
                                     size: 22,
                                   ),
@@ -1850,22 +2011,133 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     state,
                                     notifier,
                                   ),
-                                  padding: const EdgeInsets.all(6),
-                                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                  padding: const EdgeInsets.all(8),
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 2),
+                                // Nút Menu Drawer (Danh sách chương)
                                 Builder(
                                   builder: (context) => IconButton(
+                                    tooltip: 'Danh sách chương',
                                     icon: const Icon(
-                                      Icons.menu,
+                                      Icons.menu_rounded,
                                       color: Colors.white,
                                       size: 22,
                                     ),
                                     onPressed: () =>
                                         Scaffold.of(context).openDrawer(),
-                                    padding: const EdgeInsets.all(6),
-                                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                    padding: const EdgeInsets.all(8),
                                   ),
+                                ),
+                                // Nút Tùy chọn khác (Lưu ảnh trang, Chế độ ẩn danh)
+                                PopupMenuButton<String>(
+                                  icon: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      const Icon(
+                                        Icons.more_vert_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                      if (state.isIncognito)
+                                        Positioned(
+                                          top: -2,
+                                          right: -2,
+                                          child: Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: const BoxDecoration(
+                                              color: Colors.purpleAccent,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  tooltip: 'Tùy chọn khác',
+                                  color: Theme.of(context).cardColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  onSelected: (val) {
+                                    if (val == 'download') {
+                                      _saveCurrentPageImage(state);
+                                    } else if (val == 'incognito') {
+                                      HapticFeedback.mediumImpact();
+                                      notifier.toggleIncognito();
+                                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Row(
+                                            children: [
+                                              Icon(
+                                                !state.isIncognito
+                                                    ? Icons.visibility_off_rounded
+                                                    : Icons.visibility_outlined,
+                                                color: Colors.white,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  !state.isIncognito
+                                                      ? 'Đã bật Chế độ ẩn danh (Không lưu lịch sử & tiến độ)'
+                                                      : 'Đã tắt Chế độ ẩn danh (Tiến trình sẽ được lưu)',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          backgroundColor: !state.isIncognito
+                                              ? Colors.deepPurple
+                                              : Colors.grey[850],
+                                          behavior: SnackBarBehavior.floating,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  itemBuilder: (ctx) => [
+                                    if (!state.isPdf && !state.isNovel && state.pages.isNotEmpty)
+                                      const PopupMenuItem(
+                                        value: 'download',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.download_rounded, size: 20),
+                                            SizedBox(width: 12),
+                                            Text('Lưu ảnh trang này'),
+                                          ],
+                                        ),
+                                      ),
+                                    PopupMenuItem(
+                                      value: 'incognito',
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            state.isIncognito
+                                                ? Icons.visibility_off_rounded
+                                                : Icons.visibility_outlined,
+                                            size: 20,
+                                            color: state.isIncognito
+                                                ? Colors.purpleAccent
+                                                : null,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            state.isIncognito
+                                                ? 'Tắt Chế độ ẩn danh'
+                                                : 'Bật Chế độ ẩn danh',
+                                            style: TextStyle(
+                                              color: state.isIncognito
+                                                  ? Colors.purpleAccent
+                                                  : null,
+                                              fontWeight: state.isIncognito
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -2257,6 +2529,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   InkWell(
                     borderRadius: BorderRadius.circular(6),
                     onTap: () {
+                      HapticFeedback.selectionClick();
                       final newDirection =
                           state.direction == ReaderDirection.rtl
                           ? ReaderDirection.ltr
@@ -2322,7 +2595,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               ],
             ),
             Directionality(
-              textDirection: state.direction == ReaderDirection.rtl
+              textDirection: (!state.isVerticalMode &&
+                      state.direction == ReaderDirection.rtl)
                   ? TextDirection.rtl
                   : TextDirection.ltr,
               child: SliderTheme(
@@ -2349,11 +2623,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   inactiveColor: Colors.white24,
                   onChangeStart: hasMultiplePages
                       ? (value) {
-                          if (!state.isPdf &&
-                              !state.isNovel &&
-                              state.pages.isNotEmpty) {
-                            setState(() => _scrubbingPageIndex = value.round());
-                          }
+                          setState(() => _scrubbingPageIndex = value.round());
                         }
                       : null,
                   onChangeEnd: hasMultiplePages
@@ -2388,6 +2658,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   Widget _buildScrubberThumbnailPreview(ReaderState state) {
+    if (state.pages.isEmpty) return const SizedBox.shrink();
     final target = (_scrubbingPageIndex ?? 0).clamp(0, state.pages.length - 1);
     final filePath = state.pages[target];
 
@@ -2459,6 +2730,43 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
+  String _formatCleanErrorMessage(String rawMessage) {
+    if (rawMessage.contains('pdf_renderer') ||
+        rawMessage.contains('cannot create document') ||
+        rawMessage.contains('PdfPageAlreadyClosedException') ||
+        rawMessage.contains('PDF')) {
+      return 'Không thể mở tệp PDF. Tệp có thể bị gián đoạn khi tải về hoặc định dạng bị lỗi. Vui lòng bấm "Thử lại" để tải lại.';
+    }
+    if (rawMessage.contains('SocketException') ||
+        rawMessage.contains('ClientException') ||
+        rawMessage.contains('Failed host lookup') ||
+        rawMessage.contains('Network is unreachable')) {
+      return 'Lỗi kết nối mạng. Vui lòng kiểm tra lại kết nối internet và thử lại.';
+    }
+    if (rawMessage.contains('TimeoutException') ||
+        rawMessage.contains('timed out')) {
+      return 'Hết thời gian chờ kết nối máy chủ. Vui lòng thử lại sau giây lát.';
+    }
+    if (rawMessage.contains('ArchiveException') ||
+        rawMessage.contains('ZipDecoder')) {
+      return 'Tệp nén của chương truyện bị lỗi hoặc tải về chưa đầy đủ. Vui lòng bấm "Thử lại" để tải lại.';
+    }
+    if (rawMessage.contains('PlatformException') ||
+        rawMessage.contains('Exception:') ||
+        rawMessage.contains('Error:')) {
+      final cleaned = rawMessage
+          .replaceFirst(RegExp(r'^(Đã xảy ra lỗi:\s*)?(Exception:\s*)?'), '')
+          .trim();
+      if (cleaned.length > 100 ||
+          cleaned.contains('Stack trace:') ||
+          cleaned.contains('at ')) {
+        return 'Đã xảy ra sự cố khi tải dữ liệu chương truyện. Vui lòng bấm "Thử lại" để tải lại.';
+      }
+      return cleaned;
+    }
+    return rawMessage;
+  }
+
   Widget _buildReaderError(String message, ReaderNotifier notifier) {
     return SafeArea(
       child: Stack(
@@ -2467,6 +2775,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             top: 8,
             left: 8,
             child: IconButton(
+              tooltip: 'Quay lại',
               icon: const Icon(
                 Icons.arrow_back_ios_new_rounded,
                 color: Colors.white,
@@ -2508,7 +2817,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    message,
+                    _formatCleanErrorMessage(message),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white70,
@@ -2516,6 +2825,40 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       height: 1.4,
                     ),
                   ),
+                  if (message.contains('Exception') ||
+                      message.contains('Error') ||
+                      message.length > 60) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _showErrorDetails = !_showErrorDetails),
+                      child: Text(
+                        _showErrorDetails
+                            ? 'Ẩn chi tiết kỹ thuật'
+                            : 'Xem chi tiết kỹ thuật',
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 11),
+                      ),
+                    ),
+                    if (_showErrorDetails)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4, bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          message,
+                          textAlign: TextAlign.left,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 24),
                   Wrap(
                     spacing: 12,
@@ -2572,6 +2915,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bạn cần đăng nhập để báo lỗi.')),
       );
@@ -2644,6 +2988,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     const SizedBox(height: 8),
                     TextField(
                       controller: descController,
+                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                       style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
                       maxLines: 3,
                       decoration: InputDecoration(
@@ -2662,9 +3007,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
+                  child: Text(
                     'Hủy',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                   ),
                 ),
                 ElevatedButton(
@@ -2702,6 +3047,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       );
 
                       if (mounted) {
+                        messenger.hideCurrentSnackBar();
                         messenger.showSnackBar(
                           const SnackBar(
                             content: Text('Cảm ơn bạn đã báo lỗi!'),
@@ -2711,6 +3057,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       }
                     } catch (e) {
                       if (mounted) {
+                        messenger.hideCurrentSnackBar();
                         messenger.showSnackBar(
                           SnackBar(
                             content: Text('Lỗi: $e'),
@@ -2916,53 +3263,55 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           },
                         ),
 
-                        const SizedBox(height: 16),
-                        Text(
-                          'Chế độ hiển thị trang (Ngang/Tablet)',
-                          style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
-                        ),
-                        const SizedBox(height: 8),
-                        SegmentedButton<ReaderDualPageMode>(
-                          showSelectedIcon: false,
-                          style: ButtonStyle(
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                            padding: WidgetStateProperty.all(
-                              const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                            ),
+                        if (!current.isPdf) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Chế độ hiển thị trang (Ngang/Tablet)',
+                            style: TextStyle(color: onSurface.withValues(alpha: 0.7)),
                           ),
-                          segments: const [
-                            ButtonSegment(
-                              value: ReaderDualPageMode.off,
-                              icon: Icon(Icons.portrait, size: 15),
-                              label: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text('Trang đơn', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          SegmentedButton<ReaderDualPageMode>(
+                            showSelectedIcon: false,
+                            style: ButtonStyle(
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                              padding: WidgetStateProperty.all(
+                                const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                               ),
                             ),
-                            ButtonSegment(
-                              value: ReaderDualPageMode.dual,
-                              icon: Icon(Icons.auto_stories, size: 15),
-                              label: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text('Trang đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            segments: const [
+                              ButtonSegment(
+                                value: ReaderDualPageMode.off,
+                                icon: Icon(Icons.portrait, size: 15),
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('Trang đơn', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                ),
                               ),
-                            ),
-                            ButtonSegment(
-                              value: ReaderDualPageMode.dualCover,
-                              icon: Icon(Icons.menu_book, size: 15),
-                              label: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text('Bìa đơn + Đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              ButtonSegment(
+                                value: ReaderDualPageMode.dual,
+                                icon: Icon(Icons.auto_stories, size: 15),
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('Trang đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                ),
                               ),
-                            ),
-                          ],
-                          selected: {current.dualPageMode},
-                          onSelectionChanged: (values) {
-                            HapticFeedback.selectionClick();
-                            notifier.setDualPageMode(values.first);
-                          },
-                        ),
+                              ButtonSegment(
+                                value: ReaderDualPageMode.dualCover,
+                                icon: Icon(Icons.menu_book, size: 15),
+                                label: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text('Bìa đơn + Đôi', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                ),
+                              ),
+                            ],
+                            selected: {current.dualPageMode},
+                            onSelectionChanged: (values) {
+                              HapticFeedback.selectionClick();
+                              notifier.setDualPageMode(values.first);
+                            },
+                          ),
+                        ],
                       ],
                       const SizedBox(height: 16),
                       Text(
@@ -4345,47 +4694,50 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             const SizedBox(width: 8),
             Text(
               'Ghi chú Bookmark (Trang ${state.currentPageIndex + 1})',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Theme.of(dialogCtx).colorScheme.onSurface,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Thêm ghi chú để dễ nhớ lý do bạn đánh dấu trang này:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textController,
-              autofocus: true,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                hintText:
-                    'Ví dụ: Đoạn đánh nhau hay, manh mối cốt truyện, wallpaper đẹp...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.08),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.all(12),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Thêm ghi chú để dễ nhớ lý do bạn đánh dấu trang này:',
+                style: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7), fontSize: 13),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                autofocus: false,
+                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                maxLines: 3,
+                style: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText:
+                      'Ví dụ: Đoạn đánh nhau hay, manh mối cốt truyện, wallpaper đẹp...',
+                  hintStyle: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.38), fontSize: 12),
+                  filled: true,
+                  fillColor: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           if (existingBookmark?.note != null &&
               existingBookmark!.note!.isNotEmpty)
@@ -4468,6 +4820,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final isRtl = state.direction == ReaderDirection.rtl;
 
     return PhotoViewGallery.builder(
+      key: ValueKey(
+        'manga_h_${state.direction}_${state.dualPageMode}_${state.imageFit}_${state.zoomStart}_${state.cropBorders}_${state.rotateLandscapeImages}',
+      ),
       scrollPhysics: const BouncingScrollPhysics(),
       builder: (context, index) {
         if (index == spreads.length) {
@@ -4484,9 +4839,29 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final pageIndices = spreads[index];
         if (pageIndices.length == 1) {
           final pageIdx = pageIndices[0];
+          bool shouldRotate = false;
+          final size = _getImageSize(state.pages[pageIdx]);
+          if (state.rotateLandscapeImages) {
+            if (size != null && size.width > size.height) {
+              shouldRotate = true;
+            }
+          }
+
+          final effectiveRatio = (size != null && size.width > 0 && size.height > 0)
+              ? (shouldRotate ? (size.height / size.width) : (size.width / size.height))
+              : 1.0;
+          final screenSize = MediaQuery.sizeOf(context);
+          final screenRatio = screenSize.height > 0
+              ? screenSize.width / screenSize.height
+              : 1.0;
+          final anchorTop = effectiveRatio < screenRatio &&
+              (state.imageFit == ReaderImageFit.width ||
+               state.imageFit == ReaderImageFit.smart);
+
           final baseScale = _initialPhotoScale(
             state.imageFit,
             filePath: state.pages[pageIdx],
+            isRotated: shouldRotate,
           );
           final effectiveInitialScale =
               (state.cropBorders && baseScale is PhotoViewComputedScale)
@@ -4495,13 +4870,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               ? baseScale * 1.04
               : baseScale;
 
-          bool shouldRotate = false;
-          if (state.rotateLandscapeImages) {
-            final size = _getImageSize(state.pages[pageIdx]);
-            if (size != null && size.width > size.height) {
-              shouldRotate = true;
-            }
-          }
+          final minScale = state.imageFit == ReaderImageFit.original
+              ? 0.2
+              : PhotoViewComputedScale.contained * 0.8;
+          final maxScale = state.imageFit == ReaderImageFit.original
+              ? 5.0
+              : PhotoViewComputedScale.covered * 3;
 
           if (shouldRotate) {
             Widget child = RotatedBox(
@@ -4510,6 +4884,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 File(state.pages[pageIdx]),
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) => const Center(
+                  child: Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                ),
               ),
             );
             if (state.cropBorders) {
@@ -4523,19 +4900,34 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             }
             return PhotoViewGalleryPageOptions.customChild(
               child: child,
-              initialScale: PhotoViewComputedScale.contained,
-              minScale: PhotoViewComputedScale.contained,
-              maxScale: PhotoViewComputedScale.covered * 3,
-              basePosition: _getZoomAlignment(state.zoomStart),
+              initialScale: effectiveInitialScale,
+              minScale: minScale,
+              maxScale: maxScale,
+              basePosition: _getZoomAlignment(
+                state.zoomStart,
+                direction: state.direction,
+                anchorTop: anchorTop,
+              ),
+              onTapUp: (context, details, controllerValue) =>
+                  _handleReaderTap(details, state, notifier),
             );
           }
 
           return PhotoViewGalleryPageOptions(
             imageProvider: FileImage(File(state.pages[pageIdx])),
             initialScale: effectiveInitialScale,
-            minScale: PhotoViewComputedScale.contained,
-            maxScale: PhotoViewComputedScale.covered * 3,
-            basePosition: _getZoomAlignment(state.zoomStart),
+            minScale: minScale,
+            maxScale: maxScale,
+            basePosition: _getZoomAlignment(
+              state.zoomStart,
+              direction: state.direction,
+              anchorTop: anchorTop,
+            ),
+            onTapUp: (context, details, controllerValue) =>
+                _handleReaderTap(details, state, notifier),
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Icon(Icons.broken_image, size: 64, color: Colors.grey),
+            ),
           );
         }
 
@@ -4552,6 +4944,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 File(state.pages[leftIdx]),
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white38,
+                    size: 36,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 2),
@@ -4560,6 +4959,13 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 File(state.pages[rightIdx]),
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const Center(
+                  child: Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white38,
+                    size: 36,
+                  ),
+                ),
               ),
             ),
           ],
@@ -4578,9 +4984,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         return PhotoViewGalleryPageOptions.customChild(
           child: dualRow,
           initialScale: PhotoViewComputedScale.contained,
-          minScale: PhotoViewComputedScale.contained,
+          minScale: PhotoViewComputedScale.contained * 0.8,
           maxScale: PhotoViewComputedScale.covered * 3,
-          basePosition: _getZoomAlignment(state.zoomStart),
+          basePosition: _getZoomAlignment(
+            state.zoomStart,
+            direction: state.direction,
+          ),
+          onTapUp: (context, details, controllerValue) =>
+              _handleReaderTap(details, state, notifier),
         );
       },
       itemCount: spreads.length + 1,
@@ -4698,119 +5109,224 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {
     final itemCount = state.pages.length + 2; // +2 = header + footer
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: EdgeInsets.zero,
-      physics: const BouncingScrollPhysics(),
-      itemCount: itemCount,
-      addAutomaticKeepAlives: false,
-      addRepaintBoundaries: true,
-      itemBuilder: (context, index) {
-        if (index == 0) return _buildChapterTransitionHeader(state, notifier);
-        if (index == itemCount - 1) {
-          return _buildChapterTransitionFooter(state, notifier);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (_isAutoScrolling &&
+            notification is ScrollStartNotification &&
+            notification.dragDetails != null) {
+          _stopAutoScroll();
         }
-        // pageIndex = index - 1 vì index 0 là header
-        final pageIndex = index - 1;
-        final key = _pageKeys.putIfAbsent(pageIndex, () => GlobalKey());
-
-        bool shouldRotate = false;
-        Size? imageSize;
-        if (state.rotateLandscapeImages) {
-          imageSize = _getImageSize(state.pages[pageIndex]);
-          if (imageSize != null && imageSize.width > imageSize.height) {
-            shouldRotate = true;
+        return false;
+      },
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.zero,
+        physics: const BouncingScrollPhysics(),
+        itemCount: itemCount,
+        cacheExtent: 800.0,
+        addAutomaticKeepAlives: false,
+        addRepaintBoundaries: true,
+        itemBuilder: (context, index) {
+          if (index == 0) return _buildChapterTransitionHeader(state, notifier);
+          if (index == itemCount - 1) {
+            return _buildChapterTransitionFooter(state, notifier);
           }
-        }
+          // pageIndex = index - 1 vì index 0 là header
+          final pageIndex = index - 1;
+          final key = _pageKeys.putIfAbsent(pageIndex, () => GlobalKey());
 
-        Widget imageWidget;
-        if (shouldRotate && imageSize != null && imageSize.width > 0) {
-          imageWidget = AspectRatio(
-            aspectRatio: imageSize.height / imageSize.width,
-            child: RotatedBox(
-              quarterTurns: 1,
-              child: Image.file(
-                File(state.pages[pageIndex]),
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.none,
-              ),
-            ),
-          );
-        } else {
-          imageWidget = Image.file(
-            File(state.pages[pageIndex]),
-            fit: _verticalImageFit(state.imageFit),
-            width: double.infinity,
-            alignment: Alignment.topCenter,
-            gaplessPlayback: true, // Khử flash trắng khi rebuild item
-            filterQuality: FilterQuality.none, // Khử anti-aliasing
-            errorBuilder: (_, __, ___) => Container(
-              height: 200,
-              margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.broken_image_rounded,
-                      size: 36,
-                      color: Colors.white38,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Không thể tải trang ${pageIndex + 1}',
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 13,
+          bool shouldRotate = false;
+          Size? imageSize;
+          if (state.rotateLandscapeImages) {
+            imageSize = _getImageSize(state.pages[pageIndex]);
+            if (imageSize != null && imageSize.width > imageSize.height) {
+              shouldRotate = true;
+            }
+          }
+
+          Widget imageWidget;
+          if (shouldRotate && imageSize != null && imageSize.width > 0) {
+            final isHeightConstrained =
+                state.imageFit == ReaderImageFit.height ||
+                state.imageFit == ReaderImageFit.screen;
+            final screenHeight = MediaQuery.sizeOf(context).height;
+
+            Widget rotatedWidget = AspectRatio(
+              aspectRatio: imageSize.height / imageSize.width,
+              child: RotatedBox(
+                quarterTurns: 1, // Xoay 90 độ
+                child: Image.file(
+                  File(state.pages[pageIndex]),
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.none,
+                  errorBuilder:
+                      (_, __, ___) => Container(
+                        height: 200,
+                        margin: const EdgeInsets.symmetric(
+                          vertical: 4,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.broken_image_rounded,
+                                size: 36,
+                                color: Colors.white38,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Không thể tải trang ${pageIndex + 1}',
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-          );
-        }
+            );
 
-        if (state.cropBorders) {
-          // Chỉ scale nhẹ theo chiều ngang (X: 1.03) để khử lề quét scan 2 bên,
-          // TUYỆT ĐỐI GIỮ NGUYÊN 100% CHIỀU DỌC (Y: 1.0) để không làm đứt gãy mối nối các trang Webtoon!
-          imageWidget = ClipRect(
-            child: Transform(
-              transform: Matrix4.diagonal3Values(1.03, 1.0, 1.0),
-              alignment: Alignment.center,
-              child: imageWidget,
-            ),
-          );
-        }
-
-        if (state.isGapMode) {
-          imageWidget = Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: imageWidget,
-          );
-        }
-
-        return RepaintBoundary(
-          child: Container(
-            key: key,
-            child: state.isGapMode
-                ? imageWidget
-                : Transform.translate(
-                    offset: const Offset(
-                      0,
-                      -0.5,
-                    ), // Khử hở viền 1px cho continuous scroll
-                    child: imageWidget,
+            if (isHeightConstrained) {
+              rotatedWidget = ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: screenHeight),
+                child: Align(
+                  alignment: _getZoomAlignment(
+                    state.zoomStart,
+                    direction: state.direction,
                   ),
-          ),
-        );
-      },
+                  child: rotatedWidget,
+                ),
+              );
+            }
+            imageWidget = rotatedWidget;
+          } else {
+            final isHeightConstrained =
+                state.imageFit == ReaderImageFit.height ||
+                state.imageFit == ReaderImageFit.screen;
+            final isOriginal = state.imageFit == ReaderImageFit.original;
+            final screenHeight = MediaQuery.sizeOf(context).height;
+
+            Widget pageContent = Image.file(
+              File(state.pages[pageIndex]),
+              fit: _verticalImageFit(state.imageFit),
+              width:
+                  (isHeightConstrained || isOriginal) ? null : double.infinity,
+              height: isHeightConstrained ? screenHeight : null,
+              alignment:
+                  (isHeightConstrained || isOriginal)
+                      ? _getZoomAlignment(
+                          state.zoomStart,
+                          direction: state.direction,
+                        )
+                      : Alignment.topCenter,
+              gaplessPlayback: true, // Khử flash trắng khi rebuild item
+              filterQuality: FilterQuality.none, // Khử anti-aliasing
+              errorBuilder:
+                  (_, __, ___) => Container(
+                    height: 200,
+                    margin: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.broken_image_rounded,
+                            size: 36,
+                            color: Colors.white38,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Không thể tải trang ${pageIndex + 1}',
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+            );
+
+            if (isHeightConstrained) {
+              pageContent = ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: screenHeight),
+                child: Align(
+                  alignment: _getZoomAlignment(
+                    state.zoomStart,
+                    direction: state.direction,
+                  ),
+                  child: pageContent,
+                ),
+              );
+            } else if (isOriginal) {
+              pageContent = Align(
+                alignment: _getZoomAlignment(
+                  state.zoomStart,
+                  direction: state.direction,
+                ),
+                child: pageContent,
+              );
+            }
+
+            imageWidget = pageContent;
+          }
+
+          if (state.cropBorders) {
+            // Chỉ scale nhẹ theo chiều ngang (X: 1.03) để khử lề quét scan 2 bên,
+            // TUYỆT ĐỐI GIỮ NGUYÊN 100% CHIỀU DỌC (Y: 1.0) để không làm đứt gãy mối nối các trang Webtoon!
+            imageWidget = ClipRect(
+              child: Transform(
+                transform: Matrix4.diagonal3Values(1.03, 1.0, 1.0),
+                alignment: Alignment.center,
+                child: imageWidget,
+              ),
+            );
+          }
+
+          if (state.isGapMode) {
+            imageWidget = Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: imageWidget,
+            );
+          }
+
+          return RepaintBoundary(
+            child: Container(
+              key: key,
+              child:
+                  state.isGapMode
+                      ? imageWidget
+                      : Transform.translate(
+                        offset: const Offset(
+                          0,
+                          -0.5,
+                        ), // Khử hở viền 1px cho continuous scroll
+                        child: imageWidget,
+                      ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -5321,8 +5837,8 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
             Expanded(
               child: Text(
                 'Ghi chú (Trang ${bookmark.pageIndex + 1})',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: Theme.of(dialogCtx).colorScheme.onSurface,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -5331,38 +5847,41 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _getChapterTitle(bookmark.chapterId),
-              style: const TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textController,
-              autofocus: true,
-              maxLines: 3,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Nhập ghi chú cá nhân...',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.08),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.all(12),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _getChapterTitle(bookmark.chapterId),
+                style: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 12),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                autofocus: false,
+                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                maxLines: 3,
+                style: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Nhập ghi chú cá nhân...',
+                  hintStyle: TextStyle(color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.38), fontSize: 12),
+                  filled: true,
+                  fillColor: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           if (bookmark.note != null && bookmark.note!.isNotEmpty)
             TextButton(
@@ -5598,6 +6117,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                             Expanded(
                               child: TextField(
                                 controller: _chapterSearchController,
+                                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                                 style: TextStyle(
                                   color: onSurface,
                                   fontSize: 13,
@@ -5616,6 +6136,7 @@ class _ReaderDrawerContentState extends ConsumerState<_ReaderDrawerContent>
                                   ),
                                   suffixIcon: _chapterSearchQuery.isNotEmpty
                                       ? IconButton(
+                                          tooltip: 'Xóa tìm kiếm',
                                           icon: Icon(
                                             Icons.clear,
                                             color: onSurface.withValues(alpha: 0.54),
@@ -6370,6 +6891,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                     return Row(
                       children: [
                         IconButton(
+                          tooltip: 'Đóng',
                           icon: Icon(Icons.close, color: onSurface),
                           onPressed: () => Navigator.pop(context),
                         ),
@@ -6423,6 +6945,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                         ),
                         // Biểu tượng theo dõi (Trái tim)
                         IconButton(
+                          tooltip: state.isFollowed ? 'Bỏ theo dõi' : 'Theo dõi truyện',
                           icon: Icon(
                             state.isFollowed
                                 ? Icons.favorite
@@ -6435,6 +6958,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                               final isNowFollowed = await notifier
                                   .toggleFollow();
                               if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -6442,6 +6966,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                         ? 'Đã theo dõi thành công!'
                                         : 'Đã hủy theo dõi',
                                   ),
+                                  behavior: SnackBarBehavior.floating,
                                   backgroundColor: isNowFollowed
                                       ? Colors.green
                                       : null,
@@ -6449,6 +6974,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                               );
                             } catch (e) {
                               if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -6457,6 +6983,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                                       '',
                                     ),
                                   ),
+                                  behavior: SnackBarBehavior.floating,
                                   backgroundColor: Colors.redAccent,
                                 ),
                               );
@@ -6486,6 +7013,7 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                   controller: _searchController,
                   style: TextStyle(color: onSurface, fontSize: 13),
                   textInputAction: TextInputAction.search,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   decoration: InputDecoration(
                     hintText: 'Tìm nhanh số chương (vd: 12, Chapter 50)...',
                     hintStyle: TextStyle(
@@ -6497,19 +7025,27 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                       color: onSurface.withValues(alpha: 0.54),
                       size: 18,
                     ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(
-                              Icons.clear,
-                              color: onSurface.withValues(alpha: 0.54),
-                              size: 16,
-                            ),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
+                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _searchController,
+                      builder: (context, value, _) {
+                        if (value.text.isEmpty) return const SizedBox.shrink();
+                        return IconButton(
+                          tooltip: 'Xóa tìm kiếm',
+                          icon: Icon(
+                            Icons.clear,
+                            color: onSurface.withValues(alpha: 0.54),
+                            size: 16,
+                          ),
+                          onPressed: () {
+                            if (_searchDebounce?.isActive ?? false) {
+                              _searchDebounce!.cancel();
+                            }
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        );
+                      },
+                    ),
                     filled: true,
                     fillColor: onSurface.withValues(alpha: 0.08),
                     contentPadding: const EdgeInsets.symmetric(
@@ -6524,6 +7060,12 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                   onChanged: (val) {
                     if (_searchDebounce?.isActive ?? false) {
                       _searchDebounce!.cancel();
+                    }
+                    if (val.trim().isEmpty) {
+                      if (_searchQuery.isNotEmpty) {
+                        setState(() => _searchQuery = '');
+                      }
+                      return;
                     }
                     _searchDebounce = Timer(
                       const Duration(milliseconds: 150),
@@ -6558,108 +7100,110 @@ class _ChapterListModalContentState extends State<_ChapterListModalContent> {
                           final date =
                               "${chapter.uploadedAt.day}/${chapter.uploadedAt.month}/${chapter.uploadedAt.year}";
 
-                          return InkWell(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              Navigator.pop(context); // Đóng cửa sổ
-                              if (!isSelected) {
-                                final mangaQuery =
-                                    widget.mangaId == null ||
-                                        widget.mangaId!.isEmpty
-                                    ? ''
-                                    : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
-                                context.pushReplacement(
-                                  '/reader/${chapter.id}$mangaQuery',
-                                );
-                              }
-                            },
-                            child: Container(
-                              color: isSelected
-                                  ? onSurface.withValues(alpha: 0.08)
-                                  : null,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              child: Row(
-                                children: [
-                                  if (!isRead && !isSelected) ...[
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      margin: const EdgeInsets.only(right: 8),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      chapter.title,
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? primary
-                                            : isRead
-                                            ? onSurface.withValues(alpha: 0.38)
-                                            : onSurface,
-                                        fontWeight: isSelected || !isRead
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isSelected)
-                                    Container(
-                                      margin: const EdgeInsets.only(left: 8),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: primary.withValues(
-                                          alpha: 0.2,
+                          return Material(
+                            color: isSelected
+                                ? onSurface.withValues(alpha: 0.08)
+                                : Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                Navigator.pop(context); // Đóng cửa sổ
+                                if (!isSelected) {
+                                  final mangaQuery =
+                                      widget.mangaId == null ||
+                                          widget.mangaId!.isEmpty
+                                      ? ''
+                                      : '?mangaId=${Uri.encodeComponent(widget.mangaId!)}';
+                                  context.pushReplacement(
+                                    '/reader/${chapter.id}$mangaQuery',
+                                  );
+                                }
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    if (!isRead && !isSelected) ...[
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        margin: const EdgeInsets.only(right: 8),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                          shape: BoxShape.circle,
                                         ),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
+                                      ),
+                                    ],
+                                    Expanded(
+                                      child: Text(
+                                        chapter.title,
+                                        style: TextStyle(
+                                          color: isSelected
+                                              ? primary
+                                              : isRead
+                                              ? onSurface.withValues(alpha: 0.38)
+                                              : onSurface,
+                                          fontWeight: isSelected || !isRead
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
                                           color: primary.withValues(
-                                            alpha: 0.6,
+                                            alpha: 0.2,
                                           ),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.play_arrow_rounded,
-                                            size: 13,
-                                            color: primary,
-                                          ),
-                                          const SizedBox(width: 2),
-                                          Text(
-                                            'Đang đọc',
-                                            style: TextStyle(
-                                              color: primary,
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.bold,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: primary.withValues(
+                                              alpha: 0.6,
                                             ),
                                           ),
-                                        ],
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.play_arrow_rounded,
+                                              size: 13,
+                                              color: primary,
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              'Đang đọc',
+                                              style: TextStyle(
+                                                color: primary,
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    else
+                                      Text(
+                                        date,
+                                        style: TextStyle(
+                                          color: isRead
+                                              ? onSurface.withValues(alpha: 0.24)
+                                              : onSurface.withValues(alpha: 0.6),
+                                          fontSize: 12,
+                                        ),
                                       ),
-                                    )
-                                  else
-                                    Text(
-                                      date,
-                                      style: TextStyle(
-                                        color: isRead
-                                            ? onSurface.withValues(alpha: 0.24)
-                                            : onSurface.withValues(alpha: 0.6),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -6728,11 +7272,10 @@ class _EyeCarePresetBtn extends StatelessWidget {
     final onSurface = theme.colorScheme.onSurface;
     final divider = theme.dividerColor;
 
-    return InkWell(
-      onTap: onTap,
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Ink(
         decoration: BoxDecoration(
           color: isSelected
               ? activeColor.withValues(alpha: 0.2)
@@ -6743,26 +7286,36 @@ class _EyeCarePresetBtn extends StatelessWidget {
             width: isSelected ? 1.5 : 1,
           ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
+                  color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
+                    fontSize: 10.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? activeColor : onSurface.withValues(alpha: 0.7),
-                fontSize: 10.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+          ),
         ),
       ),
     );

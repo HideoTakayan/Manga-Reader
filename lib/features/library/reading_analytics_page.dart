@@ -189,7 +189,7 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
         : 0.0;
 
     final streak = _calculateStreak(activeDateKeys);
-    unawaited(AchievementService.instance.recordStreak(streak));
+    await AchievementService.instance.recordStreak(streak);
 
     if (!mounted) return;
     setState(() {
@@ -339,15 +339,15 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       var cursor = today;
       while (dateKeys.contains(ReadingActivity.dateKeyFor(cursor))) {
         streak++;
-        cursor = cursor.subtract(const Duration(days: 1));
+        cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
       }
     } else {
       // Nếu hôm nay chưa đọc, thử kiểm tra từ hôm qua để giữ streak hiển thị
-      var cursor = today.subtract(const Duration(days: 1));
+      var cursor = DateTime(today.year, today.month, today.day - 1);
       if (dateKeys.contains(ReadingActivity.dateKeyFor(cursor))) {
         while (dateKeys.contains(ReadingActivity.dateKeyFor(cursor))) {
           streak++;
-          cursor = cursor.subtract(const Duration(days: 1));
+          cursor = DateTime(cursor.year, cursor.month, cursor.day - 1);
         }
       }
     }
@@ -378,8 +378,9 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Thống kê đọc'),
-        centerTitle: true,
+        centerTitle: false,
         leading: IconButton(
+          tooltip: 'Quay lại',
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
@@ -475,7 +476,12 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
               onRefresh: _loadData,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  28 + MediaQuery.paddingOf(context).bottom,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -622,11 +628,10 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
       subtitle = 'Khám phá thẻ vinh danh và gu đọc truyện của bạn!';
     }
 
-    return InkWell(
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
-      onTap: _openMangaWrapped,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Ink(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -658,7 +663,15 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
             ),
           ],
         ),
-        child: Row(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            _openMangaWrapped();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
@@ -730,6 +743,8 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
           ],
         ),
       ),
+      ),
+      ),
     );
   }
 
@@ -738,11 +753,10 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
     final total = AchievementService.instance.getTotalCount();
     final percent = total > 0 ? (unlocked / total) : 0.0;
 
-    return InkWell(
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(18),
-      onTap: () => AchievementService.showAchievementShowcase(context),
-      child: Container(
-        padding: const EdgeInsets.all(14),
+      child: Ink(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
@@ -757,58 +771,68 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
             width: 1.2,
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.military_tech_rounded, color: Colors.amberAccent, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            AchievementService.showAchievementShowcase(context);
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.military_tech_rounded, color: Colors.amberAccent, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Huy Hiệu Thành Tựu',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Huy Hiệu Thành Tựu',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            '$unlocked/$total Đã mở',
+                            style: const TextStyle(
+                              color: Colors.amberAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '$unlocked/$total Đã mở',
-                        style: const TextStyle(
-                          color: Colors.amberAccent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: percent,
+                          minHeight: 5,
+                          backgroundColor: Colors.white10,
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: percent,
-                      minHeight: 5,
-                      backgroundColor: Colors.white10,
-                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 20),
+              ],
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 20),
-          ],
+          ),
         ),
       ),
     );
@@ -1047,12 +1071,14 @@ class _ReadingAnalyticsPageState extends State<ReadingAnalyticsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng', style: TextStyle(color: Colors.grey)),
+            child: Text('Đóng'),
           ),
           ElevatedButton.icon(
             onPressed: () {
+              HapticFeedback.lightImpact();
               Clipboard.setData(ClipboardData(text: summaryText));
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Đã sao chép tóm tắt thống kê vào bộ nhớ tạm!'),

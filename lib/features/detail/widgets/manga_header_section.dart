@@ -64,7 +64,12 @@ class MangaHeaderSection extends StatelessWidget {
 
         // Nội dung chính
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 80, 16, 20),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + 60,
+            16,
+            20,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -425,24 +430,28 @@ class _RatingWidgetState extends State<_RatingWidget> {
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(5, (index) {
                       final starValue = index + 1;
-                      return GestureDetector(
+                      return InkWell(
                         onTap: () => _rate(starValue),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(
-                            starValue <=
-                                    (_userRating > 0
-                                        ? _userRating
-                                        : average.round())
-                                ? Icons.star_rounded
-                                : Icons.star_border_rounded,
-                            key: ValueKey(
-                              'star_${starValue}_${_userRating}_${average.round()}',
+                        customBorder: const CircleBorder(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(3),
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              starValue <=
+                                      (_userRating > 0
+                                          ? _userRating
+                                          : average.round())
+                                  ? Icons.star_rounded
+                                  : Icons.star_border_rounded,
+                              key: ValueKey(
+                                'star_${starValue}_${_userRating}_${average.round()}',
+                              ),
+                              size: 18,
+                              color: _userRating > 0 && starValue <= _userRating
+                                  ? Colors.orangeAccent
+                                  : Colors.amber,
                             ),
-                            size: 18,
-                            color: _userRating > 0 && starValue <= _userRating
-                                ? Colors.orangeAccent
-                                : Colors.amber,
                           ),
                         ),
                       );
@@ -594,6 +603,7 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                         ? Icon(Icons.check, color: color)
                         : null,
                     onTap: () async {
+                      HapticFeedback.selectionClick();
                       Navigator.pop(ctx);
                       await LibraryStatusService.instance.setStatus(
                         widget.mangaId,
@@ -614,6 +624,7 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                       style: TextStyle(color: Colors.redAccent),
                     ),
                     onTap: () async {
+                      HapticFeedback.mediumImpact();
                       Navigator.pop(ctx);
                       await LibraryStatusService.instance.removeEntry(
                         widget.mangaId,
@@ -643,11 +654,9 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         // Reading status chip
-        InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _showStatusDialog,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        Material(
+          color: Colors.transparent,
+          child: Ink(
             decoration: BoxDecoration(
               color: (status != null ? color : Theme.of(context).colorScheme.onSurface).withValues(
                 alpha: 0.12,
@@ -659,22 +668,32 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                 ),
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 14, color: color),
-                const SizedBox(width: 5),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _showStatusDialog();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 14, color: color),
+                    const SizedBox(width: 5),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(Icons.arrow_drop_down, size: 16, color: color),
+                  ],
                 ),
-                const SizedBox(width: 2),
-                Icon(Icons.arrow_drop_down, size: 16, color: color),
-              ],
+              ),
             ),
           ),
         ),
@@ -696,41 +715,46 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
         ),
 
         // Add Tag button
-        InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () async {
-            final updated = await CustomTagManagerDialog.show(
-              context,
-              mangaId: widget.mangaId,
-              currentTags: tags,
-            );
-            if (updated != null) _loadStatus();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        Material(
+          color: Colors.transparent,
+          child: Ink(
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.bookmark_add_outlined,
-                  size: 13,
-                  color: Theme.of(context).colorScheme.primary,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () async {
+                final updated = await CustomTagManagerDialog.show(
+                  context,
+                  mangaId: widget.mangaId,
+                  currentTags: tags,
+                );
+                if (updated != null) _loadStatus();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.bookmark_add_outlined,
+                      size: 13,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '+ Nhãn',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  '+ Nhãn',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

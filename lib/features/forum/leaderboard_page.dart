@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../services/level_service.dart';
 import '../../../widgets/level_badge.dart';
 import '../../../widgets/vip_leaderboard_flair.dart';
@@ -28,6 +29,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
 
   void _switchCategory(int index) {
     if (_selectedCategory == index) return;
+    HapticFeedback.selectionClick();
     setState(() {
       _selectedCategory = index;
       _stream = index == 0
@@ -46,10 +48,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
       body: StreamBuilder<List<LeaderboardUser>>(
         stream: stream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
+          final isWaiting = snapshot.connectionState == ConnectionState.waiting;
           final users = snapshot.data ?? [];
           final top1 = users.isNotEmpty ? users[0] : null;
           final top2 = users.length > 1 ? users[1] : null;
@@ -69,8 +68,19 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
 
           return Stack(
             children: [
-              CustomScrollView(
-                slivers: [
+              RefreshIndicator(
+                onRefresh: () async {
+                  HapticFeedback.lightImpact();
+                  setState(() {
+                    _stream = _selectedCategory == 0
+                        ? LeaderboardService.instance.streamTopExpUsers()
+                        : LeaderboardService.instance.streamTopChaptersUsers();
+                  });
+                  await Future.delayed(const Duration(milliseconds: 500));
+                },
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
                   // Category Selector Header
                   SliverToBoxAdapter(
                     child: Padding(
@@ -98,15 +108,20 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                   ),
 
                   // Top 3 Podium
-                  if (users.isNotEmpty)
+                  if (isWaiting)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (users.isNotEmpty)
                     SliverToBoxAdapter(
                       child: _buildPodium(top1: top1, top2: top2, top3: top3),
                     ),
 
                   // Danh sách hạng 4 trở đi
-                  if (restUsers.isNotEmpty)
+                  if (!isWaiting && restUsers.isNotEmpty)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
+                      padding: EdgeInsets.fromLTRB(16, 8, 16, 90 + MediaQuery.paddingOf(context).bottom),
                       sliver: SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
@@ -118,7 +133,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                         ),
                       ),
                     )
-                  else if (users.isEmpty)
+                  else if (!isWaiting && users.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
@@ -168,13 +183,14 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                       ),
                     )
                   else
-                    const SliverToBoxAdapter(child: SizedBox(height: 90)),
+                    SliverToBoxAdapter(child: SizedBox(height: 90 + MediaQuery.paddingOf(context).bottom)),
                 ],
+              ),
               ),
 
               // Bottom Sticky "My Rank" Bar
               Positioned(
-                bottom: 12,
+                bottom: 12 + MediaQuery.paddingOf(context).bottom,
                 left: 16,
                 right: 16,
                 child: _buildMyRankBar(myEntry),
@@ -192,11 +208,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     required IconData icon,
   }) {
     final isSelected = _selectedCategory == index;
-    return GestureDetector(
-      onTap: () => _switchCategory(index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: Ink(
         decoration: BoxDecoration(
           color: isSelected
               ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
@@ -205,35 +220,42 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           border: Border.all(
             color: isSelected
                 ? Theme.of(context).colorScheme.primary
-                : Colors.white10,
+                : Theme.of(context).dividerColor.withValues(alpha: 0.15),
             width: 1.4,
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.grey,
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12.5,
+        child: InkWell(
+          onTap: () => _switchCategory(index),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 18,
                   color: isSelected
                       ? Theme.of(context).colorScheme.primary
-                      : Colors.grey,
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
-                overflow: TextOverflow.ellipsis,
-              ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -376,7 +398,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: isChampion ? 13 : 11.5,
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -457,7 +479,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     } else {
       rankBorderColor = isMe
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
-          : Colors.white.withValues(alpha: 0.05);
+          : Theme.of(context).dividerColor.withValues(alpha: 0.15);
       rankBgColor = isMe
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
           : Theme.of(context).cardColor;
@@ -524,7 +546,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                           fontSize: 13.5,
                           color: isMe
                               ? Theme.of(context).colorScheme.primary
-                              : Colors.white,
+                              : Theme.of(context).colorScheme.onSurface,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),

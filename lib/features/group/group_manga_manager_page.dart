@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../data/models_cloud.dart';
@@ -157,6 +158,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                   ),
                   child: TextField(
                     controller: _searchController,
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                     textInputAction: TextInputAction.search,
                     onChanged: (_) {
@@ -174,6 +176,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                       prefixIcon: Icon(Icons.search_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
+                              tooltip: 'Xóa tìm kiếm',
                               icon: Icon(
                                 Icons.clear_rounded,
                                 size: 18,
@@ -258,16 +261,10 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
   Widget _buildFilterChip(String label, MangaContentType? type) {
     final theme = Theme.of(context);
     final isSelected = _selectedTypeFilter == type;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedTypeFilter = type;
-          _applyFilters();
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: Ink(
         decoration: BoxDecoration(
           color: isSelected ? theme.colorScheme.primary : theme.scaffoldBackgroundColor,
           borderRadius: BorderRadius.circular(20),
@@ -275,12 +272,24 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
             color: isSelected ? theme.colorScheme.primary : theme.dividerColor.withValues(alpha: 0.2),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedTypeFilter = type;
+              _applyFilters();
+            });
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
           ),
         ),
       ),
@@ -330,7 +339,7 @@ class _GroupMangaManagerPageState extends State<GroupMangaManagerPage> {
                 title: Text('Ngắt kết nối Drive?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
                 content: Text('Bạn đang kết nối với email: ${_driveAccount!.email}', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Hủy')),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
@@ -690,7 +699,7 @@ class _GroupMangaCard extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -708,11 +717,13 @@ class _GroupMangaCard extends StatelessWidget {
                   child: CircularProgressIndicator(color: Colors.redAccent),
                 ),
               );
+              HapticFeedback.mediumImpact();
               try {
                 await DriveService.instance.deleteManga(manga.id);
                 if (context.mounted) {
                   Navigator.of(context, rootNavigator: true).pop();
                   onRefresh();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Đã xóa truyện thành công')),
                   );
@@ -720,13 +731,14 @@ class _GroupMangaCard extends StatelessWidget {
               } catch (e) {
                 if (context.mounted) {
                   Navigator.of(context, rootNavigator: true).pop();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Lỗi khi xóa truyện: $e')),
                   );
                 }
               }
             },
-            child: const Text('Xóa vĩnh viễn', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text('Xóa vĩnh viễn', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -764,6 +776,7 @@ class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
     if (email.isEmpty || _isSubmitting) return;
 
     setState(() => _isSubmitting = true);
+    HapticFeedback.mediumImpact();
     final user = FirebaseAuth.instance.currentUser;
     final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
@@ -778,6 +791,7 @@ class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(
           content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin thêm email của bạn vào danh sách cho phép.'),
@@ -785,6 +799,7 @@ class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
         ),
       );
     } catch (e) {
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(content: Text('Lỗi gửi yêu cầu: $e')));
     }
   }
@@ -813,6 +828,7 @@ class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
             const SizedBox(height: 14),
             TextField(
               controller: _emailController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submit(),
@@ -835,7 +851,7 @@ class _DriveAccessRequestDialogState extends State<_DriveAccessRequestDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('Hủy')),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: theme.colorScheme.primary,

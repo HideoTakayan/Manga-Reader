@@ -319,55 +319,59 @@ class _AddCategoryDialogState extends State<_AddCategoryDialog> {
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            onChanged: (_) {
-              if (_errorText != null) {
-                setState(() => _errorText = null);
-              }
-            },
-            onSubmitted: (_) => _submit(),
-            style: TextStyle(color: cs.onSurface),
-            decoration: InputDecoration(
-              hintText: 'Nhập tên danh mục...',
-              hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.4)),
-              errorText: _errorText,
-              filled: true,
-              fillColor: cs.onSurface.withValues(alpha: 0.05),
-              prefixIcon: Icon(
-                Icons.label_outline_rounded,
-                color: cs.onSurface.withValues(alpha: 0.5),
-              ),
-              suffixIcon: _controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () {
-                        _controller.clear();
-                        setState(() => _errorText = null);
-                      },
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.primary, width: 1.5),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: false,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onChanged: (_) {
+                if (_errorText != null) {
+                  setState(() => _errorText = null);
+                }
+              },
+              onSubmitted: (_) => _submit(),
+              style: TextStyle(color: cs.onSurface),
+              decoration: InputDecoration(
+                hintText: 'Nhập tên danh mục...',
+                hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.4)),
+                errorText: _errorText,
+                filled: true,
+                fillColor: cs.onSurface.withValues(alpha: 0.05),
+                prefixIcon: Icon(
+                  Icons.label_outline_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.5),
+                ),
+                suffixIcon: _controller.text.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Xóa',
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          _controller.clear();
+                          setState(() => _errorText = null);
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: cs.primary, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
@@ -642,21 +646,20 @@ class _CategoryCard extends StatelessWidget {
           FilledButton(
             onPressed: () async {
               HapticFeedback.mediumImpact();
-              await LibraryService.instance.removeCategory(name);
+              final messenger = ScaffoldMessenger.of(context);
               if (dialogCtx.mounted) Navigator.pop(dialogCtx);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    content: Text('Đã xóa danh mục "$name"'),
-                    backgroundColor: cs.error,
+              await LibraryService.instance.removeCategory(name);
+              messenger.hideCurrentSnackBar();
+              messenger.showSnackBar(
+                SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              }
+                  content: Text('Đã xóa danh mục "$name"'),
+                  backgroundColor: cs.error,
+                ),
+              );
             },
             style: FilledButton.styleFrom(
               backgroundColor: cs.error,
@@ -776,57 +779,61 @@ class _EditCategoryDialogState extends State<_EditCategoryDialog> {
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            onChanged: (_) {
-              if (_errorText != null) {
-                setState(() => _errorText = null);
-              }
-            },
-            onSubmitted: (_) => _submit(),
-            style: TextStyle(color: cs.onSurface),
-            decoration: InputDecoration(
-              hintText: 'Nhập tên mới...',
-              hintStyle: TextStyle(
-                color: cs.onSurface.withValues(alpha: 0.4),
-              ),
-              errorText: _errorText,
-              filled: true,
-              fillColor: cs.onSurface.withValues(alpha: 0.05),
-              prefixIcon: Icon(
-                Icons.label_outline_rounded,
-                color: cs.onSurface.withValues(alpha: 0.5),
-              ),
-              suffixIcon: _controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () {
-                        _controller.clear();
-                        setState(() => _errorText = null);
-                      },
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: cs.primary, width: 1.5),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: false,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.done,
+              onChanged: (_) {
+                if (_errorText != null) {
+                  setState(() => _errorText = null);
+                }
+              },
+              onSubmitted: (_) => _submit(),
+              style: TextStyle(color: cs.onSurface),
+              decoration: InputDecoration(
+                hintText: 'Nhập tên mới...',
+                hintStyle: TextStyle(
+                  color: cs.onSurface.withValues(alpha: 0.4),
+                ),
+                errorText: _errorText,
+                filled: true,
+                fillColor: cs.onSurface.withValues(alpha: 0.05),
+                prefixIcon: Icon(
+                  Icons.label_outline_rounded,
+                  color: cs.onSurface.withValues(alpha: 0.5),
+                ),
+                suffixIcon: _controller.text.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Xóa',
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          _controller.clear();
+                          setState(() => _errorText = null);
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: cs.primary, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [

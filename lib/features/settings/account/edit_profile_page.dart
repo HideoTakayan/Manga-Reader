@@ -22,6 +22,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
   File? _imageFile; // File ảnh mới chọn từ gallery (chưa encode)
   String? _avatarUrl;
   bool _isLoading = false;
+  String _initialName = '';
+  String _initialBio = '';
 
   @override
   void initState() {
@@ -49,12 +51,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
           data['displayName'] ?? data['name'] ?? user.displayName ?? '';
       _bioController.text = data['bio'] ?? '';
       _avatarUrl = data['avatarUrl'] ?? user.photoURL;
+      _initialName = _nameController.text;
+      _initialBio = _bioController.text;
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Lỗi tải hồ sơ: $e')));
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải hồ sơ: $e')));
       }
     }
   }
@@ -78,6 +81,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     final displayName = _nameController.text.trim();
     if (displayName.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tên hiển thị không được để trống')),
       );
@@ -122,15 +126,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }, SetOptions(merge: true));
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cập nhật thông tin thành công!')),
       );
       Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
       }
     } finally {
       if (mounted) {
@@ -146,6 +150,40 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.dispose();
   }
 
+  bool get _hasUnsavedChanges {
+    return _imageFile != null ||
+        _nameController.text.trim() != _initialName.trim() ||
+        _bioController.text.trim() != _initialBio.trim();
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (_isLoading) return false;
+    if (!_hasUnsavedChanges) return true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hủy thay đổi?'),
+        content: const Text(
+          'Các thông tin bạn vừa chỉnh sửa chưa được lưu.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Ở lại'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hủy thay đổi'),
+          ),
+        ],
+      ),
+    );
+    return discard ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     ImageProvider? avatarImage;
@@ -155,12 +193,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
       avatarImage = NetworkImage(_avatarUrl!);
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chỉnh sửa thông tin', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-      ),
+    return PopScope(
+      canPop: !_isLoading && !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _confirmDiscard();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Chỉnh sửa thông tin', style: TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          elevation: 0,
+        ),
       // Spinner toàn màn hình khi đang lưu — tránh double tap
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -189,7 +236,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 backgroundImage: avatarImage,
                                 backgroundColor: Theme.of(context).cardColor,
                                 child: avatarImage == null
-                                    ? const Icon(Icons.person, size: 55, color: Colors.grey)
+                                    ? Icon(Icons.person, size: 55, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4))
                                     : null,
                               ),
                               Container(
@@ -212,6 +259,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     const SizedBox(height: 32),
                     TextField(
                       controller: _nameController,
+                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       decoration: InputDecoration(
@@ -222,12 +270,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon: const Icon(Icons.person_outline, color: Colors.grey),
+                        prefixIcon: Icon(Icons.person_outline, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
                       ),
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _bioController,
+                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                       textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
                         labelText: 'Giới thiệu bản thân',
@@ -273,6 +322,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ),
               ),
             ),
+      ),
     );
   }
 }

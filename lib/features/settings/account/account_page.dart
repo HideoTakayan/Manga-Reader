@@ -260,7 +260,12 @@ class AccountPage extends StatelessWidget {
 
                 // Content section
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    24 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -287,7 +292,7 @@ class AccountPage extends StatelessWidget {
                               ),
                               title: const Text('Chỉnh sửa hồ sơ', style: TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: const Text('Cập nhật tên, giới thiệu và ảnh', style: TextStyle(fontSize: 12)),
-                              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                              trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
                               onTap: () => context.go('/settings/account/edit'),
                             ),
                             Divider(color: Theme.of(context).dividerColor, height: 1),
@@ -303,7 +308,7 @@ class AccountPage extends StatelessWidget {
                               ),
                               title: const Text('Đổi mật khẩu', style: TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: const Text('Bảo vệ tài khoản của bạn', style: TextStyle(fontSize: 12)),
-                              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                              trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
                               onTap: () => _showChangePasswordDialog(context),
                             ),
                           ],
@@ -365,6 +370,7 @@ class AccountPage extends StatelessWidget {
                                 icon: const Icon(Icons.copy_rounded, color: Colors.cyanAccent, size: 20),
                                 tooltip: 'Sao chép UID',
                                 onPressed: () {
+                                  HapticFeedback.lightImpact();
                                   Clipboard.setData(ClipboardData(text: user.uid));
                                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -466,6 +472,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 children: [
                 TextFormField(
                   controller: _currentPassController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   obscureText: _obscureCurrent,
                   textInputAction: TextInputAction.next,
                   style: TextStyle(color: theme.colorScheme.onSurface),
@@ -473,6 +480,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     context,
                     'Mật khẩu hiện tại',
                     suffix: IconButton(
+                      tooltip: _obscureCurrent ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                       icon: Icon(
                         _obscureCurrent ? Icons.visibility_off : Icons.visibility,
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
@@ -488,6 +496,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _newPassController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   obscureText: _obscureNew,
                   textInputAction: TextInputAction.next,
                   style: TextStyle(color: theme.colorScheme.onSurface),
@@ -495,6 +504,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     context,
                     'Mật khẩu mới',
                     suffix: IconButton(
+                      tooltip: _obscureNew ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                       icon: Icon(
                         _obscureNew ? Icons.visibility_off : Icons.visibility,
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
@@ -513,6 +523,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _confirmPassController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   obscureText: _obscureConfirm,
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _isLoading ? null : _changePassword(),
@@ -521,6 +532,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     context,
                     'Xác nhận mật khẩu mới',
                     suffix: IconButton(
+                      tooltip: _obscureConfirm ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                       icon: Icon(
                         _obscureConfirm ? Icons.visibility_off : Icons.visibility,
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.54),
@@ -542,7 +554,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
         actions: [
           TextButton(
             onPressed: _isLoading ? null : () => Navigator.pop(context),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: _isLoading ? null : _changePassword,
@@ -577,6 +589,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
         _newPassController.text,
       );
       if (mounted) {
+        HapticFeedback.mediumImpact();
         Navigator.pop(context);
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(

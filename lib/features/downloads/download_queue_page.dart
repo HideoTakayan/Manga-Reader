@@ -101,11 +101,41 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
           appBar: AppBar(
             title: const Text('Hàng đợi tải xuống'),
             actions: [
-              // Nút "Thử lại tất cả lỗi" — chỉ hiện khi có ít nhất 1 task bị lỗi
-              if (hasFailed)
+              if (hasActive)
                 IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(Icons.pause_rounded),
+                  tooltip: 'Tạm dừng tất cả',
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    DownloadService.instance.pauseAll();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Đã tạm dừng tất cả'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                )
+              else if (hasPaused)
+                IconButton(
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  tooltip: 'Tiếp tục tất cả',
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    DownloadService.instance.resumeAll();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Đã tiếp tục tất cả'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                )
+              else if (hasFailed)
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
                   tooltip: 'Thử lại tất cả lỗi',
                   onPressed: () {
                     HapticFeedback.lightImpact();
@@ -114,100 +144,154 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Đã thử lại tất cả tải xuống bị lỗi'),
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
                   },
                 ),
-              // Nút "Tiếp tục tất cả" — chỉ hiện khi có ít nhất 1 task đang paused
-              if (hasPaused)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.play_arrow),
-                  tooltip: 'Tiếp tục tất cả',
-                  onPressed: () {
+              // Menu hành động hàng loạt
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded),
+                tooltip: 'Thao tác hàng đợi',
+                color: theme.cardColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                onSelected: (action) async {
+                  if (action == 'retry') {
+                    HapticFeedback.lightImpact();
+                    DownloadService.instance.retryAllFailed();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Đã thử lại tất cả tải xuống bị lỗi'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } else if (action == 'resume') {
                     HapticFeedback.lightImpact();
                     DownloadService.instance.resumeAll();
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã tiếp tục tất cả')),
+                      const SnackBar(
+                        content: Text('Đã tiếp tục tất cả'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
                     );
-                  },
-                ),
-              // Nút "Tạm dừng tất cả"
-              if (hasActive)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.pause),
-                  tooltip: 'Tạm dừng tất cả',
-                  onPressed: () {
+                  } else if (action == 'pause') {
                     HapticFeedback.lightImpact();
                     DownloadService.instance.pauseAll();
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã tạm dừng tất cả')),
-                    );
-                  },
-                ),
-              // Nút "Xóa tất cả" — xóa toàn bộ hàng đợi sau khi xác nhận
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.clear_all),
-                tooltip: 'Xóa tất cả',
-                onPressed: () async {
-                  if (DownloadService.instance.isQueueEmpty) {
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                    ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Hàng đợi tải xuống đang trống'),
+                        content: Text('Đã tạm dừng tất cả'),
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
-                    return;
-                  }
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (dialogCtx) => AlertDialog(
-                      backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      title: Text(
-                        'Xóa hàng đợi?',
-                        style: TextStyle(
-                          color: Theme.of(dialogCtx).colorScheme.onSurface,
-                          fontWeight: FontWeight.bold,
+                  } else if (action == 'clear') {
+                    if (DownloadService.instance.isQueueEmpty) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Hàng đợi tải xuống đang trống'),
+                          behavior: SnackBarBehavior.floating,
                         ),
-                      ),
-                      content: Text(
-                        'Bạn có chắc muốn xóa tất cả khỏi hàng đợi?',
-                        style: TextStyle(
-                          color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogCtx, false),
-                          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(dialogCtx, true),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.redAccent,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      );
+                      return;
+                    }
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogCtx) => AlertDialog(
+                        backgroundColor: Theme.of(dialogCtx).dialogTheme.backgroundColor ?? Theme.of(dialogCtx).cardColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: Text(
+                          'Xóa hàng đợi?',
+                          style: TextStyle(
+                            color: Theme.of(dialogCtx).colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true && context.mounted) {
-                    DownloadService.instance.clearQueue();
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã xóa hàng đợi')),
+                        content: Text(
+                          'Bạn có chắc muốn xóa tất cả khỏi hàng đợi?',
+                          style: TextStyle(
+                            color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogCtx, false),
+                            child: const Text('Hủy'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(dialogCtx, true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                            child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
                     );
+                    if (confirm == true && context.mounted) {
+                      HapticFeedback.mediumImpact();
+                      DownloadService.instance.clearQueue();
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Đã xóa hàng đợi'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   }
                 },
+                itemBuilder: (ctx) => [
+                  if (hasFailed)
+                    const PopupMenuItem(
+                      value: 'retry',
+                      child: Row(
+                        children: [
+                          Icon(Icons.refresh_rounded, size: 20),
+                          SizedBox(width: 12),
+                          Text('Thử lại tất cả lỗi'),
+                        ],
+                      ),
+                    ),
+                  if (hasPaused)
+                    const PopupMenuItem(
+                      value: 'resume',
+                      child: Row(
+                        children: [
+                          Icon(Icons.play_arrow_rounded, size: 20),
+                          SizedBox(width: 12),
+                          Text('Tiếp tục tất cả'),
+                        ],
+                      ),
+                    ),
+                  if (hasActive)
+                    const PopupMenuItem(
+                      value: 'pause',
+                      child: Row(
+                        children: [
+                          Icon(Icons.pause_rounded, size: 20),
+                          SizedBox(width: 12),
+                          Text('Tạm dừng tất cả'),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'clear',
+                    child: Row(
+                      children: [
+                        Icon(Icons.clear_all_rounded, size: 20, color: Colors.redAccent),
+                        SizedBox(width: 12),
+                        Text('Xóa toàn bộ hàng đợi', style: TextStyle(color: Colors.redAccent)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 4),
             ],
@@ -322,7 +406,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                   DownloadService.instance.setConcurrentDownloads(threads);
                                 },
                                 borderRadius: BorderRadius.circular(10),
-                                child: Container(
+                                child: Ink(
                                   padding: const EdgeInsets.symmetric(vertical: 6),
                                   decoration: BoxDecoration(
                                     color: isSelected
@@ -518,6 +602,7 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                 children: [
                                   ElevatedButton.icon(
                                     onPressed: () {
+                                      HapticFeedback.lightImpact();
                                       DownloadService.instance.clearQueue();
                                     },
                                     icon: const Icon(Icons.cleaning_services_rounded, size: 18),
@@ -611,45 +696,49 @@ class _CacheStatChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 15),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                        fontSize: 9,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 15),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                          fontSize: 9,
+                        ),
                       ),
-                    ),
-                    Text(
-                      value,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                      Text(
+                        value,
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurface,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -737,7 +826,7 @@ class _MangaDownloadGroup extends StatelessWidget {
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(dialogCtx, false),
-                              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                              child: Text('Hủy'),
                             ),
                             ElevatedButton(
                               onPressed: () => Navigator.pop(dialogCtx, true),
@@ -753,6 +842,7 @@ class _MangaDownloadGroup extends StatelessWidget {
                         ),
                       );
                       if (confirm == true) {
+                        HapticFeedback.mediumImpact();
                         if (!context.mounted) return;
                         showDialog(
                           context: context,
@@ -801,6 +891,13 @@ class _MangaDownloadGroup extends StatelessWidget {
                         } finally {
                           if (context.mounted) {
                             Navigator.pop(context); // Tắt vòng xoay
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Đã hủy tải các chương của "$mangaTitle"'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
                           }
                         }
                       }
@@ -1007,28 +1104,36 @@ class _ChapterDownloadItem extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.pause),
             tooltip: 'Tạm dừng',
-            onPressed: () =>
-                DownloadService.instance.pauseDownload(task.chapterId),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              DownloadService.instance.pauseDownload(task.chapterId);
+            },
           )
         else if (task.status == DownloadStatus.paused)
           IconButton(
             icon: const Icon(Icons.play_arrow),
             tooltip: 'Tiếp tục',
-            onPressed: () =>
-                DownloadService.instance.resumeDownload(task.chapterId),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              DownloadService.instance.resumeDownload(task.chapterId);
+            },
           )
         else if (task.status == DownloadStatus.failed)
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Thử lại',
-            onPressed: () =>
-                DownloadService.instance.retryDownload(task.chapterId),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              DownloadService.instance.retryDownload(task.chapterId);
+            },
           ),
         IconButton(
           icon: const Icon(Icons.close, size: 18),
           tooltip: 'Xóa khỏi hàng đợi',
-          onPressed: () =>
-              DownloadService.instance.cancelDownload(task.chapterId),
+          onPressed: () {
+            HapticFeedback.lightImpact();
+            DownloadService.instance.cancelDownload(task.chapterId);
+          },
         ),
       ],
     );

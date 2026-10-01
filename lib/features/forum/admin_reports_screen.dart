@@ -44,6 +44,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       });
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi tải report: $e')),
         );
@@ -121,6 +122,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                     await _resolveReport(report, 'resolved_deleted');
                   } catch (e) {
                     if (mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                     }
                   } finally {
@@ -160,11 +162,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                       await _resolveReport(report, 'resolved_muted');
                     } else {
                       if (mounted) {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không tìm thấy tác giả')));
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không tìm thấy tác giả')));
                       }
                     }
                   } catch (e) {
                     if (mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
                     }
                   } finally {
@@ -209,6 +213,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _reports.removeWhere((r) => r.id == report.id);
       });
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã xử lý report thành công')),
         );
@@ -216,6 +221,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       return true;
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi xử lý report: $e')),
         );
@@ -410,7 +416,7 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -421,6 +427,7 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
             children: [
               Text('Chi tiết báo cáo', style: Theme.of(context).textTheme.titleLarge),
               IconButton(
+                tooltip: 'Đóng',
                 icon: const Icon(Icons.close),
                 onPressed: _isProcessing ? null : () => Navigator.pop(context),
               ),
@@ -461,7 +468,7 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
                   const SizedBox(height: 4),
                   Text(
                     'Thời gian: ${widget.report.createdAt.toLocal().toString().split('.')[0]}',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
                   ),
                   const SizedBox(height: 12),
                   
@@ -478,7 +485,7 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.1),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -505,7 +512,11 @@ class _ReportDetailSheetState extends State<ReportDetailSheet> {
                           if (_targetData!['gifUrl'] != null && _targetData!['gifUrl'].toString().isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
-                              child: Image.network(_targetData!['gifUrl'], height: 100),
+                              child: Image.network(
+                                _targetData!['gifUrl'],
+                                height: 100,
+                                errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                              ),
                             ),
                           if (_targetData!['imageUrl'] != null && _targetData!['imageUrl'].toString().isNotEmpty)
                             Padding(

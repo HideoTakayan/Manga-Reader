@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,10 +29,12 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     _snapshotFuture = _loadSnapshot();
   }
 
-  void _reload() {
+  Future<void> _reload() async {
+    final future = _loadSnapshot();
     setState(() {
-      _snapshotFuture = _loadSnapshot();
+      _snapshotFuture = future;
     });
+    await future;
   }
 
   Future<_StorageSnapshot> _loadSnapshot() async {
@@ -193,7 +196,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -209,6 +212,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       ),
     );
     if (confirm != true) return;
+    HapticFeedback.mediumImpact();
 
     if (!mounted) return;
     showDialog(
@@ -229,6 +233,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     
     if (!mounted) return;
     _reload();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Đã xóa ${broken.length} chapter lỗi')),
     );
@@ -282,6 +287,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
 
     if (finishedChapterIds.isEmpty) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Chưa có chapter nào đọc xong để xóa')),
       );
@@ -294,6 +300,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
         .toList();
     if (deletable.isEmpty) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Không có chapter đã đọc xong trong tải xuống'),
@@ -325,7 +332,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -341,6 +348,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       ),
     );
     if (confirm != true) return;
+    HapticFeedback.mediumImpact();
 
     if (!mounted) return;
     showDialog(
@@ -363,6 +371,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     
     if (!mounted) return;
     _reload();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Đã xóa ${deletable.length} chapter đã đọc xong')),
     );
@@ -373,9 +382,11 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     try {
       final result = await _verifyDownloadedFile(chapter);
       if (!mounted) return;
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(content: Text(result)));
     } catch (e) {
       if (!mounted) return;
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(content: Text('File lỗi: $e'), backgroundColor: Colors.red),
       );
@@ -473,7 +484,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -489,6 +500,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
       ),
     );
     if (confirm != true) return;
+    HapticFeedback.mediumImpact();
 
     if (!mounted) return;
     showDialog(
@@ -510,6 +522,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
     
     if (!mounted) return;
     _reload();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Đã xóa tải xuống của ${group.mangaTitle}')),
     );
@@ -593,9 +606,15 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
           final data = snapshot.data ?? _StorageSnapshot.empty();
 
           return RefreshIndicator(
-            onRefresh: () async => _reload(),
+            onRefresh: _reload,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                24 + MediaQuery.paddingOf(context).bottom,
+              ),
               children: [
                 _StorageSummaryCard(
                   snapshot: data,
@@ -703,18 +722,46 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
                           ? null
                           : () => context.push('/detail/${group.mangaId}'),
                       onDeleteChapter: (chapter) async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            title: const Text('Xóa chapter?'),
+                            content: Text('Xóa "${chapter.chapterTitle}" khỏi bộ nhớ máy?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: Text('Hủy'),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Xóa', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                        if (!context.mounted) return;
+                        HapticFeedback.mediumImpact();
                         final messenger = ScaffoldMessenger.of(context);
-                      await DownloadService.instance.deleteDownload(
-                        chapter.chapterId,
-                      );
-                      if (!context.mounted) return;
-                      _reload();
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('Đã xóa ${chapter.chapterTitle}'),
-                        ),
-                      );
-                    },
+                        await DownloadService.instance.deleteDownload(
+                          chapter.chapterId,
+                        );
+                        if (!context.mounted) return;
+                        _reload();
+                        messenger.hideCurrentSnackBar();
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Đã xóa ${chapter.chapterTitle}'),
+                          ),
+                        );
+                      },
                     onVerifyChapter: _verifyChapter,
                   ),
                 ),
@@ -733,6 +780,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
   }
 
   Future<void> _clearAllCache() async {
+    HapticFeedback.mediumImpact();
     final freed = await _computeTotalCacheBytes();
     try {
       // 1. reader_cache
@@ -764,6 +812,7 @@ class _StorageManagerPageState extends State<StorageManagerPage> {
 
     if (!mounted) return;
     final freedStr = _formatBytes(freed);
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -972,8 +1021,9 @@ class _MangaStorageCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       child: ExpansionTile(
-        leading: GestureDetector(
+        leading: InkWell(
           onTap: onTapDetail,
+          customBorder: const CircleBorder(),
           child: Tooltip(
             message: 'Xem chi tiết truyện',
             child: CircleAvatar(
@@ -982,8 +1032,9 @@ class _MangaStorageCard extends StatelessWidget {
             ),
           ),
         ),
-        title: GestureDetector(
+        title: InkWell(
           onTap: onTapDetail,
+          borderRadius: BorderRadius.circular(4),
           child: Text(
             group.mangaTitle,
             maxLines: 1,

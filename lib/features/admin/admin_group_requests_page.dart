@@ -158,19 +158,19 @@ class _PendingGroupsTab extends StatelessWidget {
                     if (group.leaderEmail.isNotEmpty) ...[
                       const Divider(),
                       const SizedBox(height: 8),
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.email_outlined, size: 16, color: Colors.blue),
-                          SizedBox(width: 6),
-                          Text('Google account (trưởng nhóm):', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const Icon(Icons.email_outlined, size: 16, color: Colors.blue),
+                          const SizedBox(width: 6),
+                          Text('Google account (trưởng nhóm):', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5))),
                         ],
                       ),
                       const SizedBox(height: 4),
                       _EmailCopyRow(email: group.leaderEmail),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         '⚡ Thêm email này vào Google Cloud Console → OAuth → Test Users\nđể trưởng nhóm có thể kết nối Google Drive trong app.',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -204,7 +204,7 @@ class _PendingGroupsTab extends StatelessWidget {
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                    child: Text('Hủy'),
                                   ),
                                   ElevatedButton(
                                     style: ElevatedButton.styleFrom(
@@ -263,7 +263,7 @@ class _PendingGroupsTab extends StatelessWidget {
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                    child: Text('Hủy'),
                                   ),
                                   ElevatedButton(
                                     style: ElevatedButton.styleFrom(
@@ -463,14 +463,14 @@ class _DriveRequestsTab extends StatelessWidget {
                     const SizedBox(height: 8),
 
                     // Email cần copy để thêm vào test users
-                    const Text('Email Google cần thêm vào Test Users:',
-                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text('Email Google cần thêm vào Test Users:',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6))),
                     const SizedBox(height: 4),
                     _EmailCopyRow(email: email),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       '📌 Bước 1: Vào Google Cloud Console → OAuth consent screen → Test Users → ADD USERS\n📌 Bước 2: Trên Google Drive, chia sẻ quyền "Người chỉnh sửa" (Editor) cho email này trên thư mục MangaReader_Data (hoặc để thư mục chế độ "Bất kỳ ai có liên kết đều có thể chỉnh sửa")',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
                     ),
                     const SizedBox(height: 12),
 
@@ -550,7 +550,9 @@ class _EmailCopyRow extends StatelessWidget {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () {
+              HapticFeedback.lightImpact();
               Clipboard.setData(ClipboardData(text: email));
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('Đã copy: $email'), duration: const Duration(seconds: 2)),
               );

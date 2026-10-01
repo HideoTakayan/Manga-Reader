@@ -200,6 +200,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
   }
 
   Future<void> _handleDeepClear() async {
+    HapticFeedback.mediumImpact();
     if (mounted) setState(() => _isLoading = true);
     final userId = FirebaseAuth.instance.currentUser?.uid;
     final localId = AuthService.safeUid;
@@ -284,7 +285,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
           title: Text('Xóa lịch sử "$groupTitle"?', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
           content: Text('Bạn có chắc muốn xóa ${items.length} truyện trong nhóm $groupTitle?', style: TextStyle(color: onSurface.withValues(alpha: 0.7))),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Hủy')),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
@@ -301,6 +302,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
 
     if (confirm != true) return;
     if (!mounted) return;
+    HapticFeedback.mediumImpact();
 
     final userId = FirebaseAuth.instance.currentUser?.uid;
     final localId = AuthService.safeUid;
@@ -327,6 +329,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
     }
 
     if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Đã xóa ${items.length} mục trong "$groupTitle"'),
@@ -350,7 +353,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
           title: Text('Xóa $count mục đã chọn?', style: TextStyle(color: onSurface, fontWeight: FontWeight.bold)),
           content: Text('Các mục được chọn sẽ bị xóa khỏi lịch sử đọc.', style: TextStyle(color: onSurface.withValues(alpha: 0.7))),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Hủy')),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
@@ -367,6 +370,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
 
     if (confirm != true) return;
     if (!mounted) return;
+    HapticFeedback.mediumImpact();
 
     final userId = FirebaseAuth.instance.currentUser?.uid;
     final localId = AuthService.safeUid;
@@ -393,6 +397,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
     }
 
     if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Đã xóa $count mục khỏi lịch sử'),
@@ -555,6 +560,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
   }
 
   void _showDeleteConfirmDialog() {
+    HapticFeedback.lightImpact();
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -571,7 +577,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Huỷ', style: TextStyle(color: Colors.grey)),
+              child: Text('Huỷ'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -698,59 +704,64 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  onTap: () => context.push('/detail/${item.mangaId}'),
-                  child: Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: manga.coverFileId.isNotEmpty
-                            ? (manga.coverFileId.startsWith('/') || manga.coverFileId.contains(':\\')
-                                ? Image.file(
-                                    File(manga.coverFileId),
-                                    width: 76,
-                                    height: 106,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
+                Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () => context.push('/detail/${item.mangaId}'),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: manga.coverFileId.isNotEmpty
+                              ? (manga.coverFileId.startsWith('/') || manga.coverFileId.contains(':\\')
+                                  ? Image.file(
+                                      File(manga.coverFileId),
                                       width: 76,
                                       height: 106,
-                                      color: Colors.white12,
-                                      child: const Icon(Icons.broken_image, color: Colors.white38),
-                                    ),
-                                  )
-                                : DriveImage(
-                                    fileId: manga.coverFileId,
-                                    width: 76,
-                                    height: 106,
-                                    fit: BoxFit.cover,
-                                  ))
-                            : Container(
-                                width: 76,
-                                height: 106,
-                                color: Colors.white12,
-                                child: const Icon(Icons.menu_book, color: Colors.white38),
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        width: 76,
+                                        height: 106,
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                                        child: Icon(Icons.broken_image, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+                                      ),
+                                    )
+                                  : DriveImage(
+                                      fileId: manga.coverFileId,
+                                      width: 76,
+                                      height: 106,
+                                      fit: BoxFit.cover,
+                                    ))
+                              : Container(
+                                  width: 76,
+                                  height: 106,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+                                  child: Icon(Icons.menu_book, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
+                                ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.75),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isNovel ? 'NOVEL' : 'MANGA',
+                              style: TextStyle(
+                                color: isNovel ? Colors.amber : primary,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
                               ),
-                      ),
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            isNovel ? 'NOVEL' : 'MANGA',
-                            style: TextStyle(
-                              color: isNovel ? Colors.amber : primary,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -794,7 +805,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                               child: LinearProgressIndicator(
                                 value: percent,
                                 minHeight: 6,
-                                backgroundColor: Colors.white.withValues(alpha: 0.1),
+                                backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
                                 valueColor: AlwaysStoppedAnimation<Color>(primary),
                               ),
                             ),
@@ -804,8 +815,8 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                             !isNovel && item.totalPages > 0
                                 ? '$current/$total ($percentText%)'
                                 : '$percentText%',
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
@@ -892,21 +903,21 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 'Chưa có lịch sử đọc truyện',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Các chương truyện bạn đã đọc sẽ tự động lưu lại ở đây để bạn dễ dàng tiếp tục theo dõi.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.white60,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   height: 1.4,
                 ),
               ),
@@ -919,8 +930,8 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                     icon: const Icon(Icons.refresh_rounded, size: 16),
                     label: const Text('Tải lại'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                      foregroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+                      side: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -979,6 +990,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
           automaticallyImplyLeading: false,
           leading: _isSelectionMode
               ? IconButton(
+                  tooltip: 'Hủy chọn',
                   icon: const Icon(Icons.close_rounded),
                   onPressed: () => setState(() {
                     _isSelectionMode = false;
@@ -1036,42 +1048,57 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                 color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(19),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 ),
               ),
               child: TextField(
                 controller: _searchController,
-                style: const TextStyle(fontSize: 13, color: Colors.white),
+                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: 'Tìm theo tên truyện hoặc chương...',
-                  hintStyle: const TextStyle(
-                    color: Colors.white38,
+                  hintStyle: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     fontSize: 13,
                   ),
-                  prefixIcon: const Icon(
+                  prefixIcon: Icon(
                     Icons.search,
                     size: 16,
-                    color: Colors.white54,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(
-                            Icons.clear,
-                            size: 14,
-                            color: Colors.white54,
-                          ),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
+                  suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, _) {
+                      if (value.text.isEmpty) return const SizedBox.shrink();
+                      return IconButton(
+                        tooltip: 'Xóa tìm kiếm',
+                        icon: Icon(
+                          Icons.clear,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                        onPressed: () {
+                          if (_searchDebounce?.isActive ?? false) {
+                            _searchDebounce!.cancel();
+                          }
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      );
+                    },
+                  ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 8),
                 ),
                 onChanged: (val) {
                   if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                  if (val.trim().isEmpty) {
+                    if (_searchQuery.isNotEmpty) {
+                      setState(() => _searchQuery = '');
+                    }
+                    return;
+                  }
                   _searchDebounce = Timer(const Duration(milliseconds: 200), () {
                     if (mounted) setState(() => _searchQuery = val);
                   });
@@ -1154,6 +1181,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
               onRefresh: () => _initData(forceRefresh: true),
               child: filtered.isEmpty
                   ? ListView(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: [
                         const SizedBox(height: 120),
@@ -1169,8 +1197,9 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                       ],
                     )
                   : ListView.builder(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 80),
                       itemCount: sections.length,
                       itemBuilder: (context, sectionIndex) {
                         final section = sections[sectionIndex];
@@ -1203,8 +1232,8 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                   const SizedBox(width: 6),
                                   Text(
                                     section.title,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.onSurface,
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 0.3,
@@ -1214,13 +1243,13 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withValues(alpha: 0.1),
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
                                       '${section.items.length}',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -1294,10 +1323,10 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                     borderRadius: BorderRadius.circular(16),
                                     border: isSelected
                                         ? Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5)
-                                        : Border.all(color: Colors.white.withValues(alpha: 0.05)),
+                                        : Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.15)),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.2),
+                                        color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
                                         blurRadius: 8,
                                         offset: const Offset(0, 4),
                                       ),
@@ -1340,7 +1369,9 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                               isSelected
                                                   ? Icons.check_circle_rounded
                                                   : Icons.radio_button_unchecked_rounded,
-                                              color: isSelected ? Theme.of(context).colorScheme.primary : Colors.white38,
+                                              color: isSelected
+                                                  ? Theme.of(context).colorScheme.primary
+                                                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                                               size: 22,
                                             ),
                                           ),
@@ -1362,7 +1393,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                                         width: 85,
                                                         height: 120,
                                                         color: Colors.blueGrey.withValues(alpha: 0.2),
-                                                        child: const Icon(Icons.menu_book_rounded, size: 36, color: Colors.white38),
+                                                        child: Icon(Icons.menu_book_rounded, size: 36, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                                                       ),
                                                     ),
                                                   )
@@ -1382,11 +1413,11 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                                     bottomLeft: Radius.circular(16),
                                                   ),
                                                 ),
-                                                child: const Center(
+                                                child: Center(
                                                   child: Icon(
                                                     Icons.menu_book_rounded,
                                                     size: 36,
-                                                    color: Colors.white38,
+                                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                                                   ),
                                                 ),
                                               ),
@@ -1448,7 +1479,7 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                                     child: LinearProgressIndicator(
                                                       value: _progressMap[item.mangaId]!.progressPercent.clamp(0.0, 1.0),
                                                       minHeight: 3,
-                                                      backgroundColor: Colors.white10,
+                                                      backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
                                                       valueColor: AlwaysStoppedAnimation<Color>(
                                                         _isMangaCompleted(item) ? Colors.greenAccent : Theme.of(context).colorScheme.primary,
                                                       ),
@@ -1461,11 +1492,11 @@ class _HistoryPageState extends State<HistoryPage> with AutomaticKeepAliveClient
                                                   children: [
                                                     Row(
                                                       children: [
-                                                        const Icon(Icons.access_time_rounded, size: 13, color: Colors.white54),
+                                                        Icon(Icons.access_time_rounded, size: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55)),
                                                         const SizedBox(width: 4),
                                                         Text(
                                                           relativeTime,
-                                                          style: const TextStyle(color: Colors.white54, fontSize: 11.5),
+                                                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55), fontSize: 11.5),
                                                         ),
                                                       ],
                                                     ),
@@ -1576,9 +1607,9 @@ class _ContentTypeBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
       ),
       child: Text(
         type.label,

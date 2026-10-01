@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../services/tts_service.dart';
 import '../../../services/novel_service.dart';
+import '../../../services/ui_service.dart';
 import '../../shared/drive_image.dart';
 
 class MiniTtsPlayer extends StatelessWidget {
@@ -16,17 +17,31 @@ class MiniTtsPlayer extends StatelessWidget {
       listenable: TtsService.instance,
       builder: (context, _) {
         final tts = TtsService.instance;
-        if (!tts.isVisible) {
-          return const SizedBox.shrink();
-        }
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) => SizeTransition(
+            sizeFactor: animation,
+            axisAlignment: -1.0,
+            child: FadeTransition(
+              opacity: animation,
+              child: child,
+            ),
+          ),
+          child: tts.isVisible
+              ? ValueListenableBuilder<bool>(
+                  key: const ValueKey('mini_tts_visible'),
+                  valueListenable: UiService.instance.isMainBottomBarVisible,
+                  builder: (context, isNavBarVisible, _) {
+                    final theme = Theme.of(context);
+                    final primaryColor = theme.colorScheme.primary;
 
-        final theme = Theme.of(context);
-        final primaryColor = theme.colorScheme.primary;
-
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    return SafeArea(
+                      top: false,
+                      bottom: !isNavBarVisible,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
@@ -60,10 +75,10 @@ class MiniTtsPlayer extends StatelessWidget {
                     filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E22).withValues(alpha: 0.88),
+                        color: theme.cardColor.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
+                          color: theme.dividerColor.withValues(alpha: 0.2),
                           width: 1,
                         ),
                         boxShadow: [
@@ -254,6 +269,10 @@ class MiniTtsPlayer extends StatelessWidget {
           ),
         );
       },
+    )
+  : const SizedBox.shrink(key: ValueKey('mini_tts_hidden')),
+);
+      },
     );
   }
 
@@ -276,12 +295,13 @@ class MiniTtsPlayer extends StatelessWidget {
             final sleepPresets = [0, 15, 30, 45, 60, 90];
 
             return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     // Handle Bar
                     Center(
                       child: Container(
@@ -627,6 +647,7 @@ class MiniTtsPlayer extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
               ),
             );
           },

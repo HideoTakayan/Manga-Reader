@@ -26,6 +26,7 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
   Future<void> _handleVote(int optionIndex) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đăng nhập để bình chọn')),
       );
@@ -47,6 +48,7 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
       );
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi bình chọn: $e')),
         );
@@ -128,7 +130,7 @@ class _ForumPollWidgetState extends State<ForumPollWidget> {
                   onTap: (hasVoted || _isSubmitting)
                       ? null
                       : () => _handleVote(index),
-                  child: Container(
+                  child: Ink(
                     height: 44,
                     decoration: BoxDecoration(
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.05),

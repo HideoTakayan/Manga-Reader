@@ -64,11 +64,16 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
     final comment = widget.comment;
     final authorRank = LeaderboardService.instance.getCachedRank(comment.authorId);
 
-    return InkWell(
-      onLongPress: () => _showOptions(context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          _showOptions(context);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             VipAvatarFrame(
@@ -142,7 +147,8 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    if (comment.replyToAuthorName != null)
+                    if (comment.replyToAuthorName != null &&
+                        comment.replyToAuthorName!.trim().isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4.0),
                         child: Text(
@@ -177,6 +183,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -213,6 +220,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                 leading: const Icon(Icons.copy_rounded),
                 title: const Text('Sao chép nội dung'),
                 onTap: () {
+                  HapticFeedback.lightImpact();
                   Navigator.pop(sheetContext);
                   Clipboard.setData(ClipboardData(text: widget.comment.body));
                   ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
@@ -228,6 +236,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                 leading: const Icon(Icons.flag_outlined),
                 title: const Text('Báo cáo bình luận'),
                 onTap: () {
+                  HapticFeedback.lightImpact();
                   Navigator.pop(sheetContext);
                   showDialog(
                     context: pageContext,
@@ -264,7 +273,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                             TextButton(
                               onPressed: () =>
                                   Navigator.pop(dialogContext, false),
-                              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                              child: Text('Hủy'),
                             ),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -281,6 +290,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                     );
 
                     if (confirm == true && pageContext.mounted) {
+                      HapticFeedback.mediumImpact();
                       try {
                         await FirebaseForumRepository().softDeleteComment(
                           widget.postId,
@@ -292,6 +302,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                             const SnackBar(
                               content: Text('Đã xóa bình luận'),
                               backgroundColor: Colors.green,
+                              behavior: SnackBarBehavior.floating,
                             ),
                           );
                           widget.onDeleted?.call();
@@ -299,9 +310,12 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                       } catch (e) {
                         if (pageContext.mounted) {
                           ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(
-                            pageContext,
-                          ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+                          ScaffoldMessenger.of(pageContext).showSnackBar(
+                            SnackBar(
+                              content: Text('Lỗi: $e'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
                         }
                       }
                     }
@@ -322,8 +336,12 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
         Icons.thumb_up_outlined,
         widget.comment.likeCount.toString(),
         onTap: () {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Vui lòng đăng nhập để thích')),
+            const SnackBar(
+              content: Text('Vui lòng đăng nhập để thích'),
+              behavior: SnackBarBehavior.floating,
+            ),
           );
         },
       );
@@ -349,6 +367,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
               );
             } catch (e) {
               if (context.mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(
                   context,
                 ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -374,9 +393,9 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
               onTap();
             }
           : null,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+        padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -279,7 +279,7 @@ class _SearchPageState extends State<SearchPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -430,6 +430,7 @@ class _SearchPageState extends State<SearchPage> {
   void _showRandomMangaSheet() {
     final pool = _filteredMangas.isNotEmpty ? _filteredMangas : allMangas;
     if (pool.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Không có truyện nào để chọn ngẫu nhiên'),
@@ -452,12 +453,13 @@ class _SearchPageState extends State<SearchPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -488,6 +490,7 @@ class _SearchPageState extends State<SearchPage> {
                         ],
                       ),
                       IconButton(
+                        tooltip: 'Đóng',
                         icon: Icon(
                           Icons.close_rounded,
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
@@ -497,20 +500,23 @@ class _SearchPageState extends State<SearchPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      context.push('/detail/${currentManga.id}');
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Theme.of(context).dividerColor),
-                      ),
-                      child: Row(
+                  Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        context.push('/detail/${currentManga.id}');
+                      },
+                      child: Ink(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Theme.of(context).dividerColor),
+                        ),
+                        child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           ClipRRect(
@@ -562,10 +568,19 @@ class _SearchPageState extends State<SearchPage> {
                                   children: [
                                     Builder(
                                       builder: (context) {
-                                        final isCompleted = currentManga.status.toLowerCase() == 'hoàn thành';
-                                        final statusColor = isCompleted
-                                            ? Colors.greenAccent
-                                            : Theme.of(context).colorScheme.primary;
+                                        final statusLower = currentManga.status.toLowerCase();
+                                        final Color statusColor;
+                                        if (statusLower.contains('hoàn') ||
+                                            statusLower.contains('full') ||
+                                            statusLower.contains('complete')) {
+                                          statusColor = Colors.greenAccent;
+                                        } else if (statusLower.contains('drop') ||
+                                            statusLower.contains('ngừng') ||
+                                            statusLower.contains('pause')) {
+                                          statusColor = Colors.deepOrangeAccent;
+                                        } else {
+                                          statusColor = Theme.of(context).colorScheme.primary;
+                                        }
                                         return Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
@@ -608,6 +623,7 @@ class _SearchPageState extends State<SearchPage> {
                       ),
                     ),
                   ),
+                ),
                   if (currentManga.description.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(
@@ -665,6 +681,7 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                 ],
               ),
+            ),
             ),
           );
         },
@@ -733,38 +750,46 @@ class _SearchPageState extends State<SearchPage> {
     bool isSelected = false,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? iconColor.withValues(alpha: 0.2)
-              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? iconColor : Theme.of(context).dividerColor,
-            width: isSelected ? 1.2 : 1,
-          ),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? iconColor.withValues(alpha: 0.2)
+            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isSelected ? iconColor : Theme.of(context).dividerColor,
+          width: isSelected ? 1.2 : 1,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: iconColor),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected
-                    ? (iconColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white)
-                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: iconColor),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected
+                        ? (iconColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white)
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -893,7 +918,7 @@ class _SearchPageState extends State<SearchPage> {
                       Text(
                         'Ấn 1 lần để chọn (v), ấn 2 lần để loại trừ (x)',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -908,7 +933,7 @@ class _SearchPageState extends State<SearchPage> {
                           Color? backgroundColor;
                           Color labelColor =
                               Theme.of(context).textTheme.bodyLarge?.color ??
-                              Colors.black;
+                              Theme.of(context).colorScheme.onSurface;
                           Widget? icon;
 
                           if (filterState == GenreFilterState.included) {
@@ -940,7 +965,7 @@ class _SearchPageState extends State<SearchPage> {
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: filterState == GenreFilterState.none
-                                    ? Colors.grey.withValues(alpha: 0.3)
+                                    ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.3)
                                     : Colors.transparent,
                               ),
                             ),
@@ -1045,7 +1070,10 @@ class _SearchPageState extends State<SearchPage> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            HapticFeedback.selectionClick();
+                            Navigator.pop(context);
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).colorScheme.primary,
                             foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -1085,6 +1113,7 @@ class _SearchPageState extends State<SearchPage> {
           child: TextField(
             controller: _textController,
             autofocus: true,
+            onTapOutside: (_) => FocusScope.of(context).unfocus(),
             textInputAction: TextInputAction.search,
             onChanged: (val) {
               if (val.trim().isEmpty) {
@@ -1132,19 +1161,27 @@ class _SearchPageState extends State<SearchPage> {
               hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              suffixIcon: _textController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
-                      onPressed: () {
-                        _textController.clear();
-                        if (_debounce?.isActive ?? false) _debounce!.cancel();
-                        query = '';
-                        setState(() {
-                          _updateFilteredMangas();
-                        });
-                      },
-                    )
-                  : null,
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _textController,
+                builder: (context, value, _) {
+                  if (value.text.isEmpty) return const SizedBox.shrink();
+                  return IconButton(
+                    tooltip: 'Xóa tìm kiếm',
+                    icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                    onPressed: () {
+                      _textController.clear();
+                      if (_debounce?.isActive ?? false) _debounce!.cancel();
+                      if (_recentSearchDebounce?.isActive ?? false) {
+                        _recentSearchDebounce!.cancel();
+                      }
+                      query = '';
+                      setState(() {
+                        _updateFilteredMangas();
+                      });
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -1178,22 +1215,26 @@ class _SearchPageState extends State<SearchPage> {
                 _updateFilteredMangas();
               });
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(
                 value: SearchSortMode.updated,
-                child: Text('Mới cập nhật'),
+                checked: sortMode == SearchSortMode.updated,
+                child: const Text('Mới cập nhật'),
               ),
-              PopupMenuItem(
+              CheckedPopupMenuItem(
                 value: SearchSortMode.views,
-                child: Text('Lượt xem cao nhất'),
+                checked: sortMode == SearchSortMode.views,
+                child: const Text('Lượt xem cao nhất'),
               ),
-              PopupMenuItem(
+              CheckedPopupMenuItem(
                 value: SearchSortMode.likes,
-                child: Text('Yêu thích nhất'),
+                checked: sortMode == SearchSortMode.likes,
+                child: const Text('Yêu thích nhất'),
               ),
-              PopupMenuItem(
+              CheckedPopupMenuItem(
                 value: SearchSortMode.title,
-                child: Text('Tên A-Z'),
+                checked: sortMode == SearchSortMode.title,
+                child: const Text('Tên A-Z'),
               ),
             ],
           ),
@@ -1224,32 +1265,9 @@ class _SearchPageState extends State<SearchPage> {
                           separatorBuilder: (_, __) => const SizedBox(width: 6),
                           itemBuilder: (context, idx) {
                             final sug = suggestions[idx];
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
-                                if (sug.type == _SuggestionType.genre) {
-                                  setState(() {
-                                    genreFilters[sug.text] = GenreFilterState.included;
-                                    _textController.clear();
-                                    query = '';
-                                    _updateFilteredMangas();
-                                  });
-                                } else if (sug.type == _SuggestionType.title && sug.manga != null) {
-                                  context.push('/detail/${sug.manga!.id}');
-                                } else {
-                                  _textController.text = sug.text;
-                                  _textController.selection = TextSelection.fromPosition(
-                                    TextPosition(offset: sug.text.length),
-                                  );
-                                  query = sug.text;
-                                  setState(() {
-                                    _updateFilteredMangas();
-                                  });
-                                  _saveRecentSearch(sug.text);
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            return Material(
+                              color: Colors.transparent,
+                              child: Ink(
                                 decoration: BoxDecoration(
                                   color: sug.type == _SuggestionType.genre
                                       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
@@ -1261,7 +1279,33 @@ class _SearchPageState extends State<SearchPage> {
                                         : Theme.of(context).dividerColor,
                                   ),
                                 ),
-                                child: Row(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () {
+                                    if (sug.type == _SuggestionType.genre) {
+                                      setState(() {
+                                        genreFilters[sug.text] = GenreFilterState.included;
+                                        _textController.clear();
+                                        query = '';
+                                        _updateFilteredMangas();
+                                      });
+                                    } else if (sug.type == _SuggestionType.title && sug.manga != null) {
+                                      context.push('/detail/${sug.manga!.id}');
+                                    } else {
+                                      _textController.text = sug.text;
+                                      _textController.selection = TextSelection.fromPosition(
+                                        TextPosition(offset: sug.text.length),
+                                      );
+                                      query = sug.text;
+                                      setState(() {
+                                        _updateFilteredMangas();
+                                      });
+                                      _saveRecentSearch(sug.text);
+                                    }
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
@@ -1276,23 +1320,28 @@ class _SearchPageState extends State<SearchPage> {
                                           : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                     ),
                                     const SizedBox(width: 5),
-                                    Text(
-                                      sug.displayText,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: sug.type == _SuggestionType.genre
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: sug.type == _SuggestionType.genre
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context).colorScheme.onSurface,
+                                    Flexible(
+                                      child: Text(
+                                        sug.displayText,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: sug.type == _SuggestionType.genre
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: sug.type == _SuggestionType.genre
+                                              ? Theme.of(context).colorScheme.primary
+                                              : Theme.of(context).colorScheme.onSurface,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                            );
-                          },
+                            ),
+                          ),
+                        );
+                      },
                         ),
                       );
                     },
@@ -1343,64 +1392,72 @@ class _SearchPageState extends State<SearchPage> {
                           spacing: 8,
                           runSpacing: 8,
                           children: _recentSearches.map((term) {
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Theme.of(context).dividerColor),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  InkWell(
-                                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-                                    onTap: () {
-                                      _textController.text = term;
-                                      _textController.selection =
-                                          TextSelection.fromPosition(
-                                        TextPosition(offset: term.length),
-                                      );
-                                      query = term;
-                                      setState(() {
-                                        _updateFilteredMangas();
-                                      });
-                                      _saveRecentSearch(term);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.history,
-                                            size: 14,
-                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            term,
-                                            style: TextStyle(
-                                              color: Theme.of(context).colorScheme.onSurface,
-                                              fontSize: 12,
+                            return Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                              child: Ink(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: Theme.of(context).dividerColor),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    InkWell(
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        _textController.text = term;
+                                        _textController.selection =
+                                            TextSelection.fromPosition(
+                                          TextPosition(offset: term.length),
+                                        );
+                                        query = term;
+                                        setState(() {
+                                          _updateFilteredMangas();
+                                        });
+                                        _saveRecentSearch(term);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.history,
+                                              size: 14,
+                                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                term,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: Theme.of(context).colorScheme.onSurface,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  InkWell(
-                                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(16)),
-                                    onTap: () => _removeRecentSearch(term),
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
-                                      child: Icon(
-                                        Icons.close,
-                                        size: 13,
-                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                                    InkWell(
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(16)),
+                                      onTap: () => _removeRecentSearch(term),
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(4, 6, 8, 6),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 13,
+                                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             );
                           }).toList(),
@@ -1438,39 +1495,46 @@ class _SearchPageState extends State<SearchPage> {
                           runSpacing: 8,
                           children: _getTrendingGenres().map((genre) {
                             final isSelected = genreFilters[genre] == GenreFilterState.included;
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    genreFilters.remove(genre);
-                                  } else {
-                                    genreFilters[genre] = GenreFilterState.included;
-                                  }
-                                  _updateFilteredMangas();
-                                });
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? Colors.deepOrangeAccent.withValues(alpha: 0.25)
-                                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: isSelected ? Colors.deepOrangeAccent : Theme.of(context).dividerColor,
-                                    width: 1,
-                                  ),
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.deepOrangeAccent.withValues(alpha: 0.25)
+                                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isSelected ? Colors.deepOrangeAccent : Theme.of(context).dividerColor,
+                                  width: 1,
                                 ),
-                                child: Text(
-                                  genre,
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? Colors.deepOrangeAccent
-                                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                                    fontSize: 12,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() {
+                                      if (isSelected) {
+                                        genreFilters.remove(genre);
+                                      } else {
+                                        genreFilters[genre] = GenreFilterState.included;
+                                      }
+                                      _updateFilteredMangas();
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    child: Text(
+                                      genre,
+                                      style: TextStyle(
+                                        color: isSelected
+                                            ? Colors.deepOrangeAccent
+                                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                        fontSize: 12,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1495,6 +1559,7 @@ class _SearchPageState extends State<SearchPage> {
                   return RefreshIndicator(
                     onRefresh: () => _loadMangas(forceRefresh: true),
                     child: ListView(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: [
                         const SizedBox(height: 80),
@@ -1586,6 +1651,7 @@ class _SearchPageState extends State<SearchPage> {
                 return RefreshIndicator(
                   onRefresh: () => _loadMangas(forceRefresh: true),
                   child: ListView.builder(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                     physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: mangas.length,
                     padding: const EdgeInsets.all(12),
@@ -1595,7 +1661,6 @@ class _SearchPageState extends State<SearchPage> {
                         height: 140,
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
@@ -1606,16 +1671,19 @@ class _SearchPageState extends State<SearchPage> {
                           ],
                         ),
                         clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () {
-                            if (query.trim().isNotEmpty) {
-                              _saveRecentSearch(query);
-                            }
-                            context.push('/detail/${manga.id}');
-                          },
-                          child: Row(
-                            children: [
-                              DriveImage(
+                        child: Material(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          child: InkWell(
+                            onTap: () {
+                              if (query.trim().isNotEmpty) {
+                                _saveRecentSearch(query);
+                              }
+                              context.push('/detail/${manga.id}');
+                            },
+                            child: Row(
+                              children: [
+                               DriveImage(
                                 fileId: manga.coverFileId,
                                 width: 100,
                                 height: 140,
@@ -1681,20 +1749,41 @@ class _SearchPageState extends State<SearchPage> {
                                               ),
                                             ],
                                           ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: manga.status == 'Đang Cập Nhật' ? Colors.blue.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              manga.status,
-                                              style: TextStyle(
-                                                color: manga.status == 'Đang Cập Nhật' ? Colors.blueAccent : Colors.greenAccent,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
+                                          Builder(
+                                            builder: (context) {
+                                              final statusLower = manga.status.toLowerCase();
+                                              final Color badgeBg;
+                                              final Color badgeText;
+                                              if (statusLower.contains('hoàn') ||
+                                                  statusLower.contains('full') ||
+                                                  statusLower.contains('complete')) {
+                                                badgeBg = Colors.green.withValues(alpha: 0.2);
+                                                badgeText = Colors.greenAccent;
+                                              } else if (statusLower.contains('drop') ||
+                                                  statusLower.contains('ngừng') ||
+                                                  statusLower.contains('pause')) {
+                                                badgeBg = Colors.deepOrange.withValues(alpha: 0.2);
+                                                badgeText = Colors.deepOrangeAccent;
+                                              } else {
+                                                badgeBg = Colors.blue.withValues(alpha: 0.2);
+                                                badgeText = Colors.blueAccent;
+                                              }
+                                              return Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: badgeBg,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  manga.status.isNotEmpty ? manga.status : 'Đang cập nhật',
+                                                  style: TextStyle(
+                                                    color: badgeText,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ],
                                       ),
@@ -1703,6 +1792,7 @@ class _SearchPageState extends State<SearchPage> {
                                 ),
                               ),
                             ],
+                          ),
                           ),
                         ),
                       );

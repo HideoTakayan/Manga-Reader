@@ -37,7 +37,7 @@ class ArchiveImageExtractor {
 
     final paths = await compute(_extractZipImagesToDisk, args);
     // Tự động kiểm tra và dọn dẹp dung lượng đĩa nền sau khi trích xuất xong
-    unawaited(cleanUpOldCache());
+    unawaited(cleanUpOldCache(chapterId));
     return paths;
   }
 
@@ -77,8 +77,12 @@ class ArchiveImageExtractor {
     }
   }
 
+  static bool _isCleaningUp = false;
+
   /// Tự động dọn dẹp cache cũ theo thời gian (>= 3 ngày) và theo tổng dung lượng (> 500MB)
-  static Future<void> cleanUpOldCache() async {
+  static Future<void> cleanUpOldCache([String? currentChapterId]) async {
+    if (_isCleaningUp) return;
+    _isCleaningUp = true;
     try {
       final tempDir = await getTemporaryDirectory();
 
@@ -88,9 +92,12 @@ class ArchiveImageExtractor {
         final now = DateTime.now();
         final entities = cacheDir.listSync().whereType<Directory>().toList();
 
-        // 1.1 Xóa các folder đã cũ hơn 3 ngày
+        // 1.1 Xóa các folder đã cũ hơn 3 ngày (ngoại trừ chương đang đọc)
         final remainingDirs = <(Directory, DateTime, int)>[];
         for (final dir in entities) {
+          if (currentChapterId != null && p.basename(dir.path) == currentChapterId) {
+            continue;
+          }
           final stat = await dir.stat();
           if (now.difference(stat.modified).inDays >= 3) {
             await dir.delete(recursive: true);
@@ -112,6 +119,9 @@ class ArchiveImageExtractor {
           remainingDirs.sort((a, b) => a.$2.compareTo(b.$2)); // Cũ nhất lên đầu
           for (final item in remainingDirs) {
             if (totalSize <= targetCacheSizeBytes) break;
+            if (currentChapterId != null && p.basename(item.$1.path) == currentChapterId) {
+              continue;
+            }
             await item.$1.delete(recursive: true);
             totalSize -= item.$3;
             debugPrint('🧹 LRU Cleaned extracted cache (${item.$3 ~/ 1024} KB): ${item.$1.path}');
@@ -133,6 +143,8 @@ class ArchiveImageExtractor {
       }
     } catch (e) {
       debugPrint('Error cleaning up old cache: $e');
+    } finally {
+      _isCleaningUp = false;
     }
   }
 }

@@ -201,11 +201,15 @@ final GoRouter appRouter = GoRouter(
     // Route màn hình đọc truyện - nhận chapterId qua URL (/reader/xyz789?page=12)
     GoRoute(
       path: '/reader/:chapterId',
-      builder: (context, state) => ReaderPage(
-        chapterId: state.pathParameters['chapterId']!,
-        mangaId: state.uri.queryParameters['mangaId'],
-        initialPageIndex: int.tryParse(state.uri.queryParameters['page'] ?? ''),
-      ),
+      builder: (context, state) {
+        final chapterId = state.pathParameters['chapterId']!;
+        return ReaderPage(
+          key: ValueKey(chapterId),
+          chapterId: chapterId,
+          mangaId: state.uri.queryParameters['mangaId'],
+          initialPageIndex: int.tryParse(state.uri.queryParameters['page'] ?? ''),
+        );
+      },
     ),
     // Route trang tìm kiếm toàn cục - có thể nhận query parameter ?q=...&genre=...&type=...
     GoRoute(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/notification_service.dart';
 
@@ -44,6 +45,7 @@ class _NotificationListPageState extends State<NotificationListPage>
     try {
       await NotificationService.instance.markAllNotificationsAsRead(notifications);
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đã đánh dấu tất cả là đã đọc'),
@@ -52,6 +54,7 @@ class _NotificationListPageState extends State<NotificationListPage>
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Không thể đánh dấu tất cả: $e'),
@@ -67,6 +70,7 @@ class _NotificationListPageState extends State<NotificationListPage>
   Future<void> _clearReadNotifications(List<AppNotification> notifications) async {
     final readNotes = notifications.where((n) => n.isRead).toList();
     if (readNotes.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Không có thông báo đã đọc nào để xóa')),
       );
@@ -95,7 +99,7 @@ class _NotificationListPageState extends State<NotificationListPage>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -167,7 +171,7 @@ class _NotificationListPageState extends State<NotificationListPage>
             actions: [
               if (hasRead)
                 IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.white70),
+                  icon: Icon(Icons.delete_sweep_outlined, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                   tooltip: 'Xóa thông báo đã đọc',
                   onPressed: () => _clearReadNotifications(allNotifications),
                 ),
@@ -178,7 +182,7 @@ class _NotificationListPageState extends State<NotificationListPage>
               tabAlignment: TabAlignment.start,
               padding: const EdgeInsets.only(left: 8),
               labelColor: theme.colorScheme.primary,
-              unselectedLabelColor: Colors.white54,
+              unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
               indicatorColor: theme.colorScheme.primary,
               indicatorSize: TabBarIndicatorSize.label,
               labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
@@ -372,7 +376,12 @@ class _NotificationListPageState extends State<NotificationListPage>
                     ),
                   Expanded(
                     child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        4,
+                        16,
+                        16 + MediaQuery.paddingOf(context).bottom,
+                      ),
                       itemCount: listItems.length,
                       itemBuilder: (context, index) {
                         final item = listItems[index];
@@ -441,6 +450,7 @@ class _NotificationListPageState extends State<NotificationListPage>
                                 return true;
                               } catch (e) {
                                 if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Không thể xóa: $e'),
@@ -463,113 +473,120 @@ class _NotificationListPageState extends State<NotificationListPage>
                                 );
                               }
                             },
-                            child: InkWell(
-                              onTap: () async {
-                                if (!isRead) {
-                                  await NotificationService.instance
-                                      .markNotificationAsRead(note);
-                                }
-                                if (context.mounted) {
-                                  final route = note.route;
-                                  if (route != null && route.isNotEmpty) {
-                                    context.push(route);
-                                    return;
+                            child: Material(
+                              color: isRead
+                                  ? Colors.transparent
+                                  : theme.colorScheme.primary.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(12),
+                              child: InkWell(
+                                onTap: () async {
+                                  HapticFeedback.lightImpact();
+                                  if (!isRead) {
+                                    await NotificationService.instance
+                                        .markNotificationAsRead(note);
                                   }
-                                  final targetId = note.targetId;
-                                  if (targetId != null && targetId.isNotEmpty) {
-                                    if (note.source == 'forum' ||
-                                        note.type.contains('forum')) {
-                                      context.push('/forum/detail/$targetId');
-                                    } else {
-                                      context.push('/detail/$targetId');
+                                  if (context.mounted) {
+                                    final route = note.route;
+                                    if (route != null && route.isNotEmpty) {
+                                      context.push(route);
+                                      return;
+                                    }
+                                    final targetId = note.targetId;
+                                    if (targetId != null && targetId.isNotEmpty) {
+                                      if (note.source == 'forum' ||
+                                          note.type.contains('forum')) {
+                                        context.push('/forum/detail/$targetId');
+                                      } else {
+                                        context.push('/detail/$targetId');
+                                      }
                                     }
                                   }
-                                }
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isRead
-                                      ? Colors.transparent
-                                      : theme.colorScheme.primary.withValues(alpha: 0.06),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isRead
-                                        ? theme.dividerColor.withValues(alpha: 0.15)
-                                        : theme.colorScheme.primary.withValues(alpha: 0.15),
-                                  ),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      margin: const EdgeInsets.only(top: 4, right: 12),
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.surfaceContainerHighest,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        _iconFor(note.source),
-                                        size: 17,
-                                        color: isRead
-                                            ? theme.disabledColor
-                                            : theme.colorScheme.primary,
-                                      ),
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isRead
+                                          ? theme.dividerColor.withValues(alpha: 0.15)
+                                          : theme.colorScheme.primary.withValues(alpha: 0.15),
                                     ),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            note.title,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.textTheme.titleSmall?.copyWith(
-                                              fontWeight: isRead
-                                                  ? FontWeight.normal
-                                                  : FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            note.body,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: theme.textTheme.bodyMedium?.copyWith(
-                                              color: isRead
-                                                  ? theme.disabledColor
-                                                  : theme.textTheme.bodyMedium?.color,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Text(
-                                                '${_formatTimestamp(note.createdAt)} • ${_labelFor(note.source)}',
-                                                style: theme.textTheme.bodySmall?.copyWith(
-                                                  color: theme.disabledColor,
-                                                ),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        margin: const EdgeInsets.only(top: 4, right: 12),
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.surfaceContainerHighest,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          _iconFor(note.source),
+                                          size: 17,
+                                          color: isRead
+                                              ? theme.disabledColor
+                                              : theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              note.title,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.titleSmall?.copyWith(
+                                                fontWeight: isRead
+                                                    ? FontWeight.normal
+                                                    : FontWeight.bold,
                                               ),
-                                              if (!isRead) ...[
-                                                const SizedBox(width: 8),
-                                                Container(
-                                                  width: 6,
-                                                  height: 6,
-                                                  decoration: BoxDecoration(
-                                                    color: theme.colorScheme.primary,
-                                                    shape: BoxShape.circle,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              note.body,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: theme.textTheme.bodyMedium?.copyWith(
+                                                color: isRead
+                                                    ? theme.disabledColor
+                                                    : theme.textTheme.bodyMedium?.color,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    '${_formatTimestamp(note.createdAt)} • ${_labelFor(note.source)}',
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: theme.textTheme.bodySmall?.copyWith(
+                                                      color: theme.disabledColor,
+                                                    ),
                                                   ),
                                                 ),
+                                                if (!isRead) ...[
+                                                  const SizedBox(width: 8),
+                                                  Container(
+                                                    width: 6,
+                                                    height: 6,
+                                                    decoration: BoxDecoration(
+                                                      color: theme.colorScheme.primary,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                                ],
                                               ],
-                                            ],
-                                          ),
-                                        ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

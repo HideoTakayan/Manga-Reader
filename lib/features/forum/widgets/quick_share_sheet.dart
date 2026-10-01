@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/content_type.dart';
@@ -38,12 +39,14 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
   Future<void> _share() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đăng nhập để chia sẻ')),
       );
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() => _isSharing = true);
     try {
       final caption = _captionController.text.trim();
@@ -266,6 +269,7 @@ class _QuickShareToForumSheetState extends State<QuickShareToForumSheet> {
                 // Ô nhập caption
                 TextField(
                   controller: _captionController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   maxLines: 3,
                   maxLength: 2000,
                   textInputAction: TextInputAction.done,

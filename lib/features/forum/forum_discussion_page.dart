@@ -103,6 +103,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
       });
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi tải bài viết: $e')));
@@ -185,6 +186,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                 ),
                 child: TextField(
                   controller: _searchController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   style: const TextStyle(fontSize: 14),
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
@@ -198,20 +200,34 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                       fontSize: 13,
                     ),
                     prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
+                    suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _searchController,
+                      builder: (context, value, _) {
+                        if (value.text.isEmpty) return const SizedBox.shrink();
+                        return IconButton(
+                          tooltip: 'Xóa tìm kiếm',
+                          icon: const Icon(Icons.clear, size: 16),
+                          onPressed: () {
+                            if (_searchDebounce?.isActive ?? false) {
+                              _searchDebounce!.cancel();
+                            }
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        );
+                      },
+                    ),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                   onChanged: (val) {
                     if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                    if (val.trim().isEmpty) {
+                      if (_searchQuery.isNotEmpty) {
+                        setState(() => _searchQuery = '');
+                      }
+                      return;
+                    }
                     _searchDebounce = Timer(const Duration(milliseconds: 200), () {
                       if (mounted) setState(() => _searchQuery = val);
                     });
@@ -246,12 +262,12 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                           selected: _selectedTag == null,
                           selectedColor: primary.withValues(alpha: 0.22),
                           labelStyle: TextStyle(
-                            color: _selectedTag == null ? primary : Colors.white70,
+                            color: _selectedTag == null ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: _selectedTag == null ? FontWeight.bold : FontWeight.normal,
                             fontSize: 12,
                           ),
                           side: BorderSide(
-                            color: _selectedTag == null ? primary : Colors.white12,
+                            color: _selectedTag == null ? primary : Theme.of(context).dividerColor.withValues(alpha: 0.2),
                           ),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           onSelected: (_) => _onTagSelected(null),
@@ -289,12 +305,12 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                             selected: isSelected,
                             selectedColor: primary.withValues(alpha: 0.22),
                             labelStyle: TextStyle(
-                              color: isSelected ? primary : Colors.white70,
+                              color: isSelected ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                               fontSize: 12,
                             ),
                             side: BorderSide(
-                              color: isSelected ? primary : Colors.white12,
+                              color: isSelected ? primary : Theme.of(context).dividerColor.withValues(alpha: 0.2),
                             ),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             onSelected: (val) {
@@ -358,6 +374,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                 onRefresh: () => _loadPosts(refresh: true),
                 child: filteredPosts.isEmpty && !_isLoading
                     ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         children: [
                           const SizedBox(height: 100),
                           Center(
@@ -410,6 +427,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                                     onPressed: () async {
                                       HapticFeedback.lightImpact();
                                       if (FirebaseAuth.instance.currentUser == null) {
+                                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('Vui lòng đăng nhập để đăng bài')),
                                         );
@@ -437,6 +455,8 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.only(bottom: 80),
                         itemCount: filteredPosts.length +
                             ((_hasMore && _searchQuery.isEmpty) ? 1 : 0),
@@ -488,6 +508,7 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
             onPressed: () async {
               HapticFeedback.lightImpact();
               if (FirebaseAuth.instance.currentUser == null) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Vui lòng đăng nhập để đăng bài'),
@@ -516,38 +537,42 @@ class _ForumDiscussionPageState extends State<ForumDiscussionPage> {
     required Color color,
   }) {
     final isSelected = _sortBy == value;
-    return InkWell(
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
-      onTap: () => _onSortChanged(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.18) : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color.withValues(alpha: 0.6) : Colors.white12,
-            width: 1,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _onSortChanged(value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.18) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? color.withValues(alpha: 0.6) : Theme.of(context).dividerColor.withValues(alpha: 0.2),
+              width: 1,
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 12,
-              color: isSelected ? color : Colors.white60,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? color : Colors.white70,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 12,
+                color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
-            ),
-          ],
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

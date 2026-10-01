@@ -132,9 +132,8 @@ class _ForumChatPageState extends State<ForumChatPage> {
       },
       onError: (error) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Lỗi tải chat: $error')));
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải chat: $error')));
         }
       },
     );
@@ -174,9 +173,8 @@ class _ForumChatPageState extends State<ForumChatPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Lỗi tải thêm tin: $e')));
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải thêm tin: $e')));
       }
     } finally {
       if (mounted) {
@@ -200,6 +198,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đăng nhập để chat')),
       );
@@ -246,9 +245,8 @@ class _ForumChatPageState extends State<ForumChatPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Lỗi gửi tin: $e')));
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi gửi tin: $e')));
       }
     } finally {
       if (mounted) {
@@ -362,19 +360,19 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      const Text(
+                      Text(
                         'Chưa có tin nhắn nào',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         'Hãy là người đầu tiên gửi tin nhắn trò chuyện!',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           fontSize: 13,
                         ),
                       ),
@@ -383,6 +381,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                 )
               : ListView.builder(
                   controller: _scrollController,
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                   reverse: true, // Tin mới nhất ở dưới cùng
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: _messages.length + (_hasMore ? 1 : 0),
@@ -436,7 +435,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(dialogCtx, false),
-                                child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                                child: Text('Hủy'),
                               ),
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
@@ -564,7 +563,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
             padding: const EdgeInsets.all(12),
             color: Colors.orange.withValues(alpha: 0.1),
             child: Text(
-              'Bạn đang bị cấm ngôn đến ${mutedUntil.hour}:${mutedUntil.minute.toString().padLeft(2, '0')} ${mutedUntil.day}/${mutedUntil.month}/${mutedUntil.year}',
+              'Bạn đang bị cấm ngôn đến ${mutedUntil.hour.toString().padLeft(2, '0')}:${mutedUntil.minute.toString().padLeft(2, '0')} ${mutedUntil.day}/${mutedUntil.month}/${mutedUntil.year}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
             ),
@@ -616,6 +615,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                           ),
                         ),
                         IconButton(
+                          tooltip: 'Hủy trả lời',
                           icon: const Icon(Icons.close, size: 20),
                           onPressed: () => setState(() => _replyingTo = null),
                         ),
@@ -638,6 +638,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         top: 12,
                         right: 12,
                         child: IconButton(
+                          tooltip: 'Xóa ảnh',
                           icon: const Icon(Icons.cancel),
                           color: Colors.red,
                           onPressed: () => setState(() => _imageFile = null),
@@ -657,15 +658,19 @@ class _ForumChatPageState extends State<ForumChatPage> {
                       ForumComposer(
                         showImagePicker: true,
                         enabled: !isMuted && !isBanned,
-                        onEmojiPressed: () {
-                          setState(() {
-                            _showEmojiPicker = !_showEmojiPicker;
-                            if (_showEmojiPicker) {
+                        onEmojiPressed: () async {
+                          if (!_showEmojiPicker) {
+                            if (_focusNode.hasFocus) {
                               _focusNode.unfocus();
-                            } else {
-                              _focusNode.requestFocus();
+                              await Future.delayed(const Duration(milliseconds: 150));
                             }
-                          });
+                            if (mounted) {
+                              setState(() => _showEmojiPicker = true);
+                            }
+                          } else {
+                            setState(() => _showEmojiPicker = false);
+                            _focusNode.requestFocus();
+                          }
                         },
                         onImageSelected: (file) {
                           setState(() {
@@ -677,6 +682,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         child: TextField(
                           controller: _messageController,
                           focusNode: _focusNode,
+                          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                           textCapitalization: TextCapitalization.sentences,
                           textInputAction: TextInputAction.send,
                           decoration: InputDecoration(
@@ -705,6 +711,7 @@ class _ForumChatPageState extends State<ForumChatPage> {
                         ),
                       ),
                       IconButton(
+                        tooltip: 'Gửi tin nhắn',
                         onPressed: user == null || _isSending || isMuted || isBanned
                             ? null
                             : _sendMessage,

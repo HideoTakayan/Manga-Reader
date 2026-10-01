@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -266,6 +267,7 @@ class AchievementService {
   int _currentStreak = 0;
   int _communityActionsCount = 0;
   bool _isLoaded = false;
+  bool get isLoaded => _isLoaded;
   Future<void>? _initFuture;
 
   Future<void> init() async {
@@ -459,9 +461,10 @@ class AchievementService {
   int getTotalCount() => _predefinedBadges.length;
 
   /// Hiển thị Bảng Vinh Danh Thành Tựu Phong Cách Steam
-  static void showAchievementShowcase(BuildContext context) {
+  static Future<void> showAchievementShowcase(BuildContext context) async {
     HapticFeedback.mediumImpact();
-    showModalBottomSheet(
+    unawaited(instance.init());
+    return showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
       isScrollControlled: true,
@@ -482,9 +485,26 @@ class _AchievementShowcaseSheet extends StatefulWidget {
 
 class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
   AchievementCategory _selectedCategory = AchievementCategory.all;
+  bool _isLoading = !AchievementService.instance.isLoaded;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isLoading) {
+      AchievementService.instance.init().then((_) {
+        if (mounted) setState(() => _isLoading = false);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const SizedBox(
+        height: 300,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     final service = AchievementService.instance;
     final badges = service.getBadges(category: _selectedCategory);
     final unlockedCount = service.getUnlockedCount();
@@ -560,6 +580,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                       ],
                     ),
                     IconButton(
+                      tooltip: 'Đóng',
                       icon: Icon(
                         Icons.close_rounded,
                         color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
@@ -576,7 +597,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                   child: LinearProgressIndicator(
                     value: percent,
                     minHeight: 6,
-                    backgroundColor: Colors.white12,
+                    backgroundColor: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.12),
                     valueColor: const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
                   ),
                 ),
@@ -595,7 +616,7 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                           selected: isSelected,
                           selectedColor: Colors.amberAccent,
                           labelStyle: TextStyle(
-                            color: isSelected ? Colors.black : Colors.white70,
+                            color: isSelected ? Colors.black : Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           ),
                           visualDensity: VisualDensity.compact,

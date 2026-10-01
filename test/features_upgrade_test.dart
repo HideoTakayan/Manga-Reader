@@ -99,7 +99,7 @@ void main() {
 
   group('Feature 2 - History Resume Reading Hero Card Logic Tests', () {
     test('ReadingHistory progress percent calculation handles bounds cleanly', () {
-      // Normal progress: page 15 of 30 -> (15 + 1) / 30 = 16 / 30 ~ 53%
+      // Normal progress: lastPageIndex=14 → current=(14+1)=15, 15/30 = 0.5 (50%)
       final history1 = ReadingHistory(
         userId: 'u1',
         mangaId: 'm1',

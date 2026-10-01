@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../catalog/catalog_cache_service.dart';
 
@@ -181,6 +182,7 @@ class _HelpPageState extends State<HelpPage> {
         ),
       ),
       body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(16),
         children: [
           _buildSearchBar(),
@@ -258,27 +260,34 @@ class _HelpPageState extends State<HelpPage> {
   Widget _buildSearchBar() {
     return TextField(
       controller: _searchController,
+      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
       style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Tìm câu hỏi, hướng dẫn, định dạng...',
-        hintStyle: const TextStyle(color: Colors.grey),
+        hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
         filled: true,
         fillColor: Theme.of(context).cardColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
-        prefixIcon: const Icon(Icons.search, color: Colors.grey),
-        suffixIcon: _searchQuery.isNotEmpty
-            ? IconButton(
-                icon: const Icon(Icons.clear, size: 16, color: Colors.grey),
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() => _searchQuery = '');
-                },
-              )
-            : null,
+        prefixIcon: Icon(Icons.search, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+        suffixIcon: ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _searchController,
+          builder: (context, value, _) {
+            if (value.text.isEmpty) return const SizedBox.shrink();
+            return IconButton(
+              tooltip: 'Xóa tìm kiếm',
+              icon: Icon(Icons.clear, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+              onPressed: () {
+                if (_debounce?.isActive ?? false) _debounce!.cancel();
+                _searchController.clear();
+                setState(() => _searchQuery = '');
+              },
+            );
+          },
+        ),
       ),
       onChanged: (value) {
         if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -319,13 +328,13 @@ class _HelpPageState extends State<HelpPage> {
           ),
         ),
         iconColor: Colors.orange, // Icon khi expand
-        collapsedIconColor: Colors.grey, // Icon khi collapse
+        collapsedIconColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
               faq['answer']!,
-              style: const TextStyle(color: Colors.grey, height: 1.5),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65), height: 1.5),
             ),
           ),
         ],
@@ -355,10 +364,13 @@ class _HelpPageState extends State<HelpPage> {
         ),
         subtitle: Text(
           guide['description']!,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-        onTap: () => _showGuideDialog(guide),
+        trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _showGuideDialog(guide);
+        },
       ),
     );
   }
@@ -431,12 +443,13 @@ class _HelpPageState extends State<HelpPage> {
               'Email',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'minhhieued245@gmail.com',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12),
             ),
-            trailing: const Icon(Icons.send, color: Colors.grey),
+            trailing: Icon(Icons.send, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
             onTap: () async {
+              HapticFeedback.lightImpact();
               // Uri scheme 'mailto' → mở email app tự động điền địa chỉ + subject
               final Uri emailUri = Uri(
                 scheme: 'mailto',
@@ -447,6 +460,7 @@ class _HelpPageState extends State<HelpPage> {
                 await launchUrl(emailUri);
               } else {
                 if (mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở email'),
@@ -472,12 +486,13 @@ class _HelpPageState extends State<HelpPage> {
               'Facebook',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
             ),
-            subtitle: const Text(
+            subtitle: Text(
               'Nhắn tin qua Facebook',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 12),
             ),
-            trailing: const Icon(Icons.open_in_new, color: Colors.grey),
+            trailing: Icon(Icons.open_in_new, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
             onTap: () async {
+              HapticFeedback.lightImpact();
               final Uri fbUri = Uri.parse(
                 'https://www.facebook.com/minh.hieu.126210/?locale=vi_VN',
               );
@@ -486,6 +501,7 @@ class _HelpPageState extends State<HelpPage> {
                 await launchUrl(fbUri, mode: LaunchMode.externalApplication);
               } else {
                 if (mounted) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Không thể mở Facebook'),

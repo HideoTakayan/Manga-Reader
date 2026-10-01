@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_forum_repository.dart';
 
@@ -41,6 +42,7 @@ class _ReportDialogState extends State<ReportDialog> {
   Future<void> _submitReport() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đăng nhập để báo cáo')),
       );
@@ -54,12 +56,14 @@ class _ReportDialogState extends State<ReportDialog> {
     }
 
     if (reason.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng chọn hoặc nhập lý do')),
       );
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() => _isSubmitting = true);
 
     try {
@@ -164,6 +168,7 @@ class _ReportDialogState extends State<ReportDialog> {
                       activeColor: primary,
                       // ignore: deprecated_member_use
                       onChanged: (value) {
+                        HapticFeedback.selectionClick();
                         setState(() {
                           _selectedReason = value;
                         });
@@ -171,6 +176,7 @@ class _ReportDialogState extends State<ReportDialog> {
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                     onTap: () {
+                      HapticFeedback.selectionClick();
                       setState(() {
                         _selectedReason = reason;
                       });
@@ -183,6 +189,8 @@ class _ReportDialogState extends State<ReportDialog> {
                   padding: const EdgeInsets.only(top: 8.0),
                   child: TextField(
                     controller: _otherReasonController,
+                    autofocus: true,
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
                     textInputAction: TextInputAction.done,
                     textCapitalization: TextCapitalization.sentences,
@@ -214,7 +222,7 @@ class _ReportDialogState extends State<ReportDialog> {
         actions: [
           TextButton(
             onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: _isSubmitting ? null : _submitReport,

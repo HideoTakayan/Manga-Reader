@@ -81,7 +81,6 @@ class _ForumPostCardState extends State<ForumPostCard> {
         ),
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
             border: authorRank == 1
                 ? Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.2)
                 : authorRank == 2
@@ -99,9 +98,11 @@ class _ForumPostCardState extends State<ForumPostCard> {
                   ]
                 : null,
           ),
-          child: InkWell(
-            onTap: widget.onTap,
-            child: Column(
+          child: Material(
+            color: Theme.of(context).cardColor,
+            child: InkWell(
+              onTap: widget.onTap,
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Pinned Post Ribbon
@@ -193,6 +194,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                         ),
                       ),
                       IconButton(
+                        tooltip: 'Tùy chọn',
                         icon: const Icon(Icons.more_horiz, size: 20),
                         onPressed: () => _showOptions(context),
                         padding: EdgeInsets.zero,
@@ -302,14 +304,9 @@ class _ForumPostCardState extends State<ForumPostCard> {
                       spacing: 6,
                       runSpacing: 6,
                       children: post.tags.map((tag) {
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            widget.onTagTap?.call(tag);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        return Material(
+                          color: Colors.transparent,
+                          child: Ink(
                             decoration: BoxDecoration(
                               color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(12),
@@ -317,12 +314,22 @@ class _ForumPostCardState extends State<ForumPostCard> {
                                 color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                               ),
                             ),
-                            child: Text(
-                              '#$tag',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                widget.onTagTap?.call(tag);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                child: Text(
+                                  '#$tag',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -397,8 +404,9 @@ class _ForumPostCardState extends State<ForumPostCard> {
             ),
           ),
         ),
-      ],
-    );
+      ),
+    ],
+  );
   }
 
   Widget _buildLikeButton(BuildContext context) {
@@ -409,6 +417,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
         Icons.thumb_up_outlined,
         _likeCount.toString(),
         onTap: () {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Vui lòng đăng nhập để thích')),
           );
@@ -447,6 +456,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                     _likeCount = (_likeCount > 0) ? _likeCount - 1 : 0;
                   }
                 });
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
               }
             }
@@ -530,8 +540,10 @@ class _ForumPostCardState extends State<ForumPostCard> {
                 leading: const Icon(Icons.copy_rounded),
                 title: const Text('Sao chép nội dung'),
                 onTap: () {
+                  HapticFeedback.lightImpact();
                   Navigator.pop(sheetContext);
                   Clipboard.setData(ClipboardData(text: post.body));
+                  ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                   ScaffoldMessenger.of(pageContext).showSnackBar(
                     const SnackBar(
                       content: Text('Đã sao chép nội dung bài viết'),
@@ -586,7 +598,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                           TextButton(
                             onPressed: () =>
                                 Navigator.pop(dialogContext, false),
-                            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                            child: Text('Hủy'),
                           ),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
@@ -605,6 +617,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                       try {
                         await FirebaseForumRepository().softDeletePost(post.id);
                         if (pageContext.mounted) {
+                          ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                           ScaffoldMessenger.of(pageContext).showSnackBar(
                             const SnackBar(content: Text('Đã xóa bài viết')),
                           );
@@ -612,6 +625,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
                         }
                       } catch (e) {
                         if (pageContext.mounted) {
+                          ScaffoldMessenger.of(pageContext).hideCurrentSnackBar();
                           ScaffoldMessenger.of(
                             pageContext,
                           ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));

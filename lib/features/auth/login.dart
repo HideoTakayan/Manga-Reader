@@ -258,6 +258,7 @@ class _LoginPageState extends State<LoginPage> {
                           if (!isLogin) ...[
                             TextField(
                               controller: _nameCtrl,
+                              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textCapitalization: TextCapitalization.words,
                               textInputAction: TextInputAction.next,
                               style: const TextStyle(color: Colors.white),
@@ -270,6 +271,7 @@ class _LoginPageState extends State<LoginPage> {
                           ],
                           TextField(
                             controller: _emailCtrl,
+                            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                             keyboardType: TextInputType.emailAddress,
                             textInputAction: TextInputAction.next,
                             style: const TextStyle(color: Colors.white),
@@ -278,6 +280,7 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 16),
                           TextField(
                             controller: _passCtrl,
+                            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                             obscureText: _obscure,
                             textInputAction: isLogin ? TextInputAction.done : TextInputAction.next,
                             onSubmitted: isLogin ? (_) => _submit() : null,
@@ -286,6 +289,7 @@ class _LoginPageState extends State<LoginPage> {
                               'Mật khẩu',
                               Icons.lock_outline,
                               suffix: IconButton(
+                                tooltip: _obscure ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                                 icon: Icon(
                                   _obscure ? Icons.visibility_off : Icons.visibility,
                                   color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
@@ -294,8 +298,8 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          if (isLogin)
+                          if (isLogin) ...[
+                            const SizedBox(height: 8),
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
@@ -315,11 +319,12 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
-                          const SizedBox(height: 20),
-                          if (!isLogin) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 24),
+                          ] else ...[
+                            const SizedBox(height: 16),
                             TextField(
                               controller: _confirmCtrl,
+                              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               obscureText: _obscureConfirm,
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) => _submit(),
@@ -328,6 +333,7 @@ class _LoginPageState extends State<LoginPage> {
                                 'Xác nhận mật khẩu',
                                 Icons.lock_outline,
                                 suffix: IconButton(
+                                  tooltip: _obscureConfirm ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                                   icon: Icon(
                                     _obscureConfirm
                                         ? Icons.visibility_off
@@ -339,9 +345,8 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 28),
-                          ] else
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 24),
+                          ],
                           SizedBox(
                             width: double.infinity,
                             height: 52,
@@ -528,11 +533,31 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _resetEmailCtrl,
+              autofocus: true,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _submitReset(),
               style: TextStyle(color: onSurface),
-              decoration: widget.inputDecorationBuilder(context, 'Email', Icons.email_outlined),
+              decoration: InputDecoration(
+                labelText: 'Email',
+                labelStyle: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 14),
+                prefixIcon: Icon(Icons.email_outlined, color: Theme.of(context).colorScheme.primary),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.05),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 1.5),
+                ),
+              ),
             ),
           ],
         ),
@@ -540,7 +565,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(

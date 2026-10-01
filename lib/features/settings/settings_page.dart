@@ -136,6 +136,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           .set(dataToUpdate, SetOptions(merge: true));
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã lưu thay đổi thành công!')),
       );
@@ -143,6 +144,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       setState(() {});
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -178,9 +180,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    80,
                   ),
                   child: Column(
                     children: [
@@ -412,6 +416,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       automaticallyImplyLeading: false,
       leading: canPop
           ? IconButton(
+              tooltip: 'Quay lại',
               icon: Icon(
                 Icons.arrow_back_ios_new,
                 color: Theme.of(context).iconTheme.color,
@@ -496,6 +501,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
             ),
             IconButton(
+              tooltip: 'Chỉnh sửa hồ sơ',
               icon: Icon(Icons.edit, color: Theme.of(context).colorScheme.primary),
               onPressed: () => _editProfileDialog(context),
             ),
@@ -659,6 +665,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       ),
                       activeThumbColor: Colors.lightBlueAccent,
                       onChanged: (val) async {
+                        HapticFeedback.selectionClick();
                         setSheetState(() => enabled = val);
                         await prefs.setBool('auto_download_new_chapters', val);
                       },
@@ -768,11 +775,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
           decoration: BoxDecoration(
             color: selected
                 ? Colors.lightBlueAccent.withValues(alpha: 0.2)
@@ -783,13 +789,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               width: selected ? 1.5 : 1,
             ),
           ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.lightBlueAccent : onSurface.withValues(alpha: 0.6),
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? Colors.lightBlueAccent : onSurface.withValues(alpha: 0.6),
+                    fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -1084,6 +1098,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 ),
                               ),
                               IconButton(
+                                tooltip: 'Đóng',
                                 onPressed: () => Navigator.of(context).pop(),
                                 icon: Icon(Icons.close_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.70)),
                                 style: IconButton.styleFrom(
@@ -1481,65 +1496,71 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Widget _buildOledSwitch(AppThemeState themeState, ThemeNotifier themeNotifier, Color primary) {
     final isOn = themeState.usePureBlack;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        themeNotifier.setPureBlack(!isOn);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: Ink(
         decoration: BoxDecoration(
           color: isOn ? Colors.black : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: isOn ? primary : Theme.of(context).dividerColor, width: isOn ? 1.5 : 1.0),
         ),
-        child: Row(
-          children: [
-            // Icon
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: isOn ? primary.withValues(alpha: 0.15) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.contrast_rounded, color: isOn ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Pure Black',
-                    style: TextStyle(
-                      color: isOn ? Colors.white : Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      letterSpacing: -0.2,
-                    ),
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            themeNotifier.setPureBlack(!isOn);
+          },
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                // Icon
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: isOn ? primary.withValues(alpha: 0.15) : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    'Đen tuyệt đối · Tối ưu OLED · Tiết kiệm pin',
-                    style: TextStyle(
-                      color: isOn ? Colors.white54 : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                      fontSize: 10.5,
-                    ),
+                  child: Icon(Icons.contrast_rounded, color: isOn ? primary : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pure Black',
+                        style: TextStyle(
+                          color: isOn ? Colors.white : Theme.of(context).colorScheme.onSurface,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        'Đen tuyệt đối · Tối ưu OLED · Tiết kiệm pin',
+                        style: TextStyle(
+                          color: isOn ? Colors.white54 : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Switch.adaptive(
+                  value: isOn,
+                  activeTrackColor: primary.withValues(alpha: 0.5),
+                  activeThumbColor: primary,
+                  onChanged: (val) {
+                    HapticFeedback.selectionClick();
+                    themeNotifier.setPureBlack(val);
+                  },
+                ),
+              ],
             ),
-            Switch.adaptive(
-              value: isOn,
-              activeTrackColor: primary.withValues(alpha: 0.5),
-              activeThumbColor: primary,
-              onChanged: (val) {
-                HapticFeedback.selectionClick();
-                themeNotifier.setPureBlack(val);
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1560,14 +1581,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ? themeState.customAccentColor == null
             : themeState.customAccentColor?.toARGB32() == item.color?.toARGB32();
 
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            themeNotifier.setAccentColor(item.color);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        return Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          child: Ink(
             decoration: BoxDecoration(
               color: isSelected
                   ? displayColor.withValues(alpha: 0.18)
@@ -1581,41 +1598,51 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   ? [BoxShadow(color: displayColor.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2))]
                   : null,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Color circle
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: item.color == null ? Colors.transparent : displayColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: item.color == null ? displayColor : Colors.transparent,
-                      width: 1.5,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                themeNotifier.setAccentColor(item.color);
+              },
+              borderRadius: BorderRadius.circular(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Color circle
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: item.color == null ? Colors.transparent : displayColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: item.color == null ? displayColor : Colors.transparent,
+                          width: 1.5,
+                        ),
+                        boxShadow: isSelected && item.color != null
+                            ? [BoxShadow(color: displayColor.withValues(alpha: 0.5), blurRadius: 6)]
+                            : null,
+                      ),
+                      child: item.color == null
+                          ? Icon(Icons.auto_awesome_rounded, color: displayColor, size: 9)
+                          : (isSelected ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.onSurface, size: 9) : null),
                     ),
-                    boxShadow: isSelected && item.color != null
-                        ? [BoxShadow(color: displayColor.withValues(alpha: 0.5), blurRadius: 6)]
-                        : null,
-                  ),
-                  child: item.color == null
-                      ? Icon(Icons.auto_awesome_rounded, color: displayColor, size: 9)
-                      : (isSelected ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.onSurface, size: 9) : null),
+                    const SizedBox(width: 6),
+                    Text(
+                      item.label,
+                      style: TextStyle(
+                        color: isSelected
+                            ? displayColor
+                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    color: isSelected
-                        ? displayColor
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -1633,6 +1660,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           try {
             await AuthService().linkEmailPassword(password);
             if (context.mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('✅ Đã thêm mật khẩu thành công!'),
@@ -1644,6 +1672,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             }
           } catch (e) {
             if (context.mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
@@ -1680,7 +1709,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text(
+              'Hủy',
+              style: TextStyle(
+                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -1811,39 +1845,44 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               ),
             ),
             const SizedBox(height: 24),
-            GestureDetector(
-              onTap: () async {
-                final picked = await ImagePicker().pickImage(
-                  source: ImageSource.gallery,
-                );
-                if (picked != null && mounted) {
-                  setState(() => _newAvatar = File(picked.path));
-                }
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.orange.withValues(alpha: 0.2),
-                      blurRadius: 15,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: CircleAvatar(
-                  radius: 45,
-                  backgroundColor: theme.cardColor,
-                  backgroundImage: _newAvatar != null
-                      ? FileImage(_newAvatar!)
-                      : widget.currentAvatar,
-                  child: (_newAvatar == null && widget.currentAvatar == null)
-                      ? Icon(
-                          Icons.camera_alt,
-                          size: 30,
-                          color: onSurface.withValues(alpha: 0.54),
-                        )
-                      : null,
+            Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: () async {
+                  final picked = await ImagePicker().pickImage(
+                    source: ImageSource.gallery,
+                  );
+                  if (picked != null && mounted) {
+                    setState(() => _newAvatar = File(picked.path));
+                  }
+                },
+                customBorder: const CircleBorder(),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.orange.withValues(alpha: 0.2),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 45,
+                    backgroundColor: theme.cardColor,
+                    backgroundImage: _newAvatar != null
+                        ? FileImage(_newAvatar!)
+                        : widget.currentAvatar,
+                    child: (_newAvatar == null && widget.currentAvatar == null)
+                        ? Icon(
+                            Icons.camera_alt,
+                            size: 30,
+                            color: onSurface.withValues(alpha: 0.54),
+                          )
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -1853,6 +1892,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               style: theme.textTheme.bodyMedium,
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.words,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               decoration: _inputDeco(
                 context,
                 'Tên hiển thị',
@@ -1864,6 +1904,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               controller: _bioController,
               style: theme.textTheme.bodyMedium,
               textInputAction: TextInputAction.done,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               decoration: _inputDeco(
                 context,
                 'Mô tả ngắn',
@@ -1878,6 +1919,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 onPressed: () async {
                   final trimmedName = _nameController.text.trim();
                   if (trimmedName.isEmpty) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Tên hiển thị không được để trống'),
@@ -2025,6 +2067,7 @@ class _JoinGroupSheetState extends State<_JoinGroupSheet> {
                   textCapitalization: TextCapitalization.characters,
                   textAlign: TextAlign.center,
                   textInputAction: TextInputAction.done,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   onChanged: (val) {
                     setState(() {});
                     if (val.length == 6) {
@@ -2334,6 +2377,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                           fontWeight: FontWeight.w600,
                         ),
                         textInputAction: TextInputAction.next,
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           labelText: 'Tên nhóm dịch *',
@@ -2377,6 +2421,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                         style: theme.textTheme.bodyMedium,
                         maxLines: 3,
                         textInputAction: TextInputAction.done,
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
                           labelText: 'Mô tả nhóm (không bắt buộc)',
@@ -2586,57 +2631,63 @@ class _AddPasswordDialogState extends State<_AddPasswordDialog> {
         'Thêm mật khẩu',
         style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Thêm mật khẩu để có thể đăng nhập bằng email/password',
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            textInputAction: TextInputAction.next,
-            style: theme.textTheme.bodyMedium,
-            decoration: _inputDeco(
-              context,
-              'Mật khẩu mới',
-              icon: Icons.lock_outline,
-              suffix: IconButton(
-                icon: Icon(
-                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: onSurface.withValues(alpha: 0.54),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Thêm mật khẩu để có thể đăng nhập bằng email/password',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              textInputAction: TextInputAction.next,
+              style: theme.textTheme.bodyMedium,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              decoration: _inputDeco(
+                context,
+                'Mật khẩu mới',
+                icon: Icons.lock_outline,
+                suffix: IconButton(
+                  tooltip: _obscurePassword ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    color: onSurface.withValues(alpha: 0.54),
+                  ),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
-                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _confirmController,
-            obscureText: _obscureConfirm,
-            textInputAction: TextInputAction.done,
-            style: theme.textTheme.bodyMedium,
-            decoration: _inputDeco(
-              context,
-              'Xác nhận mật khẩu',
-              icon: Icons.lock_outline,
-              suffix: IconButton(
-                icon: Icon(
-                  _obscureConfirm ? Icons.visibility_off : Icons.visibility,
-                  color: onSurface.withValues(alpha: 0.54),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _confirmController,
+              obscureText: _obscureConfirm,
+              textInputAction: TextInputAction.done,
+              style: theme.textTheme.bodyMedium,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              decoration: _inputDeco(
+                context,
+                'Xác nhận mật khẩu',
+                icon: Icons.lock_outline,
+                suffix: IconButton(
+                  tooltip: _obscureConfirm ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
+                  icon: Icon(
+                    _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                    color: onSurface.withValues(alpha: 0.54),
+                  ),
+                  onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
                 ),
-                onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           onPressed: () async {
@@ -2644,18 +2695,21 @@ class _AddPasswordDialogState extends State<_AddPasswordDialog> {
             final confirm = _confirmController.text.trim();
 
             if (password.isEmpty || confirm.isEmpty) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Vui lòng nhập đầy đủ')),
               );
               return;
             }
             if (password != confirm) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Mật khẩu không khớp')),
               );
               return;
             }
             if (password.length < 6) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Mật khẩu phải ít nhất 6 ký tự'),

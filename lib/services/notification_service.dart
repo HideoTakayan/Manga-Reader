@@ -888,18 +888,21 @@ class NotificationService {
 
       if (targetMangaIds.isEmpty) return;
 
-      // Lưu lại mốc thời gian vừa quét thành công
-      await prefs.setInt(
-        'last_chapter_check_timestamp',
-        DateTime.now().millisecondsSinceEpoch,
-      );
-
       final autoDownloadEnabled =
           prefs.getBool('auto_download_new_chapters') ?? false;
       final maxAutoChapters =
           prefs.getInt('auto_download_max_chapters') ?? 1;
 
+      // Lấy danh sách truyện trước — chỉ lưu timestamp SAU KHI fetch thành công
+      // để tránh bỏ lỡ chu kỳ check nếu getMangas() thất bại giữa chừng
       final mangas = await DriveService.instance.getMangas();
+
+      // Lưu lại mốc thời gian vừa quét thành công (SAU khi getMangas() ok)
+      await prefs.setInt(
+        'last_chapter_check_timestamp',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
       for (final manga in mangas.where(
         (manga) => targetMangaIds.contains(manga.id),
       )) {

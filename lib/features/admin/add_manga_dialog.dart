@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../data/content_type.dart';
 import '../../data/drive_service.dart';
@@ -75,6 +76,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
       }
     } finally {
@@ -125,6 +127,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
           children: [
             TextField(
               controller: _titleController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.sentences,
@@ -157,6 +160,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _authorController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.words,
@@ -165,6 +169,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _descController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               maxLines: 3,
               textInputAction: TextInputAction.next,
@@ -173,6 +178,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _genresController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _isUploading ? null : _submit(),
@@ -184,50 +190,59 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
             ),
             const SizedBox(height: 20),
             // Vùng chọn ảnh bìa
-            InkWell(
-              onTap: _isUploading ? null : _pickCover,
+            Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 20,
-                  horizontal: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: _coverFile != null
-                      ? Colors.green.withValues(alpha: 0.1)
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.03),
-                  border: Border.all(
-                    color: _coverFile != null ? Colors.green : theme.dividerColor,
-                    width: 1,
+              child: InkWell(
+                onTap: _isUploading
+                    ? null
+                    : () {
+                        HapticFeedback.lightImpact();
+                        _pickCover();
+                      },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 20,
+                    horizontal: 16,
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _coverFile != null
-                          ? Icons.check_circle
-                          : Icons.add_photo_alternate,
-                      color: _coverFile != null ? Colors.green : theme.colorScheme.primary,
-                      size: 28,
+                  decoration: BoxDecoration(
+                    color: _coverFile != null
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.03),
+                    border: Border.all(
+                      color: _coverFile != null ? Colors.green : theme.dividerColor,
+                      width: 1,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _coverFile == null
-                            ? 'Tải lên Ảnh Bìa'
-                            : 'Đã chọn: ${_coverFile!.path.split(RegExp(r'[/\\]')).last}',
-                        style: TextStyle(
-                          color: _coverFile != null
-                              ? Colors.green
-                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _coverFile != null
+                            ? Icons.check_circle
+                            : Icons.add_photo_alternate,
+                        color: _coverFile != null ? Colors.green : theme.colorScheme.primary,
+                        size: 28,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _coverFile == null
+                              ? 'Tải lên Ảnh Bìa'
+                              : 'Đã chọn: ${_coverFile!.path.split(RegExp(r'[/\\]')).last}',
+                          style: TextStyle(
+                            color: _coverFile != null
+                                ? Colors.green
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -245,7 +260,7 @@ class _AddMangaDialogState extends State<AddMangaDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           onPressed: _isUploading ? null : _submit,

@@ -20,6 +20,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
   Future<void> _resolveReport(String reportId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Bạn cần đăng nhập admin để xử lý lỗi.')),
       );
@@ -34,6 +35,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đã đánh dấu xử lý thành công!'),
@@ -43,6 +45,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -58,6 +61,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đã mở lại báo cáo (chờ xử lý)'),
@@ -67,6 +71,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
     }
   }
@@ -108,6 +113,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
     try {
       await _db.collection('reports').doc(reportId).delete();
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Đã xóa báo cáo'),
@@ -116,6 +122,7 @@ class _ReportsListPageState extends State<ReportsListPage> {
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
     }
   }

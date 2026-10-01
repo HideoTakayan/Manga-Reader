@@ -221,6 +221,7 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi lưu nhãn: $e')),
         );
@@ -311,6 +312,7 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Đóng',
                     icon: Icon(
                       Icons.close_rounded,
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
@@ -436,6 +438,8 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                             controller: _customTagController,
                             style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13),
                             textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.done,
+                            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                             decoration: InputDecoration(
                               hintText: 'Nhập tên nhãn mới...',
                               hintStyle: TextStyle(

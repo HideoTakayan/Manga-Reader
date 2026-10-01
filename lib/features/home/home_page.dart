@@ -138,23 +138,30 @@ class _HomeContentState extends State<_HomeContent>
         .collection('app_settings')
         .doc('home_banner')
         .get()
-        .timeout(const Duration(seconds: 2))
-        .catchError((_) => throw Exception());
+        .timeout(const Duration(milliseconds: 1200))
+        .then<DocumentSnapshot?>((d) => d)
+        .catchError((_) => null);
 
     final results = await Future.wait([
       mangasFuture,
-      bannerFuture.then<DocumentSnapshot?>((d) => d).catchError((_) => null),
+      bannerFuture,
     ]);
 
     final mangas = results[0] as List<CloudManga>;
     final bannerDoc = results[1] as DocumentSnapshot?;
 
+    final prefs = await SharedPreferences.getInstance();
     List<String> mangaBannerIds = [];
     List<String> novelBannerIds = [];
     if (bannerDoc != null && bannerDoc.exists) {
       final data = bannerDoc.data() as Map<String, dynamic>?;
       mangaBannerIds = List<String>.from(data?['mangaIds'] ?? []);
       novelBannerIds = List<String>.from(data?['novelIds'] ?? []);
+      unawaited(prefs.setStringList('cached_manga_banner_ids', mangaBannerIds));
+      unawaited(prefs.setStringList('cached_novel_banner_ids', novelBannerIds));
+    } else {
+      mangaBannerIds = prefs.getStringList('cached_manga_banner_ids') ?? [];
+      novelBannerIds = prefs.getStringList('cached_novel_banner_ids') ?? [];
     }
 
     // Tính toán danh sách truyện gợi ý thông minh theo sở thích
@@ -202,7 +209,7 @@ class _HomeContentState extends State<_HomeContent>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Để sau', style: TextStyle(color: Colors.grey)),
+              child: Text('Để sau'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -219,6 +226,7 @@ class _HomeContentState extends State<_HomeContent>
                   // Khởi tạo lại FolderService để dùng đường dẫn mới sau khi cấp quyền
                   await FolderService.init();
                   if (mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -510,13 +518,13 @@ class _HomeContentState extends State<_HomeContent>
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.05),
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.wifi_off_rounded,
                                   size: 48,
-                                  color: Colors.white54,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -525,15 +533,18 @@ class _HomeContentState extends State<_HomeContent>
                                     ? 'Chưa có novel nào hoặc đang ngoại tuyến'
                                     : 'Chưa có truyện tranh nào hoặc đang ngoại tuyến',
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: Colors.white70,
+                                      color: Theme.of(context).colorScheme.onSurface,
                                       fontWeight: FontWeight.bold,
                                     ),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 8),
-                              const Text(
+                              Text(
                                 'Bạn có thể xem các truyện & novel đã tải về máy trong Thư viện.',
-                                style: TextStyle(color: Colors.white38, fontSize: 13),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                                  fontSize: 13,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 20),
@@ -551,7 +562,13 @@ class _HomeContentState extends State<_HomeContent>
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _refresh,
-                                child: const Text('Thử tải lại', style: TextStyle(color: Colors.white60)),
+                                child: Text(
+                                  'Thử tải lại',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -678,18 +695,10 @@ class _HomeContentState extends State<_HomeContent>
                         },
                       ),
                       Center(
-                        child: InkWell(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            _toggleContentType();
-                          },
+                        child: Material(
+                          color: Colors.transparent,
                           borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
+                          child: Ink(
                             decoration: BoxDecoration(
                               color: _selectedContentType.isManga
                                   ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
@@ -702,32 +711,45 @@ class _HomeContentState extends State<_HomeContent>
                                 width: 1,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _selectedContentType.isManga
-                                      ? Icons.auto_stories_rounded
-                                      : Icons.menu_book_rounded,
-                                  size: 13,
-                                  color: _selectedContentType.isManga
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Colors.amber,
+                            child: InkWell(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                _toggleContentType();
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _selectedContentType.isManga
-                                      ? 'Manga'
-                                      : 'Novel',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _selectedContentType.isManga
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.amber,
-                                  ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _selectedContentType.isManga
+                                          ? Icons.auto_stories_rounded
+                                          : Icons.menu_book_rounded,
+                                      size: 13,
+                                      color: _selectedContentType.isManga
+                                          ? Theme.of(context).colorScheme.primary
+                                          : Colors.amber,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      _selectedContentType.isManga
+                                          ? 'Manga'
+                                          : 'Novel',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: _selectedContentType.isManga
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Colors.amber,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -788,7 +810,7 @@ class _HomeContentState extends State<_HomeContent>
                         : '🏆 Top Trending',
                   ),
                   SliverToBoxAdapter(child: _RankList(mangas: trending)),
-                  const SliverToBoxAdapter(child: SizedBox(height: 36)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 80)),
                 ],
               );
             },
@@ -860,85 +882,94 @@ class _MangaReaderCarousel extends StatelessWidget {
           separatorBuilder: (_, __) => const SizedBox(width: 12),
           itemBuilder: (context, index) {
             final c = mangas[index];
-            return GestureDetector(
-              onTap: () => context.push('/detail/${c.id}'),
-              child: SizedBox(
-                width: _cardWidth,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      DriveImage(
-                        fileId: c.coverUrl,
-                        fit: BoxFit.cover,
-                        width: _cardWidth,
-                        height: _coverHeight,
-                      ),
-                      // Gradient Overlay
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Container(
-                          height: 80,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.black87, Colors.black],
-                            ),
+            return SizedBox(
+              width: _cardWidth,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DriveImage(
+                      fileId: c.coverUrl,
+                      fit: BoxFit.cover,
+                      width: _cardWidth,
+                      height: _coverHeight,
+                    ),
+                    // Gradient Overlay
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        height: 80,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black87, Colors.black],
                           ),
                         ),
                       ),
-                      // Text
-                      Positioned(
-                        bottom: 12,
-                        left: 8,
-                        right: 8,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              c.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                height: 1.2,
-                              ),
+                    ),
+                    // Text
+                    Positioned(
+                      bottom: 12,
+                      left: 8,
+                      right: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            c.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              height: 1.2,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              c.author,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8),
-                                fontSize: 11,
-                              ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            c.author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 11,
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Ripple ink layer
+                    Positioned.fill(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            context.push('/detail/${c.id}');
+                          },
                         ),
                       ),
-                      // Follow Button (Frosted Glass)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                            child: Container(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              child: _FollowButton(manga: c),
-                            ),
+                    ),
+                    // Follow Button (Frosted Glass)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                          child: Container(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            child: _FollowButton(manga: c),
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -978,6 +1009,7 @@ class _FollowButtonState extends State<_FollowButton> {
 
   Future<void> _toggleFollow(bool isFollowing) async {
     if (_isToggling) return;
+    HapticFeedback.lightImpact();
     setState(() => _isToggling = true);
 
     try {
@@ -987,6 +1019,7 @@ class _FollowButtonState extends State<_FollowButton> {
         coverUrl: widget.manga.coverUrl,
       );
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isFollowing ? 'Đã hủy theo dõi' : 'Đã theo dõi'),
@@ -995,6 +1028,7 @@ class _FollowButtonState extends State<_FollowButton> {
       );
     } catch (e) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Không thể cập nhật theo dõi: $e')),
       );
@@ -1058,10 +1092,16 @@ class _RankList extends StatelessWidget {
         
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: InkWell(
-            onTap: () => context.push('/detail/${c.id}'),
+          child: Material(
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            child: Row(
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                context.push('/detail/${c.id}');
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Row(
               children: [
                 SizedBox(
                   width: 40,
@@ -1125,6 +1165,7 @@ class _RankList extends StatelessWidget {
               ],
             ),
           ),
+          ),
         );
       }),
     );
@@ -1156,9 +1197,10 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
   // Timer chạy vòng lặp: mỗi 4 giây chuyển sang trang kế, quay vòng khi đến cuối
   void _startTimer() {
     _timer?.cancel();
+    if (widget.mangas.length <= 1) return;
     _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (!mounted) return;
-      if (widget.mangas.isEmpty) return;
+      if (widget.mangas.length <= 1) return;
       if (!_controller.hasClients) return;
       final nextPage = (_currentPage + 1) % widget.mangas.length;
       _controller.animateToPage(
@@ -1193,10 +1235,8 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
             },
             itemBuilder: (context, index) {
               final c = widget.mangas[index];
-              return GestureDetector(
-                onTap: () => context.push('/detail/${c.id}'),
-                child: Stack(
-                  fit: StackFit.expand,
+              return Stack(
+                fit: StackFit.expand,
                   children: [
                     DriveImage(
                       fileId: c.coverUrl,
@@ -1271,31 +1311,43 @@ class _AutoSlideBannerState extends State<_AutoSlideBanner> {
                         ],
                       ),
                     ),
+                    Positioned.fill(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            context.push('/detail/${c.id}');
+                          },
+                        ),
+                      ),
+                    ),
                   ],
-                ),
-              );
+                );
             },
           ),
         ),
-        const SizedBox(height: 8),
-        // Indicator chấm: active → rộng 12px, inactive → 6px (AnimatedContainer animate smooth)
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(widget.mangas.length, (i) {
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: _currentPage == i ? 12 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: _currentPage == i
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).dividerColor,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            );
-          }),
-        ),
+        if (widget.mangas.length > 1) ...[
+          const SizedBox(height: 8),
+          // Indicator chấm: active → rộng 12px, inactive → 6px (AnimatedContainer animate smooth)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.mangas.length, (i) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: _currentPage == i ? 12 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _currentPage == i
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).dividerColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
       ],
     );
   }

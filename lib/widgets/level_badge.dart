@@ -134,6 +134,7 @@ class LevelProgressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final info = LevelService.getLevelInfo(exp);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -165,8 +166,8 @@ class LevelProgressCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     info.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onSurface,
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
                     ),
@@ -190,7 +191,7 @@ class LevelProgressCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: info.progress,
               minHeight: 10,
-              backgroundColor: Colors.white.withValues(alpha: 0.08),
+              backgroundColor: onSurface.withValues(alpha: 0.1),
               valueColor: AlwaysStoppedAnimation<Color>(info.badgeColor),
             ),
           ),
@@ -202,29 +203,29 @@ class LevelProgressCard extends StatelessWidget {
                 info.isMaxLevel
                     ? '🎉 Đã đạt cấp bậc tối thượng!'
                     : 'Tiến trình: ${(info.progress * 100).toStringAsFixed(1)}%',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: onSurface.withValues(alpha: 0.55), fontSize: 12),
               ),
               if (!info.isMaxLevel)
                 Text(
                   '${info.expInCurrentLevel} / ${info.expRequiredForNextLevel} EXP (Lv.${info.level + 1})',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 12),
                 ),
             ],
           ),
-          const Divider(color: Colors.white12, height: 20),
+          Divider(color: onSurface.withValues(alpha: 0.12), height: 20),
           Row(
             children: [
               const Icon(Icons.menu_book_rounded, color: Colors.blueAccent, size: 16),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Đọc 1 chap truyện = +10 EXP',
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12),
                 ),
               ),
               Text(
                 'Đã đọc ~${(info.totalExp / 10).floor()} chap',
-                style: const TextStyle(color: Colors.white60, fontSize: 12),
+                style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12),
               ),
             ],
           ),

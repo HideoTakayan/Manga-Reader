@@ -396,8 +396,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             const SizedBox(width: 4),
             Text(
               value,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w800,
                 fontSize: 13.5,
               ),
@@ -408,7 +408,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
             fontSize: 10,
             fontWeight: FontWeight.w500,
           ),
@@ -422,7 +422,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
     return Container(
       width: 1,
       height: 22,
-      color: Colors.white.withValues(alpha: 0.08),
+      color: Theme.of(context).dividerColor,
     );
   }
 
@@ -476,10 +476,10 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Quản lý Truyện của Nhóm',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: theme.colorScheme.onSurface,
                           fontSize: 15.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -488,7 +488,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                       Text(
                         'Đăng truyện mới, quản lý chapter, sửa metadata',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                           fontSize: 12,
                         ),
                       ),
@@ -498,12 +498,12 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.arrow_forward_ios_rounded,
-                    color: Colors.white70,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     size: 14,
                   ),
                 ),
@@ -584,7 +584,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                 const SizedBox(height: 1),
                 Text(
                   isConnected ? '$email' : 'Cần kết nối Drive để đăng truyện & chapter',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5),
+                  style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 11.5),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -594,9 +594,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           const SizedBox(width: 8),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
-              foregroundColor: isConnected ? Colors.white70 : primary,
+              foregroundColor: isConnected ? theme.colorScheme.onSurface.withValues(alpha: 0.6) : primary,
               side: BorderSide(
-                color: isConnected ? Colors.white24 : primary.withValues(alpha: 0.5),
+                color: isConnected ? theme.dividerColor : primary.withValues(alpha: 0.5),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               minimumSize: const Size(0, 32),
@@ -647,7 +647,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+              child: Text('Hủy'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -752,6 +752,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                   onPressed: () {
                     HapticFeedback.mediumImpact();
                     Clipboard.setData(ClipboardData(text: group.inviteCode));
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Đã sao chép mã mời: ${group.inviteCode}')),
                     );
@@ -766,6 +767,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                     HapticFeedback.lightImpact();
                     await GroupService.instance.refreshInviteCode(group.id);
                     if (context.mounted) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Đã làm mới mã mời thành công!')),
                       );
@@ -872,21 +874,14 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
                 final manga = mangas[index];
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => GroupMangaManagerPage(group: group),
-                      ),
-                    ).then((_) => _loadGroupStats());
-                  },
-                  child: Container(
-                    width: 115,
+                return Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Ink(
                     decoration: BoxDecoration(
                       color: theme.cardColor,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      border: Border.all(color: theme.dividerColor),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.25),
@@ -895,50 +890,66 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                         ),
                       ],
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildMangaCover(manga.coverFileId),
-                        Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.black87],
-                              stops: [0.55, 1.0],
-                            ),
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => GroupMangaManagerPage(group: group),
                           ),
-                        ),
-                        Positioned(
-                          bottom: 6,
-                          left: 6,
-                          right: 6,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
+                        ).then((_) => _loadGroupStats());
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 115,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Stack(
+                            fit: StackFit.expand,
                             children: [
-                              Text(
-                                manga.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  const Icon(Icons.remove_red_eye_rounded, size: 10, color: Colors.white60),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    _formatNumber(manga.viewCount),
-                                    style: const TextStyle(color: Colors.white60, fontSize: 9.5),
+                              _buildMangaCover(manga.coverFileId),
+                              Container(
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [Colors.transparent, Colors.black87],
+                                    stops: [0.55, 1.0],
                                   ),
-                                ],
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 6,
+                                left: 6,
+                                right: 6,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      manga.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.remove_red_eye_rounded, size: 10, color: Colors.white60),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          _formatNumber(manga.viewCount),
+                                          style: const TextStyle(color: Colors.white60, fontSize: 9.5),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -1031,7 +1042,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
         title: Text('Xác nhận', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
         content: Text('Bạn có chắc chắn muốn xóa "$name" khỏi nhóm dịch không?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Hủy')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
@@ -1039,9 +1050,11 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
+              HapticFeedback.mediumImpact();
               Navigator.pop(ctx);
               await GroupService.instance.removeMember(group.id, memberId);
               if (context.mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Đã xóa $name khỏi nhóm')),
                 );
@@ -1075,7 +1088,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
             title: Text('Xác nhận rời nhóm?', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold)),
             content: Text('Bạn sẽ không còn là thành viên của "${group.name}".', style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7))),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.grey))),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Hủy')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.redAccent,
@@ -1089,8 +1102,10 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           ),
         );
         if (confirm == true) {
+          HapticFeedback.mediumImpact();
           await GroupService.instance.leaveGroup(group.id);
           if (context.mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Đã rời nhóm thành công')),
             );
@@ -1104,6 +1119,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
 
   Widget _buildNoGroupState(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     return Center(
       child: Padding(
@@ -1121,15 +1137,15 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
               child: Icon(Icons.groups_outlined, size: 40, color: primary),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'Chưa tham gia Nhóm dịch',
-              style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold),
+              style: TextStyle(color: onSurface, fontSize: 19, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               'Bạn chưa tham gia hoặc nhóm dịch của bạn đang chờ Admin phê duyệt.\n\nVào Cài đặt → Tạo nhóm hoặc Nhập mã mời để tham gia!',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12.5, height: 1.4),
+              style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12.5, height: 1.4),
             ),
           ],
         ),
@@ -1203,7 +1219,7 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
             border: Border.all(
               color: widget.isMemberLeader
                   ? const Color(0xFFF59E0B).withValues(alpha: 0.25)
-                  : Colors.white.withValues(alpha: 0.05),
+                  : theme.dividerColor,
             ),
           ),
           child: ListTile(
@@ -1213,10 +1229,10 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: Colors.white10,
+                  backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
                   backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
                   child: (avatarUrl == null || avatarUrl.isEmpty)
-                      ? const Icon(Icons.person_rounded, color: Colors.white54, size: 18)
+                      ? Icon(Icons.person_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.4), size: 18)
                       : null,
                 ),
                 if (widget.isMemberLeader)
@@ -1239,7 +1255,7 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
                 Flexible(
                   child: Text(
                     displayName,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13.5),
+                    style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w600, fontSize: 13.5),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1260,7 +1276,7 @@ class _GroupMemberTileState extends State<_GroupMemberTile> {
             subtitle: Text(
               widget.isMemberLeader ? 'Trưởng nhóm' : 'Thành viên',
               style: TextStyle(
-                color: widget.isMemberLeader ? const Color(0xFFFBBF24) : Colors.white.withValues(alpha: 0.45),
+                color: widget.isMemberLeader ? const Color(0xFFFBBF24) : theme.colorScheme.onSurface.withValues(alpha: 0.45),
                 fontSize: 11,
                 fontWeight: widget.isMemberLeader ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -1326,6 +1342,7 @@ class _DriveRequestDialogState extends State<_DriveRequestDialog> {
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(
           content: Text('Đã gửi yêu cầu cho Admin! Vui lòng chờ Admin phê duyệt.'),
@@ -1333,6 +1350,7 @@ class _DriveRequestDialogState extends State<_DriveRequestDialog> {
         ),
       );
     } catch (e) {
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(content: Text('Lỗi: $e')));
     }
   }
@@ -1350,34 +1368,37 @@ class _DriveRequestDialogState extends State<_DriveRequestDialog> {
         'Yêu cầu quyền truy cập Drive',
         style: TextStyle(color: onSurface, fontWeight: FontWeight.bold),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Tài khoản Google của bạn chưa được Admin thêm vào Test Users.\nNhập email bên dưới để gửi yêu cầu cho Admin cấp quyền:',
-            style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _emailController,
-            style: TextStyle(color: onSurface),
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              labelText: 'Email Google',
-              labelStyle: TextStyle(color: primary),
-              filled: true,
-              fillColor: onSurface.withValues(alpha: 0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Tài khoản Google của bạn chưa được Admin thêm vào Test Users.\nNhập email bên dưới để gửi yêu cầu cho Admin cấp quyền:',
+              style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            TextField(
+              controller: _emailController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              style: TextStyle(color: onSurface),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                labelText: 'Email Google',
+                labelStyle: TextStyle(color: primary),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(

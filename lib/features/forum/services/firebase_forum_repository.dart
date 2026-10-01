@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'forum_repository.dart';
@@ -123,15 +122,9 @@ class FirebaseForumRepository implements ForumRepository {
       return b.createdAt.compareTo(a.createdAt);
     });
 
-    // Khi fallback + có tag filter: lastDoc phải khớp với post cuối TRONG danh sách đã lọc
-    // để phân trang tiếp theo không bị sai cursor.
-    DocumentSnapshot? lastDoc;
-    if (isFallback && cleanTag != null && posts.isNotEmpty) {
-      final lastPostId = posts.last.id;
-      lastDoc = snapshot.docs.firstWhereOrNull((d) => d.id == lastPostId);
-    } else {
-      lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
-    }
+    // Con trỏ phân trang Firestore phải luôn là document cuối cùng được query từ Firestore
+    // để các batch tiếp theo không quét lại các document cũ.
+    final lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
 
     return (posts, lastDoc);
   }
@@ -213,15 +206,9 @@ class FirebaseForumRepository implements ForumRepository {
       return b.createdAt.compareTo(a.createdAt);
     });
 
-    // Khi fallback + có tag filter: lastDoc phải khớp với post cuối TRONG danh sách đã lọc
-    // để phân trang tiếp theo không bị sai cursor.
-    DocumentSnapshot? lastDoc;
-    if (isFallback && cleanTag != null && posts.isNotEmpty) {
-      final lastPostId = posts.last.id;
-      lastDoc = snapshot.docs.firstWhereOrNull((d) => d.id == lastPostId);
-    } else {
-      lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
-    }
+    // Con trỏ phân trang Firestore phải luôn là document cuối cùng được query từ Firestore
+    // để các batch tiếp theo không quét lại các document cũ.
+    final lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
 
     return (posts, lastDoc);
   }
@@ -468,8 +455,8 @@ class FirebaseForumRepository implements ForumRepository {
     if (trimmedBody.isEmpty) {
       throw Exception('Nội dung bình luận không được để trống.');
     }
-    if (trimmedBody.length > 1000) {
-      throw Exception('Bình luận quá dài (tối đa 1000 ký tự).');
+    if (trimmedBody.length > 2000) {
+      throw Exception('Bình luận quá dài (tối đa 2000 ký tự).');
     }
 
     final postRef = _firestore.collection('forumPosts').doc(postId);

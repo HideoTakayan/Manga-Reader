@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/follow_service.dart';
 import '../../data/content_type.dart';
@@ -62,6 +60,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   Set<String> _readChapterIds = {};
   Set<String> _downloadedChapterIds = {};
   ChapterFilterStatus _selectedChapterFilter = ChapterFilterStatus.all;
+  final ScrollController _scrollController = ScrollController();
 
   // Cached Firestore streams — must not be created inside build()
   late Stream<bool> _followStream;
@@ -143,6 +142,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     LibraryStatusService.instance.removeListener(_fetchLocalReaderData);
     _chapterSearchDebounce?.cancel();
     _chapterSearchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -400,21 +400,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         );
         if (isDownloaded) return;
 
-        final tempDir = await getTemporaryDirectory();
-        final tempFile = File('${tempDir.path}/temp_online_$targetChapterId');
-        if (await tempFile.exists() && await tempFile.length() > 0) return;
-
         debugPrint(
           '🚀 Smart preloading target chapter: ${targetChapter.title}',
         );
-        final success = await DriveService.instance.downloadFileToFile(
+        final file = await DriveService.instance.getOrDownloadChapterFile(
           targetChapterId,
-          tempFile,
+          extensionHint: targetChapter.fileType,
         );
-        if (success &&
+        if (file != null &&
             targetChapter.fileType != 'pdf' &&
             targetChapter.fileType != 'epub') {
-          await ArchiveImageExtractor.extract(tempFile.path, targetChapterId);
+          await ArchiveImageExtractor.extract(file.path, targetChapterId);
           debugPrint(
             '✅ Preloaded & extracted target chapter: ${targetChapter.title}',
           );
@@ -556,6 +552,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
+            tooltip: 'Quay lại',
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () => context.pop(),
           ),
@@ -706,6 +703,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         child: Stack(
           children: [
             CustomScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               slivers: [
                 // 1. Phần Đầu Trang (Ảnh bìa + Thông tin chính)
                 SliverToBoxAdapter(
@@ -730,38 +730,40 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         final genre = manga.genres.isNotEmpty
                             ? manga.genres[index]
                             : manga.contentType.label;
-                        return InkWell(
-                          onTap: () {
-                            context.push(
-                              Uri(
-                                path: '/search-global',
-                                queryParameters: {
-                                  if (manga.genres.isNotEmpty) 'genre': genre,
-                                  'type': manga.contentType.name,
-                                },
-                              ).toString(),
-                            );
-                          },
+                        return Material(
+                          color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
+                          child: InkWell(
+                            onTap: () {
+                              context.push(
+                                Uri(
+                                  path: '/search-global',
+                                  queryParameters: {
+                                    if (manga.genres.isNotEmpty) 'genre': genre,
+                                    'type': manga.contentType.name,
+                                  },
+                                ).toString(),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
                               ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              genre,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: theme.colorScheme.onSurface,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
+                                ),
+                              ),
+                              child: Text(
+                                genre,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.onSurface,
+                                ),
                               ),
                             ),
                           ),
@@ -800,69 +802,72 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () async {
-                                    HapticFeedback.selectionClick();
-                                    setState(() {
-                                      _isSortReversed = !_isSortReversed;
-                                    });
-                                    final prefs =
-                                        await SharedPreferences.getInstance();
-                                    await prefs.setBool(
-                                      'manga_sort_reversed_${widget.mangaId}',
-                                      _isSortReversed,
-                                    );
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _isSortReversed
-                                          ? theme.colorScheme.primary.withValues(
-                                              alpha: 0.15,
-                                            )
-                                          : theme.colorScheme.onSurface.withValues(
-                                              alpha: 0.06,
-                                            ),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: _isSortReversed
-                                            ? theme.colorScheme.primary.withValues(
-                                                alpha: 0.4,
-                                              )
-                                            : theme.colorScheme.onSurface.withValues(alpha: 0.15),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _isSortReversed
-                                              ? Icons.arrow_downward_rounded
-                                              : Icons.arrow_upward_rounded,
-                                          color: _isSortReversed
-                                              ? theme.colorScheme.primary
-                                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                          size: 14,
+                                Material(
+                                  color: _isSortReversed
+                                      ? theme.colorScheme.primary.withValues(
+                                          alpha: 0.15,
+                                        )
+                                      : theme.colorScheme.onSurface.withValues(
+                                          alpha: 0.06,
                                         ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          _isSortReversed
-                                              ? 'Mới nhất'
-                                              : 'Cũ nhất',
-                                          style: TextStyle(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () async {
+                                      HapticFeedback.selectionClick();
+                                      setState(() {
+                                        _isSortReversed = !_isSortReversed;
+                                      });
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      await prefs.setBool(
+                                        'manga_sort_reversed_${widget.mangaId}',
+                                        _isSortReversed,
+                                      );
+                                    },
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: _isSortReversed
+                                              ? theme.colorScheme.primary.withValues(
+                                                  alpha: 0.4,
+                                                )
+                                              : theme.colorScheme.onSurface.withValues(alpha: 0.15),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _isSortReversed
+                                                ? Icons.arrow_downward_rounded
+                                                : Icons.arrow_upward_rounded,
                                             color: _isSortReversed
                                                 ? theme.colorScheme.primary
-                                                : theme.colorScheme.onSurface.withValues(alpha: 0.8),
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w600,
+                                                : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                            size: 14,
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _isSortReversed
+                                                ? 'Mới nhất'
+                                                : 'Cũ nhất',
+                                            style: TextStyle(
+                                              color: _isSortReversed
+                                                  ? theme.colorScheme.primary
+                                                  : theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1074,6 +1079,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                             child: TextField(
                               controller: _chapterSearchController,
                               autofocus: true,
+                              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textInputAction: TextInputAction.search,
                               style: TextStyle(
                                 color: theme.colorScheme.onSurface,
@@ -1091,21 +1097,25 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                   color: theme.colorScheme.primary,
                                   size: 18,
                                 ),
-                                suffixIcon: _chapterSearchQuery.isNotEmpty
-                                    ? IconButton(
-                                        icon: Icon(
-                                          Icons.clear,
-                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                                          size: 16,
-                                        ),
-                                        onPressed: () {
-                                          _chapterSearchController.clear();
-                                          setState(
-                                            () => _chapterSearchQuery = '',
-                                          );
-                                        },
-                                      )
-                                    : null,
+                                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                                  valueListenable: _chapterSearchController,
+                                  builder: (context, value, _) {
+                                    if (value.text.isEmpty) return const SizedBox.shrink();
+                                    return IconButton(
+                                      tooltip: 'Xóa tìm kiếm',
+                                      icon: Icon(
+                                        Icons.clear,
+                                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                                        size: 16,
+                                      ),
+                                      onPressed: () {
+                                        _chapterSearchDebounce?.cancel();
+                                        _chapterSearchController.clear();
+                                        setState(() => _chapterSearchQuery = '');
+                                      },
+                                    );
+                                  },
+                                ),
                                 fillColor: theme.colorScheme.onSurface.withValues(alpha: 0.06),
                                 filled: true,
                                 contentPadding: const EdgeInsets.symmetric(
@@ -1120,6 +1130,12 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               onChanged: (val) {
                                 if (_chapterSearchDebounce?.isActive ?? false) {
                                   _chapterSearchDebounce!.cancel();
+                                }
+                                if (val.trim().isEmpty) {
+                                  if (_chapterSearchQuery.isNotEmpty) {
+                                    setState(() => _chapterSearchQuery = '');
+                                  }
+                                  return;
                                 }
                                 _chapterSearchDebounce = Timer(
                                   const Duration(milliseconds: 150),
@@ -1240,6 +1256,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
+                  tooltip: 'Quay lại',
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                   onPressed: () => context.pop(),
                 ),
@@ -1267,21 +1284,21 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     // Nút Tải Chương Hàng Loạt (Bulk Download)
                     IconButton(
                       visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.download, color: Colors.white),
-                    tooltip: 'Tải chương hàng loạt',
-                    onPressed: () async {
-                      await BulkDownloadSheet.show(
-                        context,
-                        chapters: chapters,
-                        manga: manga,
-                        currentChapterId:
-                            _history?.chapterId ?? _readerProgress?.chapterId,
-                      );
-                      if (mounted) {
-                        _fetchData();
-                      }
-                    },
-                  ),
+                      icon: const Icon(Icons.download, color: Colors.white),
+                      tooltip: 'Tải chương hàng loạt',
+                      onPressed: () async {
+                        await BulkDownloadSheet.show(
+                          context,
+                          chapters: chapters,
+                          manga: manga,
+                          currentChapterId:
+                              _history?.chapterId ?? _readerProgress?.chapterId,
+                        );
+                        if (mounted) {
+                          _fetchData();
+                        }
+                      },
+                    ),
                   // Nút Đặt vào Thư viện (Folder)
                   StreamBuilder<List<String>>(
                     stream: _mangaCategoriesStream,
@@ -1289,6 +1306,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       final selectedCats = snapshot.data ?? [];
                       final isInLibrary = selectedCats.isNotEmpty;
                       return IconButton(
+                        tooltip: isInLibrary ? 'Quản lý danh mục' : 'Thêm vào thư viện',
                         icon: Icon(
                           isInLibrary
                               ? Icons.folder_special
@@ -1308,6 +1326,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     builder: (context, snapshot) {
                       final isFollowed = snapshot.data ?? false;
                       return IconButton(
+                        tooltip: isFollowed ? 'Hủy theo dõi' : 'Theo dõi truyện',
                         icon: Icon(
                           isFollowed ? Icons.favorite : Icons.favorite_border,
                           color: isFollowed ? Colors.red : Colors.white,
@@ -1317,11 +1336,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           final user = FirebaseAuth.instance.currentUser;
                           if (user == null) {
                             if (context.mounted) {
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
                                     'Vui lòng đăng nhập để sử dụng tính năng theo dõi',
                                   ),
+                                  behavior: SnackBarBehavior.floating,
                                 ),
                               );
                             }
@@ -1353,9 +1374,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(ctx, false),
-                                    child: const Text(
+                                    child: Text(
                                       'Hủy',
-                                      style: TextStyle(color: Colors.grey),
+                                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                                     ),
                                   ),
                                   ElevatedButton(
@@ -1379,6 +1400,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                   widget.mangaId,
                                 );
                                 if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text('Đã hủy theo dõi'),
@@ -1387,6 +1409,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Lỗi hủy theo dõi: $e'),
@@ -1411,6 +1434,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 coverUrl: cover,
                               );
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Đã theo dõi thành công!'),
@@ -1420,6 +1444,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               }
                             } catch (e) {
                               if (context.mounted) {
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text('Lỗi theo dõi truyện: $e'),
@@ -1477,6 +1502,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -1517,7 +1543,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       theme.scaffoldBackgroundColor, // Mờ dần theo nền
                       theme.scaffoldBackgroundColor.withValues(alpha: 0.0),
                     ],
-                    stops: const [0.7, 1.0],
+                    stops: const [0.5, 1.0],
                   ),
                 ),
                 child: Container(
@@ -1566,7 +1592,8 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       ),
                       if ((_readerProgress != null || _history != null) &&
                           chapters.isNotEmpty) ...[
-                        OutlinedButton(
+                        IconButton.outlined(
+                          tooltip: 'Đọc từ đầu',
                           onPressed: () async {
                             final firstId = _getFirstChapterId();
                             if (firstId != null) {
@@ -1578,25 +1605,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                               }
                             }
                           },
-                          style: OutlinedButton.styleFrom(
+                          icon: const Icon(Icons.first_page_rounded, size: 20),
+                          style: IconButton.styleFrom(
                             foregroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.8),
                             side: BorderSide(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.2),
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.25),
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                          ),
-                          child: const Text(
-                            'Đọc từ đầu',
-                            style: TextStyle(fontSize: 11),
+                            padding: const EdgeInsets.all(8),
+                            visualDensity: VisualDensity.compact,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 8),
                       ],
                       ElevatedButton.icon(
                         onPressed: () async {
@@ -1749,6 +1768,16 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           setState(() {
             _selectedChapterFilter = status;
           });
+          // Scroll tới khu vực danh sách chương để không bị mất hướng sau khi lọc
+          Future.microtask(() {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent * 0.35,
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOut,
+              );
+            }
+          });
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -1794,7 +1823,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                 child: Text(
                   '$count',
                   style: TextStyle(
-                    color: isSelected ? Colors.white : theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                    color: isSelected ? activeColor : theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -2043,48 +2072,51 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _chapterTitleFor(bookmark.chapterId),
-              style: TextStyle(
-                color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: textController,
-              autofocus: true,
-              maxLines: 3,
-              style: TextStyle(
-                color: Theme.of(dialogCtx).colorScheme.onSurface,
-                fontSize: 14,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Nhập ghi chú cho trang đánh dấu này...',
-                hintStyle: TextStyle(
-                  color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.4),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _chapterTitleFor(bookmark.chapterId),
+                style: TextStyle(
+                  color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.7),
                   fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-                filled: true,
-                fillColor: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.06),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.all(12),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                autofocus: false,
+                onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                maxLines: 3,
+                style: TextStyle(
+                  color: Theme.of(dialogCtx).colorScheme.onSurface,
+                  fontSize: 14,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Nhập ghi chú cho trang đánh dấu này...',
+                  hintStyle: TextStyle(
+                    color: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.4),
+                    fontSize: 12,
+                  ),
+                  filled: true,
+                  fillColor: Theme.of(dialogCtx).colorScheme.onSurface.withValues(alpha: 0.06),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           if (bookmark.note != null && bookmark.note!.isNotEmpty)
             TextButton(
@@ -2165,7 +2197,10 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     ),
                   ),
                   trailing: isSelected ? Icon(Icons.check, color: color) : null,
-                  onTap: () => Navigator.pop(context, status),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    Navigator.pop(context, status);
+                  },
                 );
               }),
               const Divider(height: 1),
@@ -2181,6 +2216,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       : 'Chưa có nhãn',
                 ),
                 onTap: () {
+                  HapticFeedback.lightImpact();
                   Navigator.pop(context);
                   Future.microtask(_showTagsDialog);
                 },
@@ -2236,9 +2272,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text(
+                child: Text(
                   'Không cần',
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                 ),
               ),
               ElevatedButton(
@@ -2343,6 +2379,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     }
 
     if (mounted && addedCount > 0) {
+      HapticFeedback.mediumImpact();
       final router = GoRouter.of(context);
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
@@ -2361,6 +2398,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         ),
       );
     } else if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Tất cả chương đã được tải hoặc đang tải'),
@@ -2397,7 +2435,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -2418,6 +2456,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     );
 
     if (confirm != true) return;
+    HapticFeedback.mediumImpact();
 
     final isDownloadedList = await Future.wait(
       chapters.map(
@@ -2447,6 +2486,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     }
 
     if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       if (chaptersToDelete.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2510,77 +2550,82 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                   separatorBuilder: (_, __) => const SizedBox(width: 12),
                   itemBuilder: (context, index) {
                     final rm = recommendedMangas[index];
-                    return GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        context.push('/detail/${rm.id}');
-                      },
-                      child: SizedBox(
-                        width: 110,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Stack(
-                                children: [
-                                  Positioned.fill(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: DriveImage(
-                                        fileId: rm.coverFileId,
-                                        fit: BoxFit.cover,
-                                        width: 110,
-                                      ),
-                                    ),
-                                  ),
-                                  if (rm.contentType == MangaContentType.novel)
-                                    Positioned(
-                                      top: 4,
-                                      right: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 5,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.75,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.orangeAccent
-                                                .withValues(alpha: 0.5),
-                                            width: 0.8,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'Chữ',
-                                          style: TextStyle(
-                                            color: Colors.orangeAccent,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                          ),
+                    return Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.push('/detail/${rm.id}');
+                        },
+                        child: SizedBox(
+                          width: 110,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: DriveImage(
+                                          fileId: rm.coverFileId,
+                                          fit: BoxFit.cover,
+                                          width: 110,
                                         ),
                                       ),
                                     ),
-                                ],
+                                    if (rm.contentType == MangaContentType.novel)
+                                      Positioned(
+                                        top: 4,
+                                        right: 4,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 5,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.75,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.orangeAccent
+                                                  .withValues(alpha: 0.5),
+                                              width: 0.8,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Chữ',
+                                            style: TextStyle(
+                                              color: Colors.orangeAccent,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              rm.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontWeight: FontWeight.w500,
-                                height: 1.2,
+                              const SizedBox(height: 8),
+                              Text(
+                                rm.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.2,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );

@@ -21,6 +21,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
   final List<ForumPost> _posts = [];
   bool _isLoading = false;
   bool _hasMore = true;
+  bool _pendingRefresh = false;
   DocumentSnapshot? _lastDocument;
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
@@ -69,7 +70,10 @@ class _ForumSharePageState extends State<ForumSharePage> {
   }
 
   Future<void> _loadPosts({bool refresh = false}) async {
-    if (_isLoading) return;
+    if (_isLoading) {
+      if (refresh) _pendingRefresh = true;
+      return;
+    }
     if (!refresh && !_hasMore) return;
 
     setState(() {
@@ -78,6 +82,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
         _posts.clear();
         _lastDocument = null;
         _hasMore = true;
+        _pendingRefresh = false;
       }
     });
 
@@ -97,12 +102,13 @@ class _ForumSharePageState extends State<ForumSharePage> {
       setState(() {
         _posts.addAll(newPosts);
         _lastDocument = lastDoc;
-        if (newPosts.length < 20) {
+        if (lastDoc == null || newPosts.isEmpty) {
           _hasMore = false;
         }
       });
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi tải bài chia sẻ: $e')));
@@ -112,6 +118,10 @@ class _ForumSharePageState extends State<ForumSharePage> {
         setState(() {
           _isLoading = false;
         });
+        if (_pendingRefresh) {
+          _pendingRefresh = false;
+          _loadPosts(refresh: true);
+        }
       }
     }
   }
@@ -145,10 +155,12 @@ class _ForumSharePageState extends State<ForumSharePage> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredPosts = _searchQuery.isEmpty
+    final q = _searchQuery.isEmpty
+        ? ''
+        : CatalogCacheService.instance.normalize(_searchQuery);
+    final filteredPosts = q.isEmpty
         ? _posts
         : _posts.where((p) {
-            final q = CatalogCacheService.instance.normalize(_searchQuery);
             final normBody = CatalogCacheService.instance.normalize(p.body);
             final normAuthor = CatalogCacheService.instance.normalize(
               p.authorName,
@@ -188,6 +200,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                 ),
                 child: TextField(
                   controller: _searchController,
+                  onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                   style: const TextStyle(fontSize: 14),
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
@@ -199,10 +212,13 @@ class _ForumSharePageState extends State<ForumSharePage> {
                       fontSize: 13,
                     ),
                     prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _searchQuery.isNotEmpty
+                    suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
+                            tooltip: 'Xóa tìm kiếm',
                             icon: const Icon(Icons.clear, size: 16),
                             onPressed: () {
+                              HapticFeedback.lightImpact();
+                              _searchDebounce?.cancel();
                               _searchController.clear();
                               setState(() => _searchQuery = '');
                             },
@@ -385,6 +401,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                 onRefresh: () => _loadPosts(refresh: true),
                 child: filteredPosts.isEmpty && !_isLoading
                     ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         children: [
                           const SizedBox(height: 100),
                           Center(
@@ -438,6 +455,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
                                       HapticFeedback.lightImpact();
                                       if (FirebaseAuth.instance.currentUser ==
                                           null) {
+                                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
@@ -486,6 +504,8 @@ class _ForumSharePageState extends State<ForumSharePage> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.only(bottom: 80),
                         itemCount:
                             filteredPosts.length +
@@ -539,6 +559,7 @@ class _ForumSharePageState extends State<ForumSharePage> {
             onPressed: () async {
               HapticFeedback.lightImpact();
               if (FirebaseAuth.instance.currentUser == null) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Vui lòng đăng nhập để đăng bài'),
@@ -567,36 +588,40 @@ class _ForumSharePageState extends State<ForumSharePage> {
     required Color color,
   }) {
     final isSelected = _sortBy == value;
-    return InkWell(
+    return Material(
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
-      onTap: () => _onSortChanged(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? color.withValues(alpha: 0.18)
-              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color.withValues(alpha: 0.6) : Theme.of(context).dividerColor.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 12, color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _onSortChanged(value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? color.withValues(alpha: 0.18)
+                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? color.withValues(alpha: 0.6) : Theme.of(context).dividerColor.withValues(alpha: 0.2),
+              width: 1,
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

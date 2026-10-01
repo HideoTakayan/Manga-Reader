@@ -776,6 +776,14 @@ class DownloadService {
     return await DatabaseHelper.instance.isChapterDownloaded(chapterId);
   }
 
+  /// Kiểm tra đồng bộ trạng thái đã tải từ cache (tránh giật lag/flicker giao diện)
+  bool isDownloadedSync(String chapterId, {String? mangaId}) {
+    if (mangaId != null) {
+      return DownloadCache.instance.isChapterDownloadedSync(chapterId, mangaId);
+    }
+    return false;
+  }
+
   /// Lấy trạng thái tải của chương
   DownloadStatus getDownloadStatus(String chapterId) {
     if (_downloadQueue.containsKey(chapterId)) {

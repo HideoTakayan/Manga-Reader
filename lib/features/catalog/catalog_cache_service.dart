@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
@@ -40,16 +41,21 @@ class CatalogCacheService {
   }
 
   Future<List<CloudManga>> getCachedCatalog() async {
-    final db = await DatabaseHelper.instance.database;
-    final rows = await db.query('catalog_cache', orderBy: 'updatedAt DESC');
-    if (rows.isEmpty) return [];
-    
-    // Parse JSON in background isolate to prevent UI jank
-    return await compute(_parseCacheRows, rows);
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final rows = await db.query('catalog_cache', orderBy: 'updatedAt DESC');
+      if (rows.isNotEmpty) {
+        // Parse JSON in background isolate to prevent UI jank
+        return await compute(_parseCacheRows, rows);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error querying catalog_cache db: $e');
+    }
+    return [];
   }
 
   // Top-level or static function for compute
-  static List<CloudManga> _parseCacheRows(List<Map<String, dynamic>> rows) {
+  static List<CloudManga> _parseCacheRows(List<Map<String, Object?>> rows) {
     return rows.map(_fromCacheRowStatic).whereType<CloudManga>().toList();
   }
 
@@ -113,7 +119,7 @@ class CatalogCacheService {
     return value.replaceAll(RegExp(r'\s+'), ' ');
   }
 
-  static CloudManga? _fromCacheRowStatic(Map<String, dynamic> row) {
+  static CloudManga? _fromCacheRowStatic(Map<String, Object?> row) {
     try {
       final raw = row['rawJson']?.toString();
       if (raw != null && raw.isNotEmpty) {

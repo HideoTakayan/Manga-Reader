@@ -109,6 +109,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi tải comment: $e')));
@@ -121,6 +122,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
     if (body.isEmpty) return;
 
     if (body.length > 2000) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Bình luận không được vượt quá 2000 ký tự'),
@@ -132,6 +134,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Vui lòng đăng nhập')));
@@ -197,6 +200,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
             _post = _post!.copyWith(commentCount: _post!.commentCount - 1);
           }
         });
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -317,6 +321,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                 : RefreshIndicator(
                     onRefresh: () => _loadComments(showLoading: false),
                     child: ListView.builder(
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       physics: const AlwaysScrollableScrollPhysics(),
                       itemCount: _commentTree.length + 1,
                       itemBuilder: (context, index) {
@@ -441,6 +446,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                                 ),
                               ),
                               IconButton(
+                                tooltip: 'Hủy phản hồi',
                                 icon: const Icon(Icons.close, size: 16),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
@@ -457,6 +463,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                             child: TextField(
                               controller: _commentController,
                               focusNode: _commentFocusNode,
+                              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textCapitalization: TextCapitalization.sentences,
                               maxLines: null,
                               decoration: const InputDecoration(
@@ -486,6 +493,7 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                             const SizedBox(width: 4),
                           ],
                           IconButton(
+                            tooltip: 'Gửi bình luận',
                             icon: _isSubmitting
                                 ? const SizedBox(
                                     width: 20,

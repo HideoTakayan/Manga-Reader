@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../data/content_type.dart';
 import '../../data/models_cloud.dart';
@@ -59,6 +60,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 
   // Natural Sort: dùng ChapterSortHelper đã được chuẩn hóa để xử lý Volume, Extra, Alpha.
   void _sortChapters() {
+    HapticFeedback.selectionClick();
     setState(() {
       final sorted = ChapterSortHelper.sort(_chapters);
       _chapters = _isAscending ? sorted : sorted.reversed.toList();
@@ -66,12 +68,15 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
       _hasChanges = true;
     });
 
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          !_isAscending
-              ? 'Đã sắp xếp tăng dần (Thấp -> Cao)'
-              : 'Đã sắp xếp giảm dần (Cao -> Thấp)',
+          // _isAscending đã bị flip trong setState nên đây là chiều TIẾP THEO.
+          // Chiều VỪA áp dụng là ngược lại: nếu _isAscending=false thì vừa sort tăng dần.
+          _isAscending
+              ? 'Đã sắp xếp giảm dần (Cao -> Thấp)'
+              : 'Đã sắp xếp tăng dần (Thấp -> Cao)',
         ),
         duration: const Duration(seconds: 1),
       ),
@@ -80,6 +85,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
 
   // Trích danh sách ID theo thứ tự hiện tại → ghi vào info.json + catalog.json.
   Future<void> _saveOrder() async {
+    HapticFeedback.mediumImpact();
     setState(() => _isSavingOrder = true);
     try {
       final newOrder = _chapters.map((c) => c.id).toList();
@@ -89,6 +95,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
         await DriveService.instance.getMangas(forceRefresh: true);
       } catch (_) {}
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Đã lưu thứ tự chương mới!')),
         );
@@ -96,6 +103,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi lưu thứ tự: $e')));
@@ -133,7 +141,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Ở lại', style: TextStyle(color: Colors.grey)),
+                child: const Text('Ở lại'),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -309,6 +317,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                             ),
                           ),
                           trailing: IconButton(
+                            tooltip: 'Xóa chương',
                             icon: const Icon(
                               Icons.delete_outline,
                               color: Colors.redAccent,
@@ -337,9 +346,9 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                     TextButton(
                                       onPressed: () =>
                                           Navigator.pop(ctx, false),
-                                      child: const Text(
+                                      child: Text(
                                         'Hủy',
-                                        style: TextStyle(color: Colors.grey),
+                                        style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                                       ),
                                     ),
                                     ElevatedButton(
@@ -360,6 +369,7 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
                                 try {
                                   await DriveService.instance.deleteChapter(
                                     chapter.id,
+                                    mangaId: widget.manga.id,
                                   );
                                   if (mounted) {
                                     messenger.hideCurrentSnackBar();
@@ -417,15 +427,41 @@ class _ChapterManagerPageState extends State<ChapterManagerPage> {
       // FAB mở _AddChapterDialog, sau khi đóng thì _refresh() để cập nhật danh sách
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
-          await showDialog(
+          if (_hasChanges) {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Thứ tự chưa lưu'),
+                content: const Text(
+                  'Bạn có thay đổi sắp xếp chương chưa lưu. Tải lên chương mới sẽ làm mới danh sách và hủy các thay đổi này. Bạn có muốn tiếp tục?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Ở lại lưu'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Tiếp tục'),
+                  ),
+                ],
+              ),
+            );
+            if (confirm != true) return;
+          }
+          if (!context.mounted) return;
+          final added = await showDialog<bool>(
             context: context,
+            barrierDismissible: false,
             builder: (_) => _AddChapterDialog(
               mangaId: widget.manga.id,
               mangaTitle: widget.manga.title,
               contentType: widget.manga.contentType,
             ),
           );
-          _refresh();
+          if (added == true) {
+            _refresh();
+          }
         },
         label: Text(
           widget.manga.contentType.isNovel ? 'Thêm EPUB' : 'Thêm Chapter',
@@ -541,6 +577,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   final _titleController = TextEditingController();
   final List<File> _files = [];
   bool _isUploading = false;
+  int _totalSuccessCount = 0;
 
   @override
   void dispose() {
@@ -576,6 +613,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     // Khi chỉ upload 1 file, tên chương là bắt buộc.
     // Khi upload nhiều file, tên tự động lấy từ tên file nên không cần validate.
     if (_files.length == 1 && _titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -586,6 +624,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       return;
     }
     if (_files.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -597,13 +636,16 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
     }
 
     setState(() => _isUploading = true);
+    int batchSuccessCount = 0;
+    String? uploadedChapterTitle;
     try {
-      // Upload file lên folder manga trên Drive.
-      String? uploadedChapterTitle;
-      for (final file in _files) {
+      // Upload từng file lên folder manga trên Drive.
+      // Tạo bản sao để có thể xóa file thành công khỏi _files, hỗ trợ retry sạch nếu dở dang
+      final filesToUpload = List<File>.from(_files);
+      for (final file in filesToUpload) {
         final fallbackTitle = path.basenameWithoutExtension(file.path);
         final chapterTitle =
-            _files.length == 1 && _titleController.text.trim().isNotEmpty
+            filesToUpload.length == 1 && _titleController.text.trim().isNotEmpty
             ? _titleController.text.trim()
             : fallbackTitle;
         await DriveService.instance.addChapter(
@@ -611,26 +653,38 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           title: chapterTitle,
           file: file,
         );
+        batchSuccessCount++;
+        _totalSuccessCount++;
         uploadedChapterTitle ??= chapterTitle;
+        if (mounted) {
+          setState(() {
+            _files.remove(file);
+          });
+        }
       }
 
       // Ghi thêm bản ghi vào Firestore để màn hình thông báo trong app đọc lại được lịch sử
-      await NotificationService.instance.notifySubscribers(
-        type: 'new_chapter',
-        mangaId: widget.mangaId,
-        title:
-            '${widget.mangaTitle} có ${widget.contentType.unitLabel.toLowerCase()} mới',
-        body: _files.length == 1
-            ? (uploadedChapterTitle ?? '${widget.contentType.unitLabel} mới')
-            : '${_files.length} ${widget.contentType.unitLabel.toLowerCase()} mới',
-      );
+      if (batchSuccessCount > 0) {
+        await NotificationService.instance.notifySubscribers(
+          type: 'new_chapter',
+          mangaId: widget.mangaId,
+          title:
+              '${widget.mangaTitle} có ${widget.contentType.unitLabel.toLowerCase()} mới',
+          body: batchSuccessCount == 1
+              ? (uploadedChapterTitle ?? '${widget.contentType.unitLabel} mới')
+              : '$batchSuccessCount ${widget.contentType.unitLabel.toLowerCase()} mới',
+        );
+      }
 
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
+        final errorMsg = batchSuccessCount > 0
+            ? 'Đã tải lên $batchSuccessCount/${batchSuccessCount + _files.length} file. Lỗi ở file tiếp theo: $e'
+            : 'Lỗi: $e';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+        ).showSnackBar(SnackBar(content: Text(errorMsg)));
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -660,7 +714,13 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return PopScope(
-      canPop: !_isUploading,
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (!_isUploading) {
+          Navigator.pop(context, _totalSuccessCount > 0);
+        }
+      },
       child: AlertDialog(
         backgroundColor: theme.dialogTheme.backgroundColor ?? theme.cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -676,6 +736,7 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
           children: [
             TextField(
               controller: _titleController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.done,
               textCapitalization: TextCapitalization.sentences,
@@ -690,47 +751,54 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
             const SizedBox(height: 16),
 
             // Vùng chọn file — icon chuyển xanh khi đã chọn, hiện tên file ngắn gọn
-            InkWell(
-              onTap: _pickFile,
+            Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: _files.isNotEmpty 
-                      ? Colors.green.withValues(alpha: 0.1) 
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.03),
-                  border: Border.all(
-                    color: _files.isNotEmpty ? Colors.green : theme.dividerColor,
-                    width: 1,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _pickFile();
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: _files.isNotEmpty 
+                        ? Colors.green.withValues(alpha: 0.1) 
+                        : theme.colorScheme.onSurface.withValues(alpha: 0.03),
+                    border: Border.all(
+                      color: _files.isNotEmpty ? Colors.green : theme.dividerColor,
+                      width: 1,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _files.isEmpty ? Icons.file_upload : Icons.check_circle,
-                      color: _files.isEmpty ? theme.colorScheme.primary : Colors.green,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _files.isEmpty
-                            ? (widget.contentType.isNovel
-                                  ? 'Chọn file EPUB'
-                                  : 'Chọn file (ZIP/CBZ/PDF)')
-                            : _files.length == 1
-                            ? path.basename(_files.first.path)
-                            : 'Đã chọn ${_files.length} file',
-                        style: TextStyle(
-                          color: _files.isNotEmpty ? Colors.green : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _files.isEmpty ? Icons.file_upload : Icons.check_circle,
+                        color: _files.isEmpty ? theme.colorScheme.primary : Colors.green,
+                        size: 28,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _files.isEmpty
+                              ? (widget.contentType.isNovel
+                                    ? 'Chọn file EPUB'
+                                    : 'Chọn file (ZIP/CBZ/PDF)')
+                              : _files.length == 1
+                              ? path.basename(_files.first.path)
+                              : 'Đã chọn ${_files.length} file',
+                          style: TextStyle(
+                            color: _files.isNotEmpty ? Colors.green : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -752,8 +820,10 @@ class _AddChapterDialogState extends State<_AddChapterDialog> {
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actions: [
         TextButton(
-          onPressed: _isUploading ? null : () => Navigator.pop(context),
-          child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+          onPressed: _isUploading
+              ? null
+              : () => Navigator.pop(context, _totalSuccessCount > 0),
+          child: Text('Hủy'),
         ),
         ElevatedButton(
           onPressed: _isUploading ? null : _submit,

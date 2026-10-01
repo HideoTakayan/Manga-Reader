@@ -135,12 +135,14 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
     final previousId = _currentManga?.id;
     if (!animate) {
       final random = Random();
-      final targetPool = (pool.length > 1 && previousId != null)
+      final filtered = (pool.length > 1 && previousId != null)
           ? pool.where((m) => m.id != previousId).toList()
           : pool;
+      final targetPool = filtered.isNotEmpty ? filtered : pool;
       setState(() {
         _currentManga = targetPool[random.nextInt(targetPool.length)];
         _isRolling = false;
+        _isFetchingChapters = false;
         _realChapterCount = null;
       });
       if (_currentManga != null && _currentManga!.chapterOrder.isEmpty) {
@@ -153,6 +155,7 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
     setState(() {
       _isRolling = true;
       _rollStep = 0;
+      _isFetchingChapters = false;
       _realChapterCount = null;
     });
 
@@ -166,12 +169,14 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
 
       if (_rollStep >= totalSteps) {
         // Đảm bảo khi có nhiều hơn 1 truyện thì kết quả quay ra là truyện mới
-        final finalPool = (pool.length > 1 && previousId != null)
+        final filtered = (pool.length > 1 && previousId != null)
             ? pool.where((m) => m.id != previousId).toList()
             : pool;
+        final finalPool = filtered.isNotEmpty ? filtered : pool;
         setState(() {
           _currentManga = finalPool[random.nextInt(finalPool.length)];
           _isRolling = false;
+          _isFetchingChapters = false;
         });
         HapticFeedback.mediumImpact();
         if (_currentManga != null && _currentManga!.chapterOrder.isEmpty) {
@@ -339,6 +344,7 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
                       ],
                     ),
                     IconButton(
+                      tooltip: 'Đóng',
                       icon: Icon(Icons.close_rounded, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
                       onPressed: () => Navigator.pop(context),
                     ),
@@ -470,38 +476,38 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
                     const SizedBox(width: 8),
 
                     // Genre Selector
-                    GestureDetector(
-                      onTap: _showGenreMultiSelectDialog,
-                      child: Chip(
-                        backgroundColor: _selectedGenres.isNotEmpty
-                            ? theme.colorScheme.primary.withValues(alpha: 0.2)
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.08),
-                        label: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _selectedGenres.isEmpty
-                                  ? 'Thể loại'
-                                  : '${_selectedGenres.length} thể loại',
-                              style: TextStyle(
-                                color: _selectedGenres.isNotEmpty
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.onSurface.withValues(alpha: 0.8),
-                                fontSize: 12,
-                                fontWeight: _selectedGenres.isNotEmpty
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                            Icon(
-                              Icons.arrow_drop_down,
-                              size: 16,
+                    ActionChip(
+                      onPressed: _showGenreMultiSelectDialog,
+                      backgroundColor: _selectedGenres.isNotEmpty
+                          ? theme.colorScheme.primary.withValues(alpha: 0.2)
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _selectedGenres.isEmpty
+                                ? 'Thể loại'
+                                : '${_selectedGenres.length} thể loại',
+                            style: TextStyle(
                               color: _selectedGenres.isNotEmpty
                                   ? theme.colorScheme.primary
                                   : theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                              fontSize: 12,
+                              fontWeight: _selectedGenres.isNotEmpty
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
-                          ],
-                        ),
+                          ),
+                          Icon(
+                            Icons.arrow_drop_down,
+                            size: 16,
+                            color: _selectedGenres.isNotEmpty
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -557,47 +563,52 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
                             key: ValueKey(manga.id),
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              GestureDetector(
-                                onTap: _isRolling
-                                    ? null
-                                    : () {
-                                        Navigator.pop(context);
-                                        context.push('/detail/${manga.id}', extra: manga);
-                                      },
-                                behavior: HitTestBehavior.opaque,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                  // Manga Cover
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: theme.colorScheme.primary
-                                                .withValues(alpha: 0.3),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 4),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: _isRolling
+                                      ? null
+                                      : () {
+                                          final router = GoRouter.of(context);
+                                          Navigator.pop(context);
+                                          router.push('/detail/${manga.id}', extra: manga);
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                      // Manga Cover
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(14),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: theme.colorScheme.primary
+                                                    .withValues(alpha: 0.3),
+                                                blurRadius: 16,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ],
                                           ),
-                                        ],
-                                      ),
-                                      child: SizedBox(
-                                        width: 110,
-                                        height: 155,
-                                        child: DriveImage(
-                                          fileId: manga.coverFileId,
-                                          fit: BoxFit.cover,
+                                          child: SizedBox(
+                                            width: 110,
+                                            height: 155,
+                                            child: DriveImage(
+                                              fileId: manga.coverFileId,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 16),
+                                      const SizedBox(width: 16),
 
-                                  // Manga Details
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
+                                      // Manga Details
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
@@ -736,7 +747,9 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
 
                               // Description Synopsis Box
                               if (manga.description.trim().isNotEmpty) ...[
@@ -829,8 +842,9 @@ class _RandomMangaDialogState extends State<RandomMangaDialog>
                           onPressed: manga == null || _isRolling
                               ? null
                               : () {
+                                  final router = GoRouter.of(context);
                                   Navigator.pop(context);
-                                  context.push('/detail/${manga.id}', extra: manga);
+                                  router.push('/detail/${manga.id}', extra: manga);
                                 },
                         ),
                       ),

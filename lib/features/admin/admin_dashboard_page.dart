@@ -93,6 +93,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     if (!AdminConfig.isAdmin(user?.email)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.go('/');
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Bạn không có quyền truy cập trang này'),
@@ -107,7 +108,19 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   // userCount = -1 báo hiệu không có quyền đọc → UI hiển thị "N/A".
   Future<void> _loadStats() async {
     setState(() => _isLoadingMangas = true);
-    final mangas = await DriveService.instance.getMangas();
+
+    List<CloudManga> mangas = [];
+    try {
+      mangas = await DriveService.instance.getMangas();
+    } catch (e) {
+      debugPrint('[AdminDashboard] getMangas failed: $e');
+      // Fallback sang cache nếu Drive chưa đăng nhập hoặc lỗi network
+      try {
+        mangas = await CatalogCacheService.instance.getCachedCatalog();
+      } catch (_) {
+        mangas = [];
+      }
+    }
     final mangaCount = mangas.length;
 
     int userCount = 0;
@@ -218,6 +231,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             actions: [
               _buildDriveAction(),
               IconButton(
+                tooltip: 'Làm mới',
                 icon: Icon(
                   Icons.refresh,
                   color: Theme.of(context).iconTheme.color,
@@ -420,7 +434,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+                  child: Text('Hủy'),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -468,12 +482,14 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           child: TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             decoration: InputDecoration(
               hintText: 'Tìm kiếm truyện theo tên hoặc tác giả...',
               hintStyle: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
               prefixIcon: Icon(Icons.search_rounded, color: Theme.of(context).colorScheme.primary),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
+                      tooltip: 'Xóa tìm kiếm',
                       icon: const Icon(Icons.clear_rounded),
                       onPressed: () {
                         _searchController.clear();
@@ -786,9 +802,9 @@ class _AdminMangaCard extends StatelessWidget {
                                     TextButton(
                                       onPressed: () =>
                                           Navigator.pop(dialogContext),
-                                      child: const Text(
+                                      child: Text(
                                         'Hủy',
-                                        style: TextStyle(color: Colors.grey),
+                                        style: TextStyle(color: Theme.of(dialogContext).colorScheme.onSurface.withValues(alpha: 0.6)),
                                       ),
                                     ),
                                     ElevatedButton(

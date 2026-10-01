@@ -110,7 +110,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -134,6 +134,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
   // Lưu tất cả thay đổi: validate → gọi DriveService → phát hiện thay đổi → ghi thông báo Firestore.
   Future<void> _saveChanges() async {
     if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Tên truyện không được để trống')),
       );
@@ -245,55 +246,60 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
           children: [
             // Preview ảnh bìa — bấm vào để đổi bìa.
             Center(
-              child: GestureDetector(
-                onTap: _pickCoverImage,
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    Container(
-                      width: 130,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: theme.dividerColor, width: 1),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: _newCoverFile != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(15),
-                              child: Image.file(
-                                _newCoverFile!,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(15),
-                              child: DriveImage(
-                                fileId: widget.manga.coverFileId,
-                                fit: BoxFit.cover,
-                              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _pickCoverImage,
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      Container(
+                        width: 130,
+                        height: 180,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: theme.dividerColor, width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
                             ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.all(8),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        shape: BoxShape.circle,
+                          ],
+                        ),
+                        child: _newCoverFile != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(15),
+                                child: Image.file(
+                                  _newCoverFile!,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(15),
+                                child: DriveImage(
+                                  fileId: widget.manga.coverFileId,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                       ),
-                      child: Icon(
-                        Icons.camera_alt,
-                        color: theme.colorScheme.onPrimary,
-                        size: 20,
+                      Container(
+                        margin: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: theme.colorScheme.onPrimary,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -301,6 +307,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
             TextField(
               controller: _titleController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.next,
               decoration: _inputDeco(context, 'Tên truyện', Icons.title),
@@ -339,6 +346,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
             TextField(
               controller: _authorController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.next,
               textCapitalization: TextCapitalization.words,
@@ -348,6 +356,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
             TextField(
               controller: _descriptionController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               maxLines: 4,
               decoration: _inputDeco(context, 'Mô tả', Icons.description_outlined),
@@ -356,6 +365,7 @@ class _EditMangaDialogState extends State<EditMangaDialog> {
 
             TextField(
               controller: _genresController,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: theme.colorScheme.onSurface),
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _isUploading ? null : _saveChanges(),

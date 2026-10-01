@@ -38,6 +38,11 @@ class DownloadCache {
     return _cache[mangaId]?.contains(chapterId) ?? false;
   }
 
+  /// Kiểm tra đồng bộ từ bộ nhớ đệm RAM (tránh flicker khi build UI)
+  bool isChapterDownloadedSync(String chapterId, String mangaId) {
+    return _cache[mangaId]?.contains(chapterId) ?? false;
+  }
+
   /// Lấy số lượng chapters đã download của một manga
   Future<int> getDownloadCount(String mangaId) async {
     await _refreshCacheIfNeeded();

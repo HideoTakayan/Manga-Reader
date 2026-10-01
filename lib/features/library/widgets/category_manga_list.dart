@@ -224,10 +224,12 @@ class CategoryMangaList extends StatelessWidget {
                     selectedReadingStatuses.isNotEmpty ||
                     selectedTags.isNotEmpty ||
                     filterDownloadedOnly)) {
-              return const Center(
+              return Center(
                 child: Text(
                   'Không tìm thấy truyện phù hợp',
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
                 ),
               );
             }
@@ -518,27 +520,7 @@ class _MangaGridItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isSelectionMode
-          ? onToggle
-          : () {
-              if (manga.id.startsWith('LOCAL_NOVEL|')) {
-                final novel = LocalNovel(
-                  path: manga.id.substring('LOCAL_NOVEL|'.length),
-                  title: manga.title,
-                  coverPath: manga.coverFileId,
-                  importedAt: manga.updatedAt,
-                );
-                context.push('/novel-reader', extra: novel);
-              } else {
-                context.push('/detail/${manga.id}');
-              }
-            },
-      onLongPress: () {
-        HapticFeedback.mediumImpact();
-        onToggle();
-      }, // Long press để bắt đầu selection mode
-      child: AnimatedContainer(
+    return AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -631,11 +613,37 @@ class _MangaGridItem extends StatelessWidget {
                     isSmall: true,
                   ),
                 ),
+              // Material InkWell ripple overlay
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: isSelectionMode
+                        ? onToggle
+                        : () {
+                            if (manga.id.startsWith('LOCAL_NOVEL|')) {
+                              final novel = LocalNovel(
+                                path: manga.id.substring('LOCAL_NOVEL|'.length),
+                                title: manga.title,
+                                coverPath: manga.coverFileId,
+                                importedAt: manga.updatedAt,
+                              );
+                              context.push('/novel-reader', extra: novel);
+                            } else {
+                              context.push('/detail/${manga.id}');
+                            }
+                          },
+                    onLongPress: () {
+                      HapticFeedback.mediumImpact();
+                      onToggle();
+                    },
+                  ),
+                ),
+              ),
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 }
 

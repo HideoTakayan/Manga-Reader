@@ -83,22 +83,19 @@ class LibraryDialogs {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text(
+                      child: Text(
                         'Hủy',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                       ),
                     ),
                     ElevatedButton(
                       onPressed: () async {
+                        HapticFeedback.mediumImpact();
                         final toSave = tempSelected;
-                        // Ghi danh mục mới vào SQLite cho từng truyện trong batch (song song)
-                        await Future.wait(
-                          mangaIds.map(
-                            (id) => LibraryService.instance.setMangaCategories(
-                              id,
-                              toSave,
-                            ),
-                          ),
+                        // Ghi danh mục mới vào SQLite cho toàn bộ danh sách truyện trong 1 batch transaction
+                        await LibraryService.instance.setMangaCategoriesForMultiple(
+                          mangaIds,
+                          toSave,
                         );
                         if (ctx.mounted) Navigator.pop(ctx, true);
                       },

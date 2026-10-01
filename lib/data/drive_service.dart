@@ -11,6 +11,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'models_cloud.dart';
 import 'content_type.dart';
 import 'database_helper.dart';
@@ -40,6 +41,7 @@ class DriveService {
   GoogleSignInAccount? _currentUser;
   drive.DriveApi? _driveApi;
   List<CloudManga>? _cachedMangas;
+  Future<List<CloudManga>>? _inFlightGetMangas;
 
   // Cache ID trực tiếp của catalog.json để bỏ qua tìm kiếm files.list (tiết kiệm 2s)
   String? _catalogFileId;
@@ -57,6 +59,7 @@ class DriveService {
 
   final Map<String, Future<Uint8List?>> _activeDownloadFutures = {};
   final Map<String, Future<bool>> _activeFileDownloads = {};
+  final Map<String, Future<File?>> _activeChapterFileDownloads = {};
 
   // Xóa file cũ nhất trong cache khi vượt giới hạn.
   void _trimFileCache() {
@@ -279,7 +282,7 @@ class DriveService {
         return _catalogFileId;
       }
     } catch (_) {}
-    return null;
+    return DriveConfig.defaultCatalogFileId;
   }
 
   Future<void> _saveCatalogFileId(String id) async {
@@ -314,13 +317,29 @@ class DriveService {
   }
 
   Future<List<CloudManga>?> _fetchCatalogByFileId(String fileId) async {
-    // 1. Google Drive REST API qua API Key
+    // 1. ƯU TIÊN: Tải qua Cloudflare CDN Proxy (Edge đặt tại VN, siêu nhanh ~200-500ms)
+    if (DriveConfig.cdnProxyUrl.trim().isNotEmpty) {
+      try {
+        final cdnUrl = Uri.parse(DriveConfig.getDownloadUrl(fileId));
+        final cdnRes = await _httpClient.get(cdnUrl).timeout(const Duration(seconds: 4));
+        if (cdnRes.statusCode == 200 &&
+            !(cdnRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
+          final content = utf8.decode(cdnRes.bodyBytes);
+          final list = _safeParseCatalog(content);
+          if (list.isNotEmpty) return list;
+        }
+      } catch (e) {
+        debugPrint('⚠️ CDN catalog download failed: $e');
+      }
+    }
+
+    // 2. Fallback: Google Drive REST API qua API Key
     try {
       final dlUrl = Uri.parse(
         'https://www.googleapis.com/drive/v3/files/$fileId'
         '?alt=media&supportsAllDrives=true&key=${DriveConfig.apiKey}',
       );
-      final dlRes = await _httpClient.get(dlUrl).timeout(const Duration(seconds: 5));
+      final dlRes = await _httpClient.get(dlUrl).timeout(const Duration(seconds: 6));
       if ((dlRes.statusCode == 200 || dlRes.statusCode == 206) &&
           !(dlRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
         final content = utf8.decode(dlRes.bodyBytes);
@@ -331,26 +350,10 @@ class DriveService {
       debugPrint('⚠️ Direct catalog download by ID failed: $e');
     }
 
-    // 2. Fallback: Tải qua CDN Proxy nếu có cấu hình
-    if (DriveConfig.cdnProxyUrl.trim().isNotEmpty) {
-      try {
-        final cdnUrl = Uri.parse(DriveConfig.getDownloadUrl(fileId));
-        final cdnRes = await _httpClient.get(cdnUrl).timeout(const Duration(seconds: 5));
-        if (cdnRes.statusCode == 200 &&
-            !(cdnRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
-          final content = utf8.decode(cdnRes.bodyBytes);
-          final list = _safeParseCatalog(content);
-          if (list.isNotEmpty) return list;
-        }
-      } catch (e) {
-        debugPrint('⚠️ CDN catalog download fallback failed: $e');
-      }
-    }
-
     // 3. Fallback: Tải trực tiếp qua Google Drive uc download
     try {
       final ucUrl = Uri.parse('https://drive.google.com/uc?export=download&id=$fileId');
-      final ucRes = await _httpClient.get(ucUrl).timeout(const Duration(seconds: 6));
+      final ucRes = await _httpClient.get(ucUrl).timeout(const Duration(seconds: 5));
       if (ucRes.statusCode == 200 &&
           !(ucRes.headers['content-type']?.toLowerCase().contains('text/html') ?? false)) {
         final content = utf8.decode(ucRes.bodyBytes);
@@ -433,40 +436,68 @@ class DriveService {
   }
 
   // Lấy danh sách toàn bộ truyện từ file catalog.json trên Drive.
-  // Tối ưu hoá cực đại: Tải trực tiếp qua fileId + Song song Stats Firestore.
-  Future<List<CloudManga>> getMangas({bool forceRefresh = false}) async {
+  // Tối ưu hoá cực đại: Cache-first (15ms) + Tải trực tiếp qua fileId + Song song Stats Firestore.
+  Future<List<CloudManga>> getMangas({bool forceRefresh = false}) {
     if (!forceRefresh && _cachedMangas != null && _cachedMangas!.isNotEmpty) {
-      return _cachedMangas!;
+      return Future.value(_cachedMangas!);
+    }
+    if (!forceRefresh && _inFlightGetMangas != null) {
+      return _inFlightGetMangas!;
+    }
+    final future = _executeGetMangas(forceRefresh: forceRefresh);
+    _inFlightGetMangas = future;
+    future.whenComplete(() => _inFlightGetMangas = null);
+    return future;
+  }
+
+  Future<List<CloudManga>> _executeGetMangas({bool forceRefresh = false}) async {
+    // 1. Cache-First: Nếu không ép buộc làm mới, nạp ngay lập tức từ SQLite hoặc asset đóng gói sẵn
+    // Trả về cho UI hiển thị ngay trong 15-30ms!
+    if (!forceRefresh && (_cachedMangas == null || _cachedMangas!.isEmpty)) {
+      final offline = await _loadOfflineCatalog();
+      if (offline.isNotEmpty) {
+        _cachedMangas = offline;
+        // Kích hoạt cập nhật nền từ Google Drive/CDN mà không bắt UI phải chờ đợi
+        unawaited(_fetchRemoteCatalogAndSave());
+        return offline;
+      }
     }
 
+    final remote = await _fetchRemoteCatalogAndSave();
+    if (remote.isNotEmpty) {
+      return remote;
+    }
+
+    // Fallback nếu remote rỗng hoặc mất mạng
+    final offline = await _loadOfflineCatalog();
+    if (offline.isNotEmpty) {
+      _cachedMangas = offline;
+      return offline;
+    }
+
+    return _cachedMangas ?? [];
+  }
+
+  Future<List<CloudManga>> _fetchRemoteCatalogAndSave() async {
     try {
       await _initRootFolder();
       if (_rootFolderId == null) {
-        final offline = await _loadOfflineCatalog();
-        if (offline.isNotEmpty) {
-          _cachedMangas = offline;
-          return offline;
-        }
         return [];
       }
 
-      // Khởi chạy song song việc lấy Lượt xem/Thích từ Firestore để không làm nghẽn
+      // Khởi chạy song song việc lấy Lượt xem/Thích từ Firestore với timeout 1.5s
       final statsFuture = InteractionService.instance
           .getAllMangaStats()
-          .timeout(const Duration(seconds: 3))
+          .timeout(const Duration(milliseconds: 1500))
           .catchError((_) => <String, Map<String, int>>{});
 
       List<CloudManga>? rawMangas;
-      if (forceRefresh) {
-        _catalogFileId = null;
-      }
       final cachedId = await _getCatalogFileId();
-      if (!forceRefresh && cachedId != null) {
-        // TẢI TRỰC TIẾP (Bỏ qua 2s tìm kiếm files.list)
+      if (cachedId != null) {
         rawMangas = await _fetchCatalogByFileId(cachedId);
       }
 
-      // Nếu chưa có ID hoặc ID cũ bị lỗi (404/re-upload/rỗng) hoặc forceRefresh, tìm kiếm lại và lưu ID mới
+      // Nếu chưa có ID hoặc ID cũ bị lỗi (404/re-upload/rỗng), tìm kiếm lại và lưu ID mới
       if (rawMangas == null || rawMangas.isEmpty) {
         final (newId, searchMangas) = await _searchAndDownloadCatalog();
         if (newId != null) {
@@ -501,28 +532,15 @@ class DriveService {
         }).toList();
 
         _cachedMangas = mergedMangas;
-        Future.microtask(() => CatalogCacheService.instance.saveCatalog(mergedMangas));
+        unawaited(CatalogCacheService.instance.saveCatalog(mergedMangas));
         return _cachedMangas!;
       }
-
-      // Fallback offline nếu không tải được trực tuyến
-      final offline = await _loadOfflineCatalog();
-      if (offline.isNotEmpty) {
-        _cachedMangas = offline;
-        return offline;
-      }
-
-      return [];
     } catch (e) {
-      debugPrint('⚠️ Error in getMangas: $e');
-      final offline = await _loadOfflineCatalog();
-      if (offline.isNotEmpty) {
-        _cachedMangas = offline;
-        return offline;
-      }
-      return [];
+      debugPrint('⚠️ Error in _fetchRemoteCatalogAndSave: $e');
     }
+    return [];
   }
+
 
   /// Khôi phục danh mục truyện từ SQLite khi ứng dụng chạy Ngoại tuyến
   Future<List<CloudManga>> _loadOfflineCatalog() async {
@@ -1646,6 +1664,156 @@ class DriveService {
       }
     }
     return false;
+  }
+
+  /// Kiểm tra tính toàn vẹn và hợp lệ cơ bản của file truyện (PDF, CBZ, ZIP, EPUB)
+  static Future<bool> isFileValid(File file, {String? extensionHint}) async {
+    try {
+      if (!await file.exists()) return false;
+      final len = await file.length();
+      if (len < 100) return false;
+
+      final header = await file.openRead(0, 8).first;
+      if (header.length < 4) return false;
+
+      // 1. Không chấp nhận file HTML lỗi của Drive (bắt đầu bằng '<')
+      if (header[0] == 0x3C) {
+        return false;
+      }
+
+      final isPdfHeader = header[0] == 0x25 &&
+          header[1] == 0x50 &&
+          header[2] == 0x44 &&
+          header[3] == 0x46; // %PDF
+
+      final ext = (extensionHint ?? '').toLowerCase();
+
+      // 2. Nếu là PDF
+      if (isPdfHeader || ext == 'pdf') {
+        if (!isPdfHeader) return false;
+        // Kiểm tra marker %%EOF ở 1024 bytes cuối file để đảm bảo không bị ngắt quãng giữa chừng
+        final checkLen = len > 1024 ? 1024 : len;
+        final startOffset = len - checkLen;
+        final tailBytes = await file.openRead(startOffset, len).expand((b) => b).toList();
+        final tailStr = String.fromCharCodes(tailBytes);
+        return tailStr.contains('%%EOF');
+      }
+
+      final isZipHeader = header[0] == 0x50 && header[1] == 0x4B;
+
+      // 3. Nếu là file nén ZIP / CBZ / EPUB
+      if (isZipHeader || ext == 'zip' || ext == 'cbz' || ext == 'epub') {
+        if (!isZipHeader) return false;
+        // Kiểm tra End of Central Directory signature (PK\x05\x06) trong 128KB cuối
+        final checkLen = len > 131072 ? 131072 : len;
+        final startOffset = len - checkLen;
+        final tailBytes = await file.openRead(startOffset, len).expand((b) => b).toList();
+        for (int i = 0; i <= tailBytes.length - 4; i++) {
+          if (tailBytes[i] == 0x50 &&
+              tailBytes[i + 1] == 0x4B &&
+              tailBytes[i + 2] == 0x05 &&
+              tailBytes[i + 3] == 0x06) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      return len > 1024;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Tải tệp chương về bộ nhớ đệm (Cache) an toàn, hỗ trợ:
+  /// - Tải nguyên tử (.part -> targetFile)
+  /// - Khử trùng lặp tải song song (Deduplication)
+  /// - Kiểm tra tính toàn vẹn (Integrity check)
+  /// - Tự động xóa file cache bị hỏng
+  Future<File?> getOrDownloadChapterFile(
+    String chapterId, {
+    String? extensionHint,
+    Function(int received, int total)? onProgress,
+  }) {
+    // 1. Tái sử dụng ngay lập tức tiến trình tải nếu đang có luồng khác tải cùng chapterId
+    // (Đăng ký đồng bộ ngay lập tức trước mọi await để triệt tiêu race condition tải trùng file .part)
+    if (_activeChapterFileDownloads.containsKey(chapterId)) {
+      debugPrint('⚡ Reusing in-flight download for chapter: $chapterId');
+      return _activeChapterFileDownloads[chapterId]!;
+    }
+
+    final future = _executeGetOrDownloadChapterFile(
+      chapterId,
+      extensionHint: extensionHint,
+      onProgress: onProgress,
+    );
+
+    _activeChapterFileDownloads[chapterId] = future;
+    return future.whenComplete(() {
+      _activeChapterFileDownloads.remove(chapterId);
+    });
+  }
+
+  Future<File?> _executeGetOrDownloadChapterFile(
+    String chapterId, {
+    String? extensionHint,
+    Function(int received, int total)? onProgress,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final ext = extensionHint != null && extensionHint.isNotEmpty ? '.$extensionHint' : '';
+    final targetFile = File('${tempDir.path}/temp_online_$chapterId$ext');
+    final legacyFile = File('${tempDir.path}/temp_online_$chapterId');
+
+    // 1. Kiểm tra cache đã có sẵn và hợp lệ chưa
+    for (final candidate in [targetFile, legacyFile]) {
+      if (await candidate.exists()) {
+        final isValid = await isFileValid(candidate, extensionHint: extensionHint);
+        if (isValid) {
+          debugPrint('✅ Reusing verified temp cache: ${candidate.path}');
+          return candidate;
+        } else {
+          debugPrint('⚠️ Cache file corrupted or incomplete, deleting: ${candidate.path}');
+          try {
+            await candidate.delete();
+          } catch (_) {}
+        }
+      }
+    }
+
+    final partFile = File('${targetFile.path}.part');
+    try {
+      final success = await downloadFileToFile(
+        chapterId,
+        partFile,
+        onProgress: onProgress,
+      );
+      if (!success || !await partFile.exists()) {
+        if (await partFile.exists()) await partFile.delete();
+        return null;
+      }
+
+      final isValid = await isFileValid(partFile, extensionHint: extensionHint);
+      if (!isValid) {
+        debugPrint('❌ Downloaded file failed integrity check: $chapterId');
+        if (await partFile.exists()) await partFile.delete();
+        return null;
+      }
+
+      if (await targetFile.exists()) {
+        await targetFile.delete();
+      }
+      await partFile.rename(targetFile.path);
+      debugPrint('✅ Downloaded and verified chapter file: ${targetFile.path}');
+      return targetFile;
+    } catch (e) {
+      debugPrint('⚠️ Error in getOrDownloadChapterFile: $e');
+      if (await partFile.exists()) {
+        try {
+          await partFile.delete();
+        } catch (_) {}
+      }
+      return null;
+    }
   }
 
   // Tải file từ Drive về dạng bytes. Không cần theo dõi tiến độ.

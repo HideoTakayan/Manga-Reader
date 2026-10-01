@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../data/models_group.dart';
@@ -184,8 +186,12 @@ class GroupService {
         if (group.status != 'approved') return null;
         
         if (!group.members.contains(user.uid)) {
-          // User was removed by leader. Clean up own profile.
-          _firestore.collection('users').doc(user.uid).update({'groupId': FieldValue.delete()});
+          // User was removed by leader. Clean up own profile (best-effort, non-blocking).
+          unawaited(
+            _firestore.collection('users').doc(user.uid)
+                .update({'groupId': FieldValue.delete()})
+                .catchError((e) => debugPrint('[GroupService] cleanup groupId failed: $e')),
+          );
           return null;
         }
         

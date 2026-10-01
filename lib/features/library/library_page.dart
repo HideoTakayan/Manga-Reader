@@ -32,7 +32,10 @@ class LibraryPage extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Thống kê đọc',
-              icon: const Icon(Icons.bar_chart_rounded, color: Colors.white70),
+              icon: Icon(
+                Icons.bar_chart_rounded,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
               onPressed: () => context.push('/analytics'),
             ),
           ],

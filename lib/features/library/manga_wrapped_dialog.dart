@@ -335,7 +335,9 @@ class _MangaWrappedDialogState extends State<MangaWrappedDialog> {
 ✨ Xem ngay báo cáo Manga Wrapped của bạn trên Manga-Reader App!
 '''.trim();
 
+    HapticFeedback.lightImpact();
     Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('✨ Đã sao chép tóm tắt Manga Wrapped vào bộ nhớ tạm!'),
@@ -469,6 +471,7 @@ Anh em năm nay cày được bao nhiêu chap rồi? Khoe thành tích bên dư�
                         ],
                       ),
                       IconButton(
+                        tooltip: 'Đóng',
                         icon: const Icon(Icons.close, color: Colors.white70),
                         onPressed: () => Navigator.pop(context),
                       ),

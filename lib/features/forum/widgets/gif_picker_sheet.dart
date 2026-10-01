@@ -139,6 +139,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                 ],
               ),
               IconButton(
+                tooltip: 'Đóng',
                 icon: Icon(
                   Icons.close_rounded,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
@@ -150,6 +151,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
           const SizedBox(height: 8),
           TextField(
             controller: _searchController,
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             style: TextStyle(color: theme.colorScheme.onSurface),
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
@@ -165,6 +167,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
               ),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
+                      tooltip: 'Xóa tìm kiếm',
                       icon: Icon(
                         Icons.clear,
                         size: 16,
@@ -242,6 +245,7 @@ class _GifPickerSheetState extends State<GifPickerSheet> {
                             ),
                           )
                         : GridView.builder(
+                            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
                               crossAxisSpacing: 10,

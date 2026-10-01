@@ -42,7 +42,17 @@ class ChatMessageBubble extends StatelessWidget {
     final authorRank = LeaderboardService.instance.getCachedRank(message.authorId);
 
     return GestureDetector(
-      onLongPress: !message.isDeleted ? () => _showOptionsMenu(context, currentUserIsAdmin, isMe, currentUserId) : null,
+      onLongPress: !message.isDeleted
+          ? () {
+              HapticFeedback.mediumImpact();
+              _showOptionsMenu(
+                context,
+                currentUserIsAdmin,
+                isMe,
+                currentUserId,
+              );
+            }
+          : null,
       child: Padding(
         padding: EdgeInsets.only(
           left: 12,
@@ -354,39 +364,50 @@ class ChatMessageBubble extends StatelessWidget {
         final hasMyReaction = currentUserId != null &&
             message.reactions[currentUserId] == emoji;
 
-        return InkWell(
-          onTap: () => onReact?.call(emoji),
+        return Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: Ink(
             decoration: BoxDecoration(
               color: hasMyReaction
                   ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.25)
-                  : Colors.white.withValues(alpha: 0.08),
+                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: hasMyReaction
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.white.withValues(alpha: 0.12),
+                    : Theme.of(context).dividerColor.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(emoji, style: const TextStyle(fontSize: 12)),
-                if (count > 1) ...[
-                  const SizedBox(width: 3),
-                  Text(
-                    count.toString(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: hasMyReaction ? Theme.of(context).colorScheme.primary : Colors.white70,
-                    ),
-                  ),
-                ],
-              ],
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                onReact?.call(emoji);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(emoji, style: const TextStyle(fontSize: 12)),
+                    if (count > 1) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        count.toString(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: hasMyReaction
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -538,6 +559,7 @@ class ChatMessageBubble extends StatelessWidget {
                       ? message.body
                       : (message.imageUrl ?? message.gifUrl ?? '');
                   if (textToCopy.isNotEmpty) {
+                    HapticFeedback.lightImpact();
                     Clipboard.setData(ClipboardData(text: textToCopy));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -557,6 +579,7 @@ class ChatMessageBubble extends StatelessWidget {
                 leading: const Icon(Icons.reply),
                 title: const Text('Trả lời tin nhắn này'),
                 onTap: () {
+                  HapticFeedback.lightImpact();
                   Navigator.pop(ctx);
                   onReply?.call();
                 },
@@ -566,6 +589,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.alternate_email, color: Colors.blueAccent),
                   title: Text('Nhắc tên @${message.authorName}'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onMention?.call();
                   },
@@ -575,6 +599,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.report, color: Colors.orange),
                   title: const Text('Báo cáo vi phạm'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onReport?.call();
                   },
@@ -585,6 +610,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.delete, color: Colors.red),
                   title: const Text('Xóa tin nhắn này', style: TextStyle(color: Colors.red)),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onDelete?.call();
                   },
@@ -596,6 +622,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 10 phút'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onMute?.call(const Duration(minutes: 10));
                   },
@@ -604,6 +631,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 1 giờ'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onMute?.call(const Duration(hours: 1));
                   },
@@ -612,6 +640,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.timer_off),
                   title: const Text('Cấm ngôn 24 giờ'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onMute?.call(const Duration(hours: 24));
                   },
@@ -621,6 +650,7 @@ class ChatMessageBubble extends StatelessWidget {
                   leading: const Icon(Icons.volume_up),
                   title: const Text('Gỡ cấm ngôn'),
                   onTap: () {
+                    HapticFeedback.lightImpact();
                     Navigator.pop(ctx);
                     onUnmute?.call();
                   },

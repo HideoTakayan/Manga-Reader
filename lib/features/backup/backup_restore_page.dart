@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/backup_service.dart';
 
@@ -34,6 +35,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       await action();
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Đã xảy ra lỗi: $e'),
@@ -47,12 +49,14 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
   }
 
   Future<void> _exportBackup() async {
+    HapticFeedback.mediumImpact();
     await _runBusy(() async {
       final path = await BackupService.instance.exportToJsonFile();
       if (!mounted) return;
       if (path != null) {
         await _loadBackupFiles();
         if (!mounted) return;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Đã lưu backup: ${path.split(RegExp(r'[\\/]')).last}'),
@@ -61,6 +65,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           ),
         );
       } else {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -96,7 +101,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -120,7 +125,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       ),
     );
     if (replace == null) return;
-
+    HapticFeedback.mediumImpact();
     await _runBusy(() async {
       final result = await BackupService.instance.importFromJsonFile(
         filePath: filePath,
@@ -128,6 +133,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
       if (!mounted) return;
       if (result == null) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Đã hủy chọn file sao lưu hoặc file không đúng định dạng'),
@@ -138,6 +144,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       final novelMsg = result.importedNovelsCount > 0
           ? ' (bao gồm ${result.importedNovelsCount} truyện chữ)'
           : '';
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -172,7 +179,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+            child: Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -188,10 +195,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     );
 
     if (confirm == true) {
+      HapticFeedback.mediumImpact();
       await _runBusy(() async {
         await BackupService.instance.deleteBackupFile(file.path);
         await _loadBackupFiles();
         if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Đã xóa bản sao lưu'),
@@ -219,7 +228,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Backup & Restore')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          24 + MediaQuery.paddingOf(context).bottom,
+        ),
         children: [
           Card(
             color: theme.cardColor,

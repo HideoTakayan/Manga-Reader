@@ -65,6 +65,8 @@ class _MainScaffoldState extends State<MainScaffold> {
     return _Branch.home;
   }
 
+  DateTime? _lastBackPressTime;
+
   @override
   Widget build(BuildContext context) {
     final activeBranches = _getActiveBranches();
@@ -78,38 +80,58 @@ class _MainScaffoldState extends State<MainScaffold> {
     final isHome = widget.navigationShell.currentIndex == _Branch.home;
 
     return PopScope(
-      canPop: isHome,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        widget.navigationShell.goBranch(
-          _Branch.home,
-          initialLocation: true,
-        );
+
+        // Nếu màn hình con trong nhánh hiện tại có thể quay lại, ưu tiên pop trước
+        if (context.canPop()) {
+          context.pop();
+          return;
+        }
+
+        if (!isHome) {
+          widget.navigationShell.goBranch(
+            _Branch.home,
+          );
+          return;
+        }
+
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Nhấn lần nữa để thoát ứng dụng'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+
+        SystemNavigator.pop();
       },
       child: Scaffold(
-        body: Stack(
-          children: [
-            widget.navigationShell,
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: MiniTtsPlayer(),
-            ),
-          ],
-        ),
+        body: widget.navigationShell,
         bottomNavigationBar: ValueListenableBuilder<bool>(
           valueListenable: UiService.instance.isMainBottomBarVisible,
           builder: (context, isVisible, child) {
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, animation) => SizeTransition(
-                sizeFactor: animation,
-                axisAlignment: -1,
-                child: child,
-              ),
-              child: isVisible
-                  ? NavigationBarTheme(
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const MiniTtsPlayer(),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  transitionBuilder: (child, animation) => SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1,
+                    child: child,
+                  ),
+                  child: isVisible
+                      ? NavigationBarTheme(
                       data: NavigationBarThemeData(
                         backgroundColor: Theme.of(
                           context,
@@ -182,6 +204,8 @@ class _MainScaffoldState extends State<MainScaffold> {
                       ),
                     )
                   : const SizedBox.shrink(),
+            ),
+              ],
             );
           },
         ),

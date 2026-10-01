@@ -566,44 +566,46 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
+          title: Text(
             'Gỡ bỏ',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CheckboxListTile(
-                value: removeFromLibrary,
-                onChanged: (val) =>
-                    setDialogState(() => removeFromLibrary = val ?? false),
-                title: const Text(
-                  'Từ thư viện',
-                  style: TextStyle(color: Colors.white),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CheckboxListTile(
+                  value: removeFromLibrary,
+                  onChanged: (val) =>
+                      setDialogState(() => removeFromLibrary = val ?? false),
+                  title: Text(
+                    'Từ thư viện',
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: Colors.redAccent,
+                  contentPadding: EdgeInsets.zero,
                 ),
-                controlAffinity: ListTileControlAffinity.leading,
-                activeColor: Colors.redAccent,
-                contentPadding: EdgeInsets.zero,
-              ),
-              CheckboxListTile(
-                value: deleteDownloads,
-                onChanged: (val) =>
-                    setDialogState(() => deleteDownloads = val ?? false),
-                title: const Text(
-                  'Các chương đã tải',
-                  style: TextStyle(color: Colors.white),
+                CheckboxListTile(
+                  value: deleteDownloads,
+                  onChanged: (val) =>
+                      setDialogState(() => deleteDownloads = val ?? false),
+                  title: Text(
+                    'Các chương đã tải',
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: Colors.redAccent,
+                  contentPadding: EdgeInsets.zero,
                 ),
-                controlAffinity: ListTileControlAffinity.leading,
-                activeColor: Colors.redAccent,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Hủy', style: TextStyle(color: Colors.grey)),
+              child: Text('Hủy'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -662,24 +664,24 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                 );
 
                 try {
-                  // Xóa khỏi thư viện: lấy categories hiện tại → loại bỏ currentCategory → set lại (chạy song song)
+                  // Xóa khỏi thư viện: loại bỏ currentCategory khỏi các truyện được chọn
                   if (removeFromLibrary) {
-                    final removeFutures = _selectedMangaIds.map((id) async {
-                      if (id.startsWith('LOCAL_NOVEL|')) {
-                        await NovelService.instance.remove(id.substring('LOCAL_NOVEL|'.length));
-                        return;
-                      }
-                      final cats = await LibraryService.instance
-                          .getMangaCategories(id);
-                      final newCats = cats
-                          .where((c) => c != currentCategory)
-                          .toList();
-                      await LibraryService.instance.setMangaCategories(
-                        id,
-                        newCats,
+                    final novelIds = _selectedMangaIds
+                        .where((id) => id.startsWith('LOCAL_NOVEL|'))
+                        .toList();
+                    for (final id in novelIds) {
+                      await NovelService.instance
+                          .remove(id.substring('LOCAL_NOVEL|'.length));
+                    }
+                    final regularIds = _selectedMangaIds
+                        .where((id) => !id.startsWith('LOCAL_NOVEL|'))
+                        .toList();
+                    if (regularIds.isNotEmpty) {
+                      await LibraryService.instance.removeMultipleFromCategory(
+                        regularIds,
+                        currentCategory,
                       );
-                    });
-                    await Future.wait(removeFutures);
+                    }
                   }
 
                   // Xóa file tải: lấy tên truyện từ SQLite → gọi deleteMangaDownloads (chạy song song)
@@ -795,7 +797,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
               appBar: AppBar(
                 // AppBar thay đổi hoàn toàn khi vào selection mode
                 backgroundColor: isSelectionMode
-                    ? const Color(0xFF1C1C1E)
+                    ? Theme.of(context).cardColor
                     : Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.85),
                 flexibleSpace: isSelectionMode
                     ? null
@@ -818,12 +820,25 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                           ? TextField(
                               controller: _searchController,
                               autofocus: true,
+                              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textInputAction: TextInputAction.search,
                               style: const TextStyle(color: Colors.white),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 hintText: 'Tìm kiếm truyện trong mục...',
-                                hintStyle: TextStyle(color: Colors.white54),
+                                hintStyle: const TextStyle(color: Colors.white54),
                                 border: InputBorder.none,
+                                suffixIcon: IconButton(
+                                  tooltip: 'Đóng tìm kiếm',
+                                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _isSearching = false;
+                                    });
+                                  },
+                                ),
                               ),
                               onChanged: (val) {
                                 if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
@@ -887,6 +902,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                 final count = await LocalScanService.instance
                                     .scanAndImport();
                                 if (context.mounted) {
+                                  HapticFeedback.lightImpact();
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -930,6 +947,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                   final count = await LocalScanService.instance.scanAndImport();
                                   LibraryService.instance.notifyMappingChanged();
                                   if (!context.mounted) return;
+                                  HapticFeedback.lightImpact();
+                                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Đã quét và đồng bộ $count truyện cục bộ'),
@@ -952,7 +971,6 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                       SizedBox(width: 12),
                                       Text(
                                         'Nhập truyện chữ (EPUB)',
-                                        style: TextStyle(color: Colors.white),
                                       ),
                                     ],
                                   ),
@@ -969,7 +987,6 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                       SizedBox(width: 12),
                                       Text(
                                         'Nhập truyện tranh (CBZ, ZIP, PDF)',
-                                        style: TextStyle(color: Colors.white),
                                       ),
                                     ],
                                   ),
@@ -986,7 +1003,6 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                       SizedBox(width: 12),
                                       Text(
                                         'Quét lại bộ nhớ máy',
-                                        style: TextStyle(color: Colors.white),
                                       ),
                                     ],
                                   ),
@@ -997,13 +1013,11 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                     children: [
                                       Icon(
                                         Icons.folder_outlined,
-                                        color: Colors.white70,
                                         size: 20,
                                       ),
                                       SizedBox(width: 12),
                                       Text(
                                         'Quản lý danh mục',
-                                        style: TextStyle(color: Colors.white),
                                       ),
                                     ],
                                   ),
@@ -1019,7 +1033,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                     borderRadius: BorderRadius.circular(25),
                   ),
                   dividerColor: Colors.transparent,
-                  labelColor: Colors.white,
+                  labelColor: Theme.of(context).colorScheme.onPrimary,
                   unselectedLabelColor: Colors.grey,
                   tabAlignment: TabAlignment.start,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1115,23 +1129,23 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                                   builder: (ctx) => AlertDialog(
                                     backgroundColor: Theme.of(ctx).dialogTheme.backgroundColor ?? Theme.of(ctx).cardColor,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                    title: const Text(
+                                    title: Text(
                                       'Tải xuống?',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                      style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface, fontWeight: FontWeight.bold),
                                     ),
                                     content: Text(
                                       'Tải tất cả chương của ${_selectedMangaIds.length} truyện đã chọn?',
-                                      style: const TextStyle(
-                                        color: Colors.white70,
+                                      style: TextStyle(
+                                        color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
                                       ),
                                     ),
                                     actions: [
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.pop(ctx, false),
-                                        child: const Text(
+                                        child: Text(
                                           'Hủy',
-                                          style: TextStyle(color: Colors.grey),
+                                          style: TextStyle(color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.6)),
                                         ),
                                       ),
                                       ElevatedButton(

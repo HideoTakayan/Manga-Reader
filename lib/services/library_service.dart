@@ -20,7 +20,10 @@ class _ValueStreamController<T> {
     });
   }
 
+  bool get isClosed => _controller.isClosed;
+
   void add(T newValue) {
+    if (_controller.isClosed) return;
     value = newValue;
     _controller.add(newValue);
   }
@@ -84,8 +87,9 @@ class LibraryService {
           .toList();
       if (cats.isEmpty) {
         // Auto-tạo category "Mặc định" nếu user xóa hết — đảm bảo có ít nhất 1 category
+        // addCategory bên trong đã tự gọi _refreshCategories(), return để tránh gọi kép
         await addCategory('Mặc định');
-        return _refreshCategories(); // Gọi lại để emit category mới
+        return;
       }
       _categoriesController.add(cats);
     } catch (_) {
@@ -100,9 +104,9 @@ class LibraryService {
     if (trimmed.isEmpty) return;
     final db = await _dbHelper.database;
     final countMap = await db.rawQuery(
-      'SELECT count(*) as count FROM lib_categories',
+      'SELECT COALESCE(MAX(sortIndex), -1) + 1 as nextIndex FROM lib_categories',
     );
-    final count = _readInt(countMap.first, 'count');
+    final count = _readInt(countMap.first, 'nextIndex');
     await db.insert('lib_categories', {
       'name': trimmed,
       'sortIndex': count,
@@ -112,23 +116,63 @@ class LibraryService {
 
   Future<void> updateCategory(String oldName, String newName) async {
     final trimmedNew = newName.trim();
-    if (oldName == 'Mặc định' || trimmedNew.isEmpty) return; // Bảo vệ danh mục mặc định và chống rỗng
+    if (oldName == 'Mặc định' || trimmedNew.isEmpty || oldName == trimmedNew) return;
     final db = await _dbHelper.database;
-    // transaction: đảm bảo cả 2 update thành công hoặc cả 2 rollback
+
     await db.transaction((txn) async {
-      await txn.update(
+      // 1. Kiểm tra xem category đích đã tồn tại chưa để tránh crash UNIQUE constraint
+      final existingTarget = await txn.query(
         'lib_categories',
-        {'name': trimmedNew},
         where: 'name = ?',
-        whereArgs: [oldName],
+        whereArgs: [trimmedNew],
       );
-      await txn.update(
-        'lib_mapping',
-        {'categoryName': trimmedNew},
-        where: 'categoryName = ?',
-        whereArgs: [oldName],
-      );
+
+      if (existingTarget.isNotEmpty) {
+        // Nếu tên đích đã tồn tại: Chế độ merge (gộp)
+        // Xóa các mapping của oldName cho truyện đã thuộc trimmedNew để tránh lỗi PK (mangaId, categoryName)
+        await txn.rawDelete(
+          '''
+          DELETE FROM lib_mapping 
+          WHERE categoryName = ? AND mangaId IN (
+            SELECT mangaId FROM lib_mapping WHERE categoryName = ?
+          )
+          ''',
+          [oldName, trimmedNew],
+        );
+        // Chuyển các mapping còn lại sang trimmedNew
+        await txn.update(
+          'lib_mapping',
+          {'categoryName': trimmedNew},
+          where: 'categoryName = ?',
+          whereArgs: [oldName],
+        );
+        // Xóa category cũ
+        await txn.delete(
+          'lib_categories',
+          where: 'name = ?',
+          whereArgs: [oldName],
+        );
+      } else {
+        // Tên mới chưa tồn tại: Cập nhật bình thường
+        await txn.update(
+          'lib_categories',
+          {'name': trimmedNew},
+          where: 'name = ?',
+          whereArgs: [oldName],
+        );
+        await txn.update(
+          'lib_mapping',
+          {'categoryName': trimmedNew},
+          where: 'categoryName = ?',
+          whereArgs: [oldName],
+        );
+      }
     });
+
+    // Dọn dẹp listener và controller của category cũ để tránh zombie/memory leak
+    await _catMappingSubs.remove(oldName)?.cancel();
+    _mangasInCatControllers.remove(oldName)?.close();
+
     _refreshCategories();
     _mappingController.add(null);
   }
@@ -152,11 +196,28 @@ class LibraryService {
     if (name == 'Mặc định') return; // Bảo vệ danh mục mặc định
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
+      // 1. Chỉ chuyển những truyện CHỈ nằm duy nhất trong category này sang 'Mặc định'
+      // để đảm bảo truyện trong thư viện không bị mất dấu/mồ côi.
+      // Những truyện đã nằm trong category khác vẫn được giữ nguyên ở các category đó.
+      await txn.rawInsert(
+        '''
+        INSERT OR IGNORE INTO lib_mapping (mangaId, categoryName)
+        SELECT mangaId, 'Mặc định'
+        FROM lib_mapping
+        WHERE categoryName = ?
+          AND mangaId NOT IN (
+            SELECT mangaId FROM lib_mapping WHERE categoryName != ?
+          )
+        ''',
+        [name, name],
+      );
+      // 2. Xóa mapping của category bị xóa
       await txn.delete(
         'lib_mapping',
         where: 'categoryName = ?',
         whereArgs: [name],
       );
+      // 3. Xóa category
       await txn.delete('lib_categories', where: 'name = ?', whereArgs: [name]);
     });
     // Hủy subscription và xóa controller của category đã xóa để tránh leak
@@ -167,48 +228,29 @@ class LibraryService {
   }
 
   Stream<List<String>> streamMangaCategories(String mangaId) {
-    // Dùng StreamController.broadcast() thay vì single-subscription để nhiều
-    // listener cùng lắng nghe (ví dụ: widget re-mount) mà không bị lỗi.
-    late StreamController<List<String>> controller;
-    StreamSubscription? subscription;
-
-    Future<void> fetch() async {
-      if (controller.isClosed) return;
-      try {
-        final db = await _dbHelper.database;
-        final maps = await db.query(
-          'lib_mapping',
-          where: 'mangaId = ?',
-          whereArgs: [mangaId],
-        );
-        if (!controller.isClosed) {
-          controller.add(
-            maps
-                .map((m) => _readString(m, 'categoryName'))
-                .where((categoryName) => categoryName.isNotEmpty)
-                .toList(),
-          );
+    // Dùng Stream.multi để mỗi listener (ví dụ: các widget khác nhau hoặc khi re-mount)
+    // có vòng đời độc lập, fetch tức thì và hủy subscription sạch sẽ khi unmount
+    return Stream<List<String>>.multi((multiController) {
+      Future<void> fetch() async {
+        if (multiController.isClosed) return;
+        try {
+          final cats = await getMangaCategories(mangaId);
+          if (!multiController.isClosed) {
+            multiController.add(cats);
+          }
+        } catch (e) {
+          if (!multiController.isClosed) {
+            multiController.addError(e);
+          }
         }
-      } catch (e) {
-        if (!controller.isClosed) controller.addError(e);
       }
-    }
 
-    controller = StreamController<List<String>>.broadcast(
-      onListen: () {
-        fetch();
-        // Lắng nghe sự kiện mapping thay đổi để re-fetch
-        subscription = _mappingController.stream.listen((_) => fetch());
-      },
-      onCancel: () {
-        // Hủy subscription khi không còn listener — tránh leak
-        subscription?.cancel();
-        subscription = null;
-        controller.close();
-      },
-    );
-
-    return controller.stream;
+      fetch();
+      final sub = _mappingController.stream.listen((_) => fetch());
+      multiController.onCancel = () {
+        sub.cancel();
+      };
+    });
   }
 
   final Map<String, _ValueStreamController<List<String>>> _mangasInCatControllers = {};
@@ -216,8 +258,9 @@ class LibraryService {
   final Map<String, StreamSubscription> _catMappingSubs = {};
 
   Stream<List<String>> streamMangasInCategory(String category) {
-    if (!_mangasInCatControllers.containsKey(category)) {
-      final controller = _ValueStreamController<List<String>>([]);
+    var controller = _mangasInCatControllers[category];
+    if (controller == null || controller.isClosed) {
+      controller = _ValueStreamController<List<String>>([]);
       _mangasInCatControllers[category] = controller;
 
       Future<void> fetch() async {
@@ -233,16 +276,16 @@ class LibraryService {
               .map((m) => _readString(m, 'mangaId'))
               .where((id) => id.isNotEmpty)
               .toList();
-          controller.add(list);
+          controller!.add(list);
         } catch (_) {}
       }
 
       fetch();
-      // Lưu subscription để cancel khi category bị xóa
+      _catMappingSubs[category]?.cancel();
       _catMappingSubs[category] = _mappingController.stream.listen((_) => fetch());
     }
 
-    return _mangasInCatControllers[category]!.stream;
+    return controller.stream;
   }
 
   Future<int> getMangaCountInCategory(String category) async {
@@ -260,51 +303,73 @@ class LibraryService {
   }
 
   Stream<int> streamMangaCountInCategory(String category) {
-    late StreamController<int> sc;
-    StreamSubscription? sub;
+    return streamMangasInCategory(category).map((mangas) => mangas.length);
+  }
 
-    Future<void> fetch() async {
-      if (sc.isClosed) return;
-      final count = await getMangaCountInCategory(category);
-      if (!sc.isClosed) sc.add(count);
-    }
+  Future<void> setMangaCategoriesForMultiple(
+    List<String> mangaIds,
+    List<String> categories,
+  ) async {
+    if (mangaIds.isEmpty) return;
+    final db = await _dbHelper.database;
+    final cleanCategories = categories
+        .map((c) => c.trim())
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .toList();
 
-    sc = StreamController<int>.broadcast(
-      onListen: () {
-        fetch();
-        sub = _mappingController.stream.listen((_) => fetch());
-      },
-      onCancel: () {
-        sub?.cancel();
-        sc.close();
-      },
-    );
-
-    return sc.stream;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final id in mangaIds) {
+        batch.delete(
+          'lib_mapping',
+          where: 'mangaId = ?',
+          whereArgs: [id],
+        );
+        for (var cat in cleanCategories) {
+          batch.insert(
+            'lib_mapping',
+            {
+              'mangaId': id,
+              'categoryName': cat,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+      await batch.commit(noResult: true);
+    });
+    _mappingController.add(null);
   }
 
   Future<void> setMangaCategories(
     String mangaId,
     List<String> categories,
+  ) {
+    return setMangaCategoriesForMultiple([mangaId], categories);
+  }
+
+  Future<void> removeMultipleFromCategory(
+    List<String> mangaIds,
+    String categoryName,
   ) async {
+    if (mangaIds.isEmpty) return;
     final db = await _dbHelper.database;
-    await db.transaction((txn) async {
-      await txn.delete(
+    final batch = db.batch();
+    for (final id in mangaIds) {
+      batch.delete(
         'lib_mapping',
-        where: 'mangaId = ?',
-        whereArgs: [mangaId],
+        where: 'mangaId = ? AND categoryName = ?',
+        whereArgs: [id, categoryName],
       );
-      for (var cat in categories) {
-        await txn.insert('lib_mapping', {
-          'mangaId': mangaId,
-          'categoryName': cat,
-        });
-      }
-    });
+    }
+    await batch.commit(noResult: true);
     _mappingController.add(null);
   }
 
-
+  Future<void> removeFromCategory(String mangaId, String categoryName) {
+    return removeMultipleFromCategory([mangaId], categoryName);
+  }
 
   Future<List<String>> getMangaCategories(String mangaId) async {
     final db = await _dbHelper.database;

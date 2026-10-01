@@ -122,6 +122,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Vui lòng đăng nhập')));
@@ -148,6 +149,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
       } else if (widget.type == 'manga_share') {
         if (_selectedManga == null) {
           if (mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Vui lòng chọn truyện để chia sẻ')),
             );
@@ -175,6 +177,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
       }
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
@@ -209,6 +212,42 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
     if (createdPoll != null && mounted) {
       setState(() => _poll = createdPoll);
     }
+  }
+
+  bool get _hasUnsavedChanges {
+    return _bodyController.text.trim().isNotEmpty ||
+        _imageFile != null ||
+        _poll != null ||
+        _selectedManga != null ||
+        _selectedTags.isNotEmpty;
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (_isSubmitting) return false;
+    if (!_hasUnsavedChanges) return true;
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bỏ bài viết?'),
+        content: const Text(
+          'Nội dung bạn đang soạn sẽ bị mất nếu bạn rời khỏi màn hình này.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Tiếp tục viết'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Bỏ bài viết'),
+          ),
+        ],
+      ),
+    );
+    return discard ?? false;
   }
 
   @override
@@ -294,7 +333,14 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
     }
 
     return PopScope(
-      canPop: !_isSubmitting,
+      canPop: !_isSubmitting && !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _confirmDiscard();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         appBar: AppBar(
           title: Text(
@@ -417,6 +463,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                   child: TextField(
                     controller: _bodyController,
                     focusNode: _focusNode,
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     maxLines: null,
                     textCapitalization: TextCapitalization.sentences,
                     keyboardType: TextInputType.multiline,
@@ -466,6 +513,7 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                         top: 8,
                         right: 8,
                         child: IconButton(
+                          tooltip: 'Xóa ảnh đính kèm',
                           icon: const Icon(Icons.cancel),
                           color: Colors.white,
                           onPressed: () => setState(() => _imageFile = null),
@@ -500,18 +548,23 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                             Expanded(
                               child: Text(
                                 _poll!.question,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                   fontSize: 14,
                                 ),
                               ),
                             ),
                             IconButton(
+                              tooltip: 'Xóa bình chọn',
                               visualDensity: VisualDensity.compact,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                              icon: const Icon(Icons.cancel, color: Colors.white70, size: 20),
+                              icon: Icon(
+                                Icons.cancel,
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                size: 20,
+                              ),
                               onPressed: () => setState(() => _poll = null),
                             ),
                           ],
@@ -521,16 +574,19 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                               padding: const EdgeInsets.symmetric(vertical: 2),
                               child: Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.radio_button_unchecked,
                                     size: 14,
-                                    color: Colors.white54,
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
                                   ),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       opt,
-                                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -759,7 +815,8 @@ class _AddCustomTagDialogState extends State<_AddCustomTagDialog> {
       ),
       content: TextField(
         controller: _controller,
-        autofocus: true,
+        autofocus: false,
+        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
         style: TextStyle(color: onSurface),
         decoration: InputDecoration(
           hintText: 'Ví dụ: review, trinhtham, onepiece...',
@@ -840,6 +897,7 @@ class _PollCreatorDialogState extends State<_PollCreatorDialog> {
   void _submit() {
     final question = _questionCtrl.text.trim();
     if (question.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập câu hỏi bình chọn')),
       );
@@ -850,6 +908,7 @@ class _PollCreatorDialogState extends State<_PollCreatorDialog> {
         .where((text) => text.isNotEmpty)
         .toList();
     if (validOptions.length < 2) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập ít nhất 2 lựa chọn')),
       );
@@ -889,6 +948,7 @@ class _PollCreatorDialogState extends State<_PollCreatorDialog> {
           children: [
             TextField(
               controller: _questionCtrl,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: onSurface),
               decoration: InputDecoration(
                 hintText: 'Câu hỏi bình chọn...',
@@ -913,6 +973,7 @@ class _PollCreatorDialogState extends State<_PollCreatorDialog> {
                     Expanded(
                       child: TextField(
                         controller: _optionCtrls[idx],
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         style: TextStyle(color: onSurface),
                         decoration: InputDecoration(
                           hintText: 'Lựa chọn ${idx + 1}',
@@ -927,6 +988,7 @@ class _PollCreatorDialogState extends State<_PollCreatorDialog> {
                     if (_optionCtrls.length > 2) ...[
                       const SizedBox(width: 6),
                       IconButton(
+                        tooltip: 'Xóa lựa chọn',
                         icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
                         onPressed: () => _removeOption(idx),
                       ),

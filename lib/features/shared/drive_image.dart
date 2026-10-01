@@ -131,14 +131,14 @@ class _DriveImageState extends State<DriveImage> {
                 children: [
                   Icon(
                     Icons.refresh, 
-                    color: Colors.grey, 
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                     size: constraints.maxHeight < 40 ? 16 : 28,
                   ),
                   if (constraints.maxHeight >= 50) ...[
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Lỗi tải ảnh',
-                      style: TextStyle(color: Colors.grey, fontSize: 10),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontSize: 10),
                       textAlign: TextAlign.center,
                     ),
                   ]

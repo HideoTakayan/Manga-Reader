@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../data/models_cloud.dart';
 import '../../../data/drive_service.dart';
 import '../../catalog/catalog_cache_service.dart';
@@ -129,12 +130,14 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                     child: TextField(
                       controller: _searchController,
+                      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                       textInputAction: TextInputAction.search,
                       decoration: InputDecoration(
                         hintText: 'Tìm tên truyện hoặc tác giả...',
                         prefixIcon: const Icon(Icons.search, size: 20),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
+                                tooltip: 'Xóa tìm kiếm',
                                 icon: const Icon(Icons.clear, size: 16),
                                 onPressed: () {
                                   _searchController.clear();
@@ -231,6 +234,7 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                   else
                     Expanded(
                       child: ListView.builder(
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: filteredMangas.length,
                         itemBuilder: (context, index) {
@@ -262,6 +266,7 @@ class _MangaPickerSheetState extends State<MangaPickerSheet> {
                               ),
                             ),
                             onTap: () {
+                              HapticFeedback.selectionClick();
                               Navigator.of(context).pop(manga);
                             },
                           );

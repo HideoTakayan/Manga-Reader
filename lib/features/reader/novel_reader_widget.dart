@@ -97,6 +97,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   bool _isIncognito = false;
   bool _volumePageTurn = true;
   bool _invertVolumeKeys = false;
+  bool _isShiftingWindow = false; // Guard chống race condition khi swipe nhanh qua chương
   String _currentSelection = '';
 
   static const _supportedLangs = [
@@ -134,6 +135,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   int get _chapterCount => _book?.chapters.length ?? 0;
 
   EpubChapter _chapterAt(int chapterIndex) {
+    if (_chapterCount <= 0) return const EpubChapter(title: '', blocks: []);
     final index = chapterIndex.clamp(0, _chapterCount - 1);
     return _lazyChapterLoader?.peek(index) ?? _book!.chapters[index];
   }
@@ -269,6 +271,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       if (mounted) {
         final title = LevelService.levelTitles[
             (result.newLevel - 1).clamp(0, LevelService.levelTitles.length - 1)];
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
@@ -867,6 +870,43 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     setState(() => _showControls = !_showControls);
   }
 
+  void _turnPageForward() {
+    if (_flowType == 0) {
+      if (_pageController.hasClients &&
+          _horizontalPageIndex < _windowPages.length - 1) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        _nextChapter();
+      }
+    } else {
+      _verticalOffsetController.animateScroll(
+        offset: 500,
+        duration: const Duration(milliseconds: 200),
+      );
+    }
+  }
+
+  void _turnPageBackward() {
+    if (_flowType == 0) {
+      if (_pageController.hasClients && _horizontalPageIndex > 0) {
+        _pageController.previousPage(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      } else {
+        _prevChapter(toLastPage: true);
+      }
+    } else {
+      _verticalOffsetController.animateScroll(
+        offset: -500,
+        duration: const Duration(milliseconds: 200),
+      );
+    }
+  }
+
   void _handleReaderPointerDown(PointerDownEvent event) {
     _readerPointerStart = event.position;
     _readerPointerStartTime = DateTime.now();
@@ -882,6 +922,20 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     final moved = (event.position - start).distance;
     final elapsed = DateTime.now().difference(startTime);
     if (moved <= 18 && elapsed <= const Duration(milliseconds: 450)) {
+      if (_currentSelection.isNotEmpty) {
+        return;
+      }
+      if (_flowType == 0) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final x = event.position.dx;
+        if (x < screenWidth * 0.25) {
+          _turnPageBackward();
+          return;
+        } else if (x > screenWidth * 0.75) {
+          _turnPageForward();
+          return;
+        }
+      }
       _toggleControls();
     }
   }
@@ -893,7 +947,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   Future<void> _setFontSize(int value) async {
     final next = value.clamp(12, 40);
-    if (!mounted) return;
+    if (!mounted || _fontSize == next) return;
+    HapticFeedback.selectionClick();
     _repaginate(() => _fontSize = next);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('epub_font_size', next);
@@ -901,14 +956,16 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Future<void> _setLineHeight(double value) async {
-    if (!mounted) return;
+    if (!mounted || (_lineHeight - value).abs() < 0.01) return;
+    HapticFeedback.selectionClick();
     _repaginate(() => _lineHeight = value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('epub_line_height', value);
   }
 
   Future<void> _setPageHorizontalPadding(double value) async {
-    if (!mounted) return;
+    if (!mounted || (_pageHorizontalPadding - value).abs() < 0.5) return;
+    HapticFeedback.selectionClick();
     _repaginate(() => _pageHorizontalPadding = value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('epub_page_horizontal_padding', value);
@@ -961,6 +1018,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       _updateHorizontalWindow(targetChapter);
     }
 
+    if (!mounted) return;
     setState(() {
       _flowType = next;
       if (next == 0) {
@@ -972,16 +1030,21 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         _horizontalPageIndex = _pagesBeforeCenter + newPageWithinChapter;
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    void syncPage(int retry) {
       if (!mounted) return;
       if (_flowType == 1) {
         _jumpVerticalToChapter(targetChapter, offsetRatio: targetRatio);
       } else {
         if (_pageController.hasClients) {
           _pageController.jumpToPage(_horizontalPageIndex);
+        } else if (retry > 0) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => syncPage(retry - 1),
+          );
         }
       }
-    });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => syncPage(5));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('epub_flow_type', next);
     _scheduleProgressSave();
@@ -1002,7 +1065,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Future<void> _jumpToChapter(int index) async {
-    Navigator.pop(context);
+    if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
+      Navigator.pop(context);
+    }
     await _jumpChapterWithoutDrawer(index);
   }
 
@@ -1130,6 +1195,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         await _loadLazyWindow(next);
       } catch (e) {
         if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('Lỗi tải chương, vui lòng thử lại'),
@@ -1171,6 +1237,21 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     }
 
     await _saveProgress();
+
+    if (_isTtsPlaying) {
+      try {
+        final curChapter = await _loadChapter(next);
+        final chapterText = EpubParser.formatChapterText(curChapter);
+        if (chapterText.trim().isNotEmpty) {
+          final blockTexts = curChapter.blocks
+              .map((b) => (b.text != null && b.type != EpubBlockType.divider)
+                  ? b.text!
+                  : '')
+              .toList();
+          await _startTts(chapterText, blockTexts: blockTexts);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _jumpToEncodedPosition(String? position) async {
@@ -1188,9 +1269,16 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     await _jumpChapterWithoutDrawer(_chapterIndex + 1);
   }
 
-  Future<void> _prevChapter() async {
+  Future<void> _prevChapter({bool toLastPage = false}) async {
     if (_book == null || _chapterIndex <= 0) return;
-    await _jumpChapterWithoutDrawer(_chapterIndex - 1);
+    final prevIdx = _chapterIndex - 1;
+    if (toLastPage && _flowType == 0) {
+      final prevPages = _getPagesForChapter(prevIdx);
+      final lastPage = max(0, prevPages.length - 1);
+      await _jumpChapterWithoutDrawer(prevIdx, pageWithinChapter: lastPage);
+    } else {
+      await _jumpChapterWithoutDrawer(prevIdx);
+    }
   }
 
   Future<void> _refreshBookmarkState() async {
@@ -1357,6 +1445,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                                 style: TextStyle(color: onSurface.withValues(alpha: 0.6), fontSize: 12),
                               ),
                               trailing: IconButton(
+                                tooltip: 'Xóa đánh dấu',
                                 icon: Icon(Icons.delete_outline, color: onSurface.withValues(alpha: 0.38), size: 20),
                                 onPressed: () async {
                                   await DatabaseHelper.instance.deleteBookmark(bookmark.id);
@@ -1416,7 +1505,8 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                       child: TextField(
                         controller: controller,
-                        autofocus: true,
+                        autofocus: false,
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         style: TextStyle(color: onSurface),
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
@@ -1473,6 +1563,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                               ),
                             )
                           : ListView.separated(
+                              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                               itemCount: results.length,
                               separatorBuilder: (_, _) => Divider(
                                 height: 1,
@@ -1836,6 +1927,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     final chunks = tts.chunks;
     if (chunks.isEmpty) return;
 
+    final searchController = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1851,10 +1943,13 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         var searchQuery = '';
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final normalizedQuery = CatalogCacheService.instance.normalize(searchQuery);
             final filteredChunks = searchQuery.isEmpty
                 ? chunks.asMap().entries.toList()
                 : chunks.asMap().entries.where((e) {
-                    return e.value.text.toLowerCase().contains(searchQuery.toLowerCase());
+                    final normText = CatalogCacheService.instance.normalize(e.value.text);
+                    return normText.contains(normalizedQuery) ||
+                        e.value.text.toLowerCase().contains(searchQuery.toLowerCase());
                   }).toList();
 
             return DraggableScrollableSheet(
@@ -1905,11 +2000,24 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       child: TextField(
+                        controller: searchController,
+                        autofocus: false,
+                        onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                         style: TextStyle(color: onSurface, fontSize: 13),
                         decoration: InputDecoration(
                           hintText: 'Tìm kiếm câu trong chương...',
                           hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38), fontSize: 13),
                           prefixIcon: Icon(Icons.search, color: onSurface.withValues(alpha: 0.54), size: 18),
+                          suffixIcon: searchQuery.isNotEmpty
+                              ? IconButton(
+                                  tooltip: 'Xóa tìm kiếm',
+                                  icon: Icon(Icons.clear, size: 16, color: onSurface.withValues(alpha: 0.54)),
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setModalState(() => searchQuery = '');
+                                  },
+                                )
+                              : null,
                           filled: true,
                           fillColor: onSurface.withValues(alpha: 0.08),
                           contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -1925,7 +2033,31 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     ),
                     const SizedBox(height: 6),
                     Expanded(
-                      child: ListView.separated(
+                      child: filteredChunks.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off_rounded,
+                                      size: 40,
+                                      color: onSurface.withValues(alpha: 0.38),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Không tìm thấy câu nào phù hợp',
+                                      style: TextStyle(
+                                        color: onSurface.withValues(alpha: 0.6),
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
                         controller: scrollController,
                         itemCount: filteredChunks.length,
                         separatorBuilder: (_, __) => Divider(color: divider, height: 1),
@@ -1985,7 +2117,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           },
         );
       },
-    );
+    ).whenComplete(searchController.dispose);
   }
 
   void _setSleepTimer(int minutes) {
@@ -2062,19 +2194,27 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: colors
           .map(
-            (color) => GestureDetector(
-              onTap: () => onSelected(color),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Color(color),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected == color
-                        ? primary
-                        : divider,
-                    width: selected == color ? 3 : 1,
+            (color) => Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onSelected(color);
+                },
+                child: Ink(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Color(color),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected == color
+                          ? primary
+                          : divider,
+                      width: selected == color ? 3 : 1,
+                    ),
                   ),
                 ),
               ),
@@ -2158,6 +2298,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       ),
                     ),
                     IconButton(
+                      tooltip: 'Đóng',
                       onPressed: () => Navigator.pop(context),
                       icon: Icon(Icons.close, color: onSurface.withValues(alpha: 0.7)),
                     ),
@@ -2202,8 +2343,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   divisions: 14,
                   activeColor: primary,
                   onChanged: (value) async {
-                    await _setFontSize(value.round());
-                    setModalState(() {});
+                    final next = value.round();
+                    if (next != _fontSize) {
+                      await _setFontSize(next);
+                      setModalState(() {});
+                    }
                   },
                 ),
                 // Line height
@@ -2218,10 +2362,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   divisions: 13,
                   activeColor: primary,
                   onChanged: (value) async {
-                    await _setLineHeight(
-                      double.parse(value.toStringAsFixed(2)),
-                    );
-                    setModalState(() {});
+                    final next = double.parse(value.toStringAsFixed(2));
+                    if ((next - _lineHeight).abs() >= 0.01) {
+                      await _setLineHeight(next);
+                      setModalState(() {});
+                    }
                   },
                 ),
                 Text(
@@ -2235,8 +2380,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   divisions: 12,
                   activeColor: primary,
                   onChanged: (value) async {
-                    await _setPageHorizontalPadding(value);
-                    setModalState(() {});
+                    final next = value.roundToDouble();
+                    if ((next - _pageHorizontalPadding).abs() >= 0.5) {
+                      await _setPageHorizontalPadding(next);
+                      setModalState(() {});
+                    }
                   },
                 ),
                 const SizedBox(height: 4),
@@ -2250,35 +2398,41 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                       final selected = _fontFamily == option.family;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: GestureDetector(
-                          onTap: () async {
-                            await _setFontFamily(option.family);
-                            setModalState(() {});
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? primary
-                                  : onSurface.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              HapticFeedback.selectionClick();
+                              await _setFontFamily(option.family);
+                              setModalState(() {});
+                            },
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
                                 color: selected
                                     ? primary
-                                    : divider,
+                                    : onSurface.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: selected
+                                      ? primary
+                                      : divider,
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              option.label,
-                              style: TextStyle(
-                                color: selected ? onPrimary : onSurface.withValues(alpha: 0.7),
-                                fontSize: 13,
-                                fontFamily: option.family == 'Default'
-                                    ? null
-                                    : option.family,
+                              child: Text(
+                                option.label,
+                                style: TextStyle(
+                                  color: selected ? onPrimary : onSurface.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontFamily: option.family == 'Default'
+                                      ? null
+                                      : option.family,
+                                ),
                               ),
                             ),
                           ),
@@ -2323,31 +2477,37 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                           _bgColor == preset.bg && _textColor == preset.text;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: GestureDetector(
-                          onTap: () async {
-                            await _applyThemePreset(preset.bg, preset.text);
-                            setModalState(() {});
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Color(preset.bg),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: active
-                                    ? primary
-                                    : divider,
-                                width: active ? 2 : 1,
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              HapticFeedback.selectionClick();
+                              await _applyThemePreset(preset.bg, preset.text);
+                              setModalState(() {});
+                            },
+                            child: Ink(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
                               ),
-                            ),
-                            child: Text(
-                              preset.label,
-                              style: TextStyle(
-                                color: Color(preset.text),
-                                fontSize: 13,
+                              decoration: BoxDecoration(
+                                color: Color(preset.bg),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: active
+                                      ? primary
+                                      : divider,
+                                  width: active ? 2 : 1,
+                                ),
+                              ),
+                              child: Text(
+                                preset.label,
+                                style: TextStyle(
+                                  color: Color(preset.text),
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ),
@@ -2676,37 +2836,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         }
 
         if (isNext) {
-          if (_flowType == 0) {
-            if (_pageController.hasClients && _horizontalPageIndex < _windowPages.length - 1) {
-              _pageController.nextPage(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-              );
-            } else {
-              _nextChapter();
-            }
-          } else {
-            _verticalOffsetController.animateScroll(
-              offset: 500,
-              duration: const Duration(milliseconds: 200),
-            );
-          }
+          _turnPageForward();
         } else if (isPrev) {
-          if (_flowType == 0) {
-            if (_pageController.hasClients && _horizontalPageIndex > 0) {
-              _pageController.previousPage(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-              );
-            } else {
-              _prevChapter();
-            }
-          } else {
-            _verticalOffsetController.animateScroll(
-              offset: -500,
-              duration: const Duration(milliseconds: 200),
-            );
-          }
+          _turnPageBackward();
         } else if (key == LogicalKeyboardKey.equal ||
                    key == LogicalKeyboardKey.add ||
                    key == LogicalKeyboardKey.numpadAdd) {
@@ -2741,7 +2873,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
           Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                _viewportSize ??= Size(constraints.maxWidth, constraints.maxHeight);
+                if (constraints.maxWidth > 50 && constraints.maxHeight > 50) {
+                  _viewportSize ??= Size(constraints.maxWidth, constraints.maxHeight);
+                }
                 return Listener(
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: _handleReaderPointerDown,
@@ -3030,10 +3164,6 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
     EpubChapter chapter, {
     required bool isNear,
   }) {
-    final chapterText = GlossaryService.instance.applyReplacements(
-      EpubParser.formatChapterText(chapter),
-      mangaId: widget.storageKey,
-    );
     return Container(
       key: isNear ? _chapterSectionKeys[index] : null,
       padding: const EdgeInsets.only(bottom: 48),
@@ -3046,13 +3176,22 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               final block = entry.value;
 
               _blockKeys[index] ??= {};
-              final key = _blockKeys[index]![blockIndex] ??= GlobalKey();
+              if (isNear) {
+                // Chỉ tạo GlobalKey khi chapter đang hiển thị gần viewport
+                // để tránh tích lũy hàng nghìn key không dùng với EPUB lớn
+                _blockKeys[index]![blockIndex] ??= GlobalKey();
+              }
+              final key = isNear ? _blockKeys[index]![blockIndex] : null;
 
               if (block.type == EpubBlockType.image && block.image != null) {
                 return Container(
                   key: isNear ? key : null,
                   margin: const EdgeInsets.only(bottom: 16),
-                  child: Image.memory(block.image!, fit: BoxFit.contain),
+                  child: Image.memory(
+                    block.image!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
                 );
               } else if (block.type == EpubBlockType.divider) {
                 return Padding(
@@ -3145,19 +3284,31 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               ...chapter.images.map(
                 (img) => Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: Image.memory(img, fit: BoxFit.contain),
+                  child: Image.memory(
+                    img,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
                 ),
               ),
-            if (chapterText.trim().isNotEmpty)
-              Text(
-                chapterText,
-                style: TextStyle(
-                  color: Color(_textColor),
-                  fontSize: _fontSize.toDouble(),
-                  height: _lineHeight,
-                  fontFamily: _fontFamily == 'Default' ? null : _fontFamily,
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                final text = GlossaryService.instance.applyReplacements(
+                  EpubParser.formatChapterText(chapter),
+                  mangaId: widget.storageKey,
+                );
+                if (text.trim().isEmpty) return const SizedBox.shrink();
+                return Text(
+                  text,
+                  style: TextStyle(
+                    color: Color(_textColor),
+                    fontSize: _fontSize.toDouble(),
+                    height: _lineHeight,
+                    fontFamily: _fontFamily == 'Default' ? null : _fontFamily,
+                  ),
+                );
+              },
+            ),
           ],
         ],
       ),
@@ -3169,7 +3320,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       builder: (context, constraints) {
         final currentSize = Size(constraints.maxWidth, constraints.maxHeight);
 
-        if (_viewportSize != currentSize) {
+        if (_viewportSize != currentSize &&
+            currentSize.width > 50 &&
+            currentSize.height > 50) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               _repaginate(() {
@@ -3238,6 +3391,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                     child: Image.memory(
                       page.blocks.first.image!,
                       fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 );
@@ -3249,7 +3403,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   if (block.type == EpubBlockType.image &&
                       block.image != null) {
                     return Center(
-                      child: Image.memory(block.image!, fit: BoxFit.contain),
+                      child: Image.memory(
+                        block.image!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
                     );
                   }
                   if (block.type == EpubBlockType.divider) {
@@ -3356,40 +3514,48 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   }
 
   Future<void> _shiftHorizontalWindow() async {
-    final targetChapter = _chapterIndex;
-    final centerPages = _getPagesForChapter(_windowCenterChapter);
-    final pageWithinChapter = targetChapter < _windowCenterChapter
-        ? _horizontalPageIndex
-        : _horizontalPageIndex - (_pagesBeforeCenter + centerPages.length);
-
+    // Guard: ngăn nhiều lần shift đồng thời khi user swipe nhanh qua ranh giới chương
+    if (_isShiftingWindow) return;
+    _isShiftingWindow = true;
     try {
-      await _loadLazyWindow(targetChapter);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Lỗi tải chương mới'),
-            action: SnackBarAction(
-              label: 'Thử lại',
-              onPressed: () => _shiftHorizontalWindow(),
-            ),
-          ),
-        );
-      }
-      return;
-    }
+      final targetChapter = _chapterIndex;
+      final centerPages = _getPagesForChapter(_windowCenterChapter);
+      final pageWithinChapter = targetChapter < _windowCenterChapter
+          ? _horizontalPageIndex
+          : _horizontalPageIndex - (_pagesBeforeCenter + centerPages.length);
 
-    if (!mounted || targetChapter != _chapterIndex) return;
-    _updateHorizontalWindow(targetChapter);
-    final newIndex = (_pagesBeforeCenter + pageWithinChapter)
-        .clamp(0, max(0, _windowPages.length - 1))
-        .toInt();
-    setState(() => _horizontalPageIndex = newIndex);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pageController.hasClients) {
-        _pageController.jumpToPage(newIndex);
+      try {
+        await _loadLazyWindow(targetChapter);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Lỗi tải chương mới'),
+              action: SnackBarAction(
+                label: 'Thử lại',
+                onPressed: () => _shiftHorizontalWindow(),
+              ),
+            ),
+          );
+        }
+        return;
       }
-    });
+
+      if (!mounted || targetChapter != _chapterIndex) return;
+      _updateHorizontalWindow(targetChapter);
+      final newIndex = (_pagesBeforeCenter + pageWithinChapter)
+          .clamp(0, max(0, _windowPages.length - 1))
+          .toInt();
+      setState(() => _horizontalPageIndex = newIndex);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageController.hasClients) {
+          _pageController.jumpToPage(newIndex);
+        }
+      });
+    } finally {
+      _isShiftingWindow = false;
+    }
   }
 
   Widget _buildTtsSlider({
@@ -4142,6 +4308,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
   Future<void> _showPublishPackDialog() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng đăng nhập để chia sẻ gói từ điển')),
       );
@@ -4285,11 +4452,10 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13.5),
                 ),
                 const SizedBox(height: 12),
-                InkWell(
+                Material(
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => setDialogState(() => isMangaOnly = true),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Ink(
                     decoration: BoxDecoration(
                       color: isMangaOnly
                           ? theme.colorScheme.primary.withValues(alpha: 0.15)
@@ -4299,34 +4465,43 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                         color: isMangaOnly ? theme.colorScheme.primary : theme.dividerColor,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                          color: isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Chỉ áp dụng cho truyện này (${widget.mangaTitle})',
-                            style: TextStyle(
-                              color: isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
-                              fontSize: 13,
-                              fontWeight: isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setDialogState(() => isMangaOnly = true);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                              color: isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
+                              size: 20,
                             ),
-                          ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Chỉ áp dụng cho truyện này (${widget.mangaTitle})',
+                                style: TextStyle(
+                                  color: isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontWeight: isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                InkWell(
+                Material(
+                  color: Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => setDialogState(() => isMangaOnly = false),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Ink(
                     decoration: BoxDecoration(
                       color: !isMangaOnly
                           ? theme.colorScheme.primary.withValues(alpha: 0.15)
@@ -4336,25 +4511,35 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                         color: !isMangaOnly ? theme.colorScheme.primary : theme.dividerColor,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          !isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                          color: !isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Áp dụng toàn cầu (Tất cả các truyện)',
-                            style: TextStyle(
-                              color: !isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
-                              fontSize: 13,
-                              fontWeight: !isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setDialogState(() => isMangaOnly = false);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              !isMangaOnly ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                              color: !isMangaOnly ? theme.colorScheme.primary : onSurface.withValues(alpha: 0.54),
+                              size: 20,
                             ),
-                          ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Áp dụng toàn cầu (Tất cả các truyện)',
+                                style: TextStyle(
+                                  color: !isMangaOnly ? onSurface : onSurface.withValues(alpha: 0.7),
+                                  fontSize: 13,
+                                  fontWeight: !isMangaOnly ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -4513,6 +4698,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   ),
                   child: TextField(
                     controller: _communitySearchCtrl,
+                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                     style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
                     decoration: InputDecoration(
                       hintText: 'Tìm gói theo tên truyện, tác giả, từ...',
@@ -4520,6 +4706,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                       prefixIcon: Icon(Icons.search, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                       suffixIcon: _communitySearchQuery.isNotEmpty
                           ? IconButton(
+                              tooltip: 'Xóa tìm kiếm',
                               icon: Icon(Icons.clear, size: 14, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                               onPressed: () {
                                 _communitySearchCtrl.clear();
@@ -4590,40 +4777,60 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
               final allPacks = snapshot.data ?? [];
               var packs = allPacks;
               if (_communitySearchQuery.isNotEmpty) {
-                final q = _communitySearchQuery.toLowerCase().trim();
+                final q = CatalogCacheService.instance.normalize(_communitySearchQuery.trim());
                 packs = packs.where((p) {
-                  return p.title.toLowerCase().contains(q) ||
-                      p.description.toLowerCase().contains(q) ||
-                      (p.mangaTitle != null && p.mangaTitle!.toLowerCase().contains(q)) ||
-                      p.authorName.toLowerCase().contains(q) ||
-                      p.rules.any((r) => r.from.toLowerCase().contains(q) || r.to.toLowerCase().contains(q));
+                  final normTitle = CatalogCacheService.instance.normalize(p.title);
+                  final normDesc = CatalogCacheService.instance.normalize(p.description);
+                  final normManga = p.mangaTitle != null ? CatalogCacheService.instance.normalize(p.mangaTitle!) : '';
+                  final normAuthor = CatalogCacheService.instance.normalize(p.authorName);
+                  return normTitle.contains(q) ||
+                      normDesc.contains(q) ||
+                      normManga.contains(q) ||
+                      normAuthor.contains(q) ||
+                      p.rules.any((r) {
+                        final normFrom = CatalogCacheService.instance.normalize(r.from);
+                        final normTo = CatalogCacheService.instance.normalize(r.to);
+                        return normFrom.contains(q) || normTo.contains(q);
+                      });
                 }).toList();
               }
               if (packs.isEmpty) {
+                final isSearching = _communitySearchQuery.trim().isNotEmpty;
                 return Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.cloud_off_rounded, size: 48, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24)),
+                        Icon(
+                          isSearching ? Icons.search_off_rounded : Icons.cloud_off_rounded,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                        ),
                         const SizedBox(height: 12),
                         Text(
-                          'Chưa có gói từ điển cộng đồng nào',
+                          isSearching
+                              ? 'Không tìm thấy gói từ điển phù hợp với "$_communitySearchQuery"'
+                              : 'Chưa có gói từ điển cộng đồng nào',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 14),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.purpleAccent,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                            fontSize: 14,
                           ),
-                          onPressed: _showPublishPackDialog,
-                          icon: const Icon(Icons.cloud_upload_rounded, size: 18),
-                          label: const Text('Chia sẻ gói đầu tiên'),
                         ),
+                        if (!isSearching) ...[
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purpleAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: _showPublishPackDialog,
+                            icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+                            label: const Text('Chia sẻ gói đầu tiên'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -4683,6 +4890,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                               ),
                               if (isAuthor)
                                 IconButton(
+                                  tooltip: 'Xóa gói từ điển',
                                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
                                   onPressed: () async {
                                     final confirm = await showDialog<bool>(
@@ -4906,10 +5114,12 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   onChanged: (_) => GlossaryService.instance.toggleRule(rule.id),
                 ),
                 IconButton(
+                  tooltip: 'Chỉnh sửa',
                   icon: Icon(Icons.edit_outlined, size: 20, color: onSurface.withValues(alpha: 0.6)),
                   onPressed: () => _showAddEditRuleDialog(rule, isMangaTab),
                 ),
                 IconButton(
+                  tooltip: 'Xóa',
                   icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
                   onPressed: () => GlossaryService.instance.deleteRule(rule.id),
                 ),
@@ -5040,6 +5250,8 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: TextField(
               controller: _searchController,
+              autofocus: false,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: onSurface, fontSize: 13),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
@@ -5048,6 +5260,7 @@ class _NovelTocDrawerContentState extends State<_NovelTocDrawerContent> {
                 prefixIcon: Icon(Icons.search, color: onSurface.withValues(alpha: 0.38), size: 18),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
+                        tooltip: 'Xóa tìm kiếm',
                         icon: Icon(Icons.clear, color: onSurface.withValues(alpha: 0.38), size: 18),
                         onPressed: () {
                           _searchController.clear();
@@ -5167,6 +5380,7 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
       mangaId: _isMangaOnly ? widget.storageKey : null,
     );
     if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Đã cập nhật quy tắc: "${widget.originalWord}" ➔ "$target"'),
@@ -5198,10 +5412,11 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text(
             'Từ gốc trong truyện:',
             style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13),
@@ -5232,7 +5447,8 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
           const SizedBox(height: 4),
           TextField(
             controller: _toController,
-            autofocus: true,
+            autofocus: false,
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
             style: TextStyle(color: onSurface),
             decoration: InputDecoration(
               hintText: 'Ví dụ: Napoleon, Edison, 100%...',
@@ -5264,7 +5480,8 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
           ),
         ],
       ),
-      actions: [
+    ),
+    actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text('Hủy', style: TextStyle(color: onSurface.withValues(alpha: 0.6))),
@@ -5368,48 +5585,56 @@ class _AddEditRuleDialogState extends State<_AddEditRuleDialog> {
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Từ gốc / Từ bị dịch sai:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _fromController,
-            autofocus: widget.existingRule == null,
-            style: TextStyle(color: onSurface),
-            decoration: InputDecoration(
-              hintText: 'Ví dụ: Nã Phá Luân, Ái Nhân Tôn...',
-              hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
-              filled: true,
-              fillColor: onSurface.withValues(alpha: 0.06),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Từ gốc / Từ bị dịch sai:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _fromController,
+              autofocus: false,
+              textInputAction: TextInputAction.next,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                hintText: 'Ví dụ: Nã Phá Luân, Ái Nhân Tôn...',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text('Thay thế thành:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
-          const SizedBox(height: 4),
-          TextField(
-            controller: _toController,
-            style: TextStyle(color: onSurface),
-            decoration: InputDecoration(
-              hintText: 'Ví dụ: Napoleon, Edison...',
-              hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
-              filled: true,
-              fillColor: onSurface.withValues(alpha: 0.06),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            const SizedBox(height: 12),
+            Text('Thay thế thành:', style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13)),
+            const SizedBox(height: 4),
+            TextField(
+              controller: _toController,
+              autofocus: false,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+              style: TextStyle(color: onSurface),
+              decoration: InputDecoration(
+                hintText: 'Ví dụ: Napoleon, Edison...',
+                hintStyle: TextStyle(color: onSurface.withValues(alpha: 0.38)),
+                filled: true,
+                fillColor: onSurface.withValues(alpha: 0.06),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _isMangaOnly,
-            activeTrackColor: theme.colorScheme.primary,
-            activeThumbColor: theme.colorScheme.primary,
-            onChanged: (val) => setState(() => _isMangaOnly = val),
-            title: Text('Chỉ áp dụng cho truyện này', style: TextStyle(color: onSurface, fontSize: 13)),
-          ),
-        ],
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _isMangaOnly,
+              activeTrackColor: theme.colorScheme.primary,
+              activeThumbColor: theme.colorScheme.primary,
+              onChanged: (val) => setState(() => _isMangaOnly = val),
+              title: Text('Chỉ áp dụng cho truyện này', style: TextStyle(color: onSurface, fontSize: 13)),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -5571,6 +5796,8 @@ class _PublishPackDialogState extends State<_PublishPackDialog> {
             const SizedBox(height: 4),
             TextField(
               controller: _titleCtrl,
+              autofocus: false,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               style: TextStyle(color: onSurface),
               decoration: InputDecoration(
                 hintText: 'Ví dụ: Chuẩn hóa Convert One Piece...',
@@ -5585,6 +5812,8 @@ class _PublishPackDialogState extends State<_PublishPackDialog> {
             const SizedBox(height: 4),
             TextField(
               controller: _descCtrl,
+              autofocus: false,
+              onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
               maxLines: 2,
               style: TextStyle(color: onSurface),
               decoration: InputDecoration(

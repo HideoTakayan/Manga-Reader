@@ -577,7 +577,7 @@ class _UsersListPageState extends State<UsersListPage> {
       builder: (sheetContext) {
         final theme = Theme.of(sheetContext);
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,

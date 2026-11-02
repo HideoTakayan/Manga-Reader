@@ -206,8 +206,8 @@ class _NotificationListPageState extends State<NotificationListPage>
                           ),
                           child: Text(
                             '$unread',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: theme.colorScheme.onPrimary,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),

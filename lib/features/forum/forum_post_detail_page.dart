@@ -372,14 +372,14 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              border: Border(
-                top: BorderSide(
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                color: Theme.of(context).cardColor,
+                border: Border(
+                  top: BorderSide(
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                  ),
                 ),
               ),
-            ),
-            child: SafeArea(
+              child: SafeArea(
               child: StreamBuilder<DocumentSnapshot>(
                 stream: _userSnapshotStream,
                 builder: (context, snapshot) {
@@ -466,8 +466,10 @@ class _ForumPostDetailPageState extends State<ForumPostDetailPage> {
                               onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textCapitalization: TextCapitalization.sentences,
                               maxLines: null,
-                              decoration: const InputDecoration(
-                                hintText: 'Viết bình luận...',
+                              decoration: InputDecoration(
+                                hintText: FirebaseAuth.instance.currentUser == null
+                                    ? 'Đăng nhập để bình luận...'
+                                    : 'Viết bình luận...',
                                 border: InputBorder.none,
                               ),
                               onChanged: (_) => setState(() {}),

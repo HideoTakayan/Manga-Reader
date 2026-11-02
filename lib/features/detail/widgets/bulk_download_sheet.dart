@@ -358,7 +358,7 @@ class _BulkDownloadSheetState extends State<BulkDownloadSheet> with SingleTicker
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.1),
                           disabledForegroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.38),
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),

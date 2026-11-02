@@ -314,7 +314,7 @@ class _ExternalFileActionSheetState extends State<_ExternalFileActionSheet> {
       decoration: BoxDecoration(
         color: theme.dialogTheme.backgroundColor ?? theme.cardColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.5),

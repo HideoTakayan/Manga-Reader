@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/auth_service.dart';
 import '../../forum/services/image_upload_service.dart';
@@ -64,14 +66,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   // Chọn ảnh từ gallery. Ảnh chỉ preview local ở đây, khi lưu mới upload lên Cloudinary.
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      final file = File(picked.path);
-      if (!mounted) return;
-      setState(() {
-        _imageFile = file;
-      });
+    try {
+      final pickerPlatform = ImagePickerPlatform.instance;
+      if (pickerPlatform is ImagePickerAndroid) {
+        pickerPlatform.useAndroidPhotoPicker = true;
+      }
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.gallery);
+      if (picked != null) {
+        final file = File(picked.path);
+        if (!mounted) return;
+        setState(() {
+          _imageFile = file;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error picking avatar: $e');
     }
   }
 
@@ -286,7 +296,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon: const Icon(Icons.info_outline, color: Colors.grey),
+                        prefixIcon: Icon(
+                          Icons.info_outline,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
                       ),
                       maxLines: 3,
                     ),

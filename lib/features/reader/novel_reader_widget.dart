@@ -263,7 +263,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
   void initState() {
     super.initState();
     WakelockPlus.enable();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setEnabledSystemUIMode(_showControls ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky);
     _syncTtsState();
     TtsService.instance.addListener(_onTtsServiceChanged);
     GlossaryService.instance.addListener(_onGlossaryChanged);
@@ -867,7 +867,14 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
 
   void _toggleControls() {
     if (!mounted) return;
-    setState(() => _showControls = !_showControls);
+    setState(() {
+      _showControls = !_showControls;
+      if (_showControls) {
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      } else {
+        SystemChrome.setEnabledSystemUIMode(_showControls ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky);
+      }
+    });
   }
 
   void _turnPageForward() {
@@ -2059,6 +2066,9 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                             )
                           : ListView.separated(
                         controller: scrollController,
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.paddingOf(context).bottom + 16,
+                        ),
                         itemCount: filteredChunks.length,
                         separatorBuilder: (_, __) => Divider(color: divider, height: 1),
                         itemBuilder: (_, i) {
@@ -2149,9 +2159,11 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
       ),
       builder: (context) {
         final onSurface = Theme.of(context).colorScheme.onSurface;
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2176,9 +2188,10 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
               _buildColorRow(textColors, _textColor, _setTextColor),
             ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
   }
 
   Widget _buildColorRow(
@@ -2851,7 +2864,7 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
         } else if (key == LogicalKeyboardKey.keyB) {
           _toggleBookmark();
         } else if (key == LogicalKeyboardKey.keyM) {
-          setState(() => _showControls = !_showControls);
+          _toggleControls();
         } else if (key == LogicalKeyboardKey.bracketLeft && _chapterIndex > 0) {
           _jumpToChapter(_chapterIndex - 1);
         } else if (key == LogicalKeyboardKey.bracketRight &&
@@ -3949,87 +3962,90 @@ class _NovelReaderWidgetState extends State<NovelReaderWidget> {
                   ),
 
                 // Hàng điều khiển đa phương tiện đầy đủ
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(
-                      tooltip: _flowType == 1 ? 'Cuộn dọc' : 'Vuốt ngang',
-                      icon: Icon(
-                        _flowType == 1 ? Icons.swap_vert_rounded : Icons.swap_horiz_rounded,
-                        color: Colors.white70,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      IconButton(
+                        tooltip: _flowType == 1 ? 'Cuộn dọc' : 'Vuốt ngang',
+                        icon: Icon(
+                          _flowType == 1 ? Icons.swap_vert_rounded : Icons.swap_horiz_rounded,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () => _setFlowType(_flowType == 1 ? 0 : 1),
                       ),
-                      onPressed: () => _setFlowType(_flowType == 1 ? 0 : 1),
-                    ),
-                    IconButton(
-                      tooltip: 'Chương trước',
-                      icon: const Icon(Icons.fast_rewind_rounded, color: Colors.white, size: 26),
-                      onPressed: _prevChapter,
-                    ),
-                    IconButton(
-                      tooltip: 'Lùi 1 câu',
-                      icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 28),
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        tts.prevChunk();
-                      },
-                    ),
-                    // Nút Play / Pause lớn trung tâm
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(32),
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _toggleTts();
+                      IconButton(
+                        tooltip: 'Chương trước',
+                        icon: const Icon(Icons.fast_rewind_rounded, color: Colors.white, size: 26),
+                        onPressed: _prevChapter,
+                      ),
+                      IconButton(
+                        tooltip: 'Lùi 1 câu',
+                        icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 28),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          tts.prevChunk();
                         },
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Theme.of(context).colorScheme.primary,
-                                Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                      ),
+                      // Nút Play / Pause lớn trung tâm
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(32),
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            _toggleTts();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Theme.of(context).colorScheme.primary,
+                                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                                ],
+                              ),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+                                  blurRadius: 14,
+                                  spreadRadius: 2,
+                                )
                               ],
                             ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
-                                blurRadius: 14,
-                                spreadRadius: 2,
-                              )
-                            ],
-                          ),
-                          child: Icon(
-                            _isTtsPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            color: Theme.of(context).colorScheme.onPrimary,
-                            size: 32,
+                            child: Icon(
+                              _isTtsPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              size: 32,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Tiến 1 câu',
-                      icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
-                      onPressed: () {
-                        HapticFeedback.selectionClick();
-                        tts.nextChunk();
-                      },
-                    ),
-                    IconButton(
-                      tooltip: 'Chương sau',
-                      icon: const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 26),
-                      onPressed: _nextChapter,
-                    ),
-                    IconButton(
-                      tooltip: 'Tắt hoàn toàn TTS',
-                      icon: const Icon(Icons.power_settings_new_rounded, color: Colors.redAccent),
-                      onPressed: () {
-                        HapticFeedback.mediumImpact();
-                        tts.stopAndHide();
-                      },
-                    ),
-                  ],
+                      IconButton(
+                        tooltip: 'Tiến 1 câu',
+                        icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          tts.nextChunk();
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Chương sau',
+                        icon: const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 26),
+                        onPressed: _nextChapter,
+                      ),
+                      IconButton(
+                        tooltip: 'Tắt hoàn toàn TTS',
+                        icon: const Icon(Icons.power_settings_new_rounded, color: Colors.redAccent),
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          tts.stopAndHide();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
 
                 const SizedBox(height: 6),
@@ -4377,7 +4393,13 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                             Expanded(
                               child: Text(
                                 r.from,
-                                style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                  color: theme.brightness == Brightness.dark
+                                      ? Colors.orangeAccent
+                                      : Colors.deepOrange.shade800,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                             Icon(Icons.arrow_forward_rounded, color: theme.colorScheme.primary, size: 14),
@@ -4385,7 +4407,13 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                             Expanded(
                               child: Text(
                                 r.to,
-                                style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                  color: theme.brightness == Brightness.dark
+                                      ? Colors.greenAccent
+                                      : Colors.green.shade800,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -4443,14 +4471,15 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                 ),
               ],
             ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Bạn muốn áp dụng ${pack.rules.length} từ trong gói "${pack.title}" vào đâu?',
-                  style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13.5),
-                ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Bạn muốn áp dụng ${pack.rules.length} từ trong gói "${pack.title}" vào đâu?',
+                    style: TextStyle(color: onSurface.withValues(alpha: 0.7), fontSize: 13.5),
+                  ),
                 const SizedBox(height: 12),
                 Material(
                   color: Colors.transparent,
@@ -4543,7 +4572,8 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
             actions: [
               TextButton(
@@ -5029,6 +5059,7 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
   Widget _buildRuleList(List<GlossaryRule> rules, {required bool isMangaTab}) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final isDark = theme.brightness == Brightness.dark;
 
     if (rules.isEmpty) {
       return Center(
@@ -5083,7 +5114,9 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   child: Text(
                     rule.from,
                     style: TextStyle(
-                      color: rule.isEnabled ? Colors.orangeAccent : onSurface.withValues(alpha: 0.38),
+                      color: rule.isEnabled
+                          ? (isDark ? Colors.orangeAccent : Colors.deepOrange.shade800)
+                          : onSurface.withValues(alpha: 0.38),
                       fontWeight: FontWeight.bold,
                       decoration: rule.isEnabled ? null : TextDecoration.lineThrough,
                     ),
@@ -5097,7 +5130,9 @@ class _GlossaryManagerSheetState extends State<_GlossaryManagerSheet>
                   child: Text(
                     rule.to,
                     style: TextStyle(
-                      color: rule.isEnabled ? Colors.greenAccent : onSurface.withValues(alpha: 0.38),
+                      color: rule.isEnabled
+                          ? (isDark ? Colors.greenAccent : Colors.green.shade800)
+                          : onSurface.withValues(alpha: 0.38),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -5395,6 +5430,7 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
+    final isDark = theme.brightness == Brightness.dark;
     return AlertDialog(
       backgroundColor: theme.cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -5432,8 +5468,8 @@ class _QuickAddGlossaryDialogState extends State<_QuickAddGlossaryDialog> {
             ),
             child: Text(
               widget.originalWord,
-              style: const TextStyle(
-                color: Colors.orangeAccent,
+              style: TextStyle(
+                color: isDark ? Colors.orangeAccent : Colors.deepOrange.shade800,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
               ),

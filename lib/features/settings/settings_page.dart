@@ -495,7 +495,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   const SizedBox(height: 6),
                   Text(
                     email,
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
+                    style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                    fontSize: 14,
+                  ),
                   ),
                 ],
               ),
@@ -1283,7 +1286,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1.5),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.07),
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(3),
                                   ),
                                   child: Text('Manga', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54), fontSize: 7.5)),
@@ -1479,7 +1482,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ),
                   child: isSelected
-                      ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+                      ? Icon(Icons.check_rounded, size: 15, color: Theme.of(context).colorScheme.onPrimary)
                       : null,
                 ),
               ],
@@ -1814,15 +1817,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 20,
-        right: 20,
-        top: 12,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 20,
+          right: 20,
+          top: 12,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Center(
@@ -1945,7 +1950,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -1983,13 +1989,16 @@ class _JoinGroupSheetState extends State<_JoinGroupSheet> {
         color: theme.cardColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             const SizedBox(height: 12),
             Container(
               width: 40,
@@ -2022,9 +2031,9 @@ class _JoinGroupSheetState extends State<_JoinGroupSheet> {
                   ),
                 ],
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.groups_rounded,
-                color: onSurface,
+                color: Colors.white,
                 size: 36,
               ),
             ),
@@ -2214,10 +2223,12 @@ class _JoinGroupSheetState extends State<_JoinGroupSheet> {
               ),
             ),
             const SizedBox(height: 32),
-          ],
+            ],
+          ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -2258,12 +2269,14 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
         color: theme.cardColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
@@ -2298,9 +2311,9 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                     ),
                   ],
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.add_moderator_rounded,
-                  color: onSurface,
+                  color: Colors.white,
                   size: 36,
                 ),
               ),
@@ -2555,7 +2568,8 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

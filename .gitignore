@@ -122,3 +122,5 @@ implementation_plan_for_codex.md
 node_modules/
 firebase-debug.log
 firestore-debug.log
+# Widget Preview related
+.widget_preview/

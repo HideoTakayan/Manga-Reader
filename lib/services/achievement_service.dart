@@ -609,12 +609,13 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                   child: Row(
                     children: AchievementCategory.values.map((cat) {
                       final isSelected = _selectedCategory == cat;
+                      final isDark = Theme.of(ctx).brightness == Brightness.dark;
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: ChoiceChip(
                           label: Text(cat.label, style: const TextStyle(fontSize: 11.5)),
                           selected: isSelected,
-                          selectedColor: Colors.amberAccent,
+                          selectedColor: isDark ? Colors.amberAccent : Colors.amber.shade300,
                           labelStyle: TextStyle(
                             color: isSelected ? Colors.black : Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.7),
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -708,28 +709,32 @@ class _AchievementShowcaseSheetState extends State<_AchievementShowcaseSheet> {
                                         ),
                                       ),
                                       if (isUnlocked)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.greenAccent.withValues(alpha: 0.2),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 12),
-                                              SizedBox(width: 3),
-                                              Text(
-                                                'ĐÃ MỞ',
-                                                style: TextStyle(
-                                                  color: Colors.greenAccent,
-                                                  fontSize: 9.5,
-                                                  fontWeight: FontWeight.bold,
+                                        Builder(builder: (ctx2) {
+                                          final isDark2 = Theme.of(ctx2).brightness == Brightness.dark;
+                                          final tagColor = isDark2 ? Colors.greenAccent : Colors.green.shade700;
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: tagColor.withValues(alpha: isDark2 ? 0.2 : 0.12),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.check_circle_rounded, color: tagColor, size: 12),
+                                                const SizedBox(width: 3),
+                                                Text(
+                                                  'ĐÃ MỞ',
+                                                  style: TextStyle(
+                                                    color: tagColor,
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                                              ],
+                                            ),
+                                          );
+                                        }),
                                     ],
                                   ),
                                   const SizedBox(height: 3),

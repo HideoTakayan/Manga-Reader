@@ -885,7 +885,16 @@ class _SearchPageState extends State<SearchPage> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   ChoiceChip(
-                                    label: const Text('AND (Đủ)', style: TextStyle(fontSize: 11)),
+                                    label: Text(
+                                      'AND (Đủ)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: genreMatchMode == GenreMatchMode.and
+                                            ? Theme.of(context).colorScheme.onPrimary
+                                            : Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                    ),
                                     selected: genreMatchMode == GenreMatchMode.and,
                                     selectedColor: Theme.of(context).colorScheme.primary,
                                     visualDensity: VisualDensity.compact,
@@ -898,7 +907,16 @@ class _SearchPageState extends State<SearchPage> {
                                   ),
                                   const SizedBox(width: 4),
                                   ChoiceChip(
-                                    label: const Text('OR (1 trong các)', style: TextStyle(fontSize: 11)),
+                                    label: Text(
+                                      'OR (1 trong các)',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: genreMatchMode == GenreMatchMode.or
+                                            ? Theme.of(context).colorScheme.onPrimary
+                                            : Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                    ),
                                     selected: genreMatchMode == GenreMatchMode.or,
                                     selectedColor: Theme.of(context).colorScheme.primary,
                                     visualDensity: VisualDensity.compact,
@@ -1012,7 +1030,7 @@ class _SearchPageState extends State<SearchPage> {
                             backgroundColor: Theme.of(context).cardColor,
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? Colors.white
+                                  ? Theme.of(context).colorScheme.onPrimary
                                   : Theme.of(
                                       context,
                                     ).textTheme.bodyLarge?.color,
@@ -1049,7 +1067,7 @@ class _SearchPageState extends State<SearchPage> {
                             backgroundColor: Theme.of(context).cardColor,
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? Colors.white
+                                  ? Theme.of(context).colorScheme.onPrimary
                                   : Theme.of(
                                       context,
                                     ).textTheme.bodyLarge?.color,

@@ -35,6 +35,7 @@ class MiniTtsPlayer extends StatelessWidget {
                   valueListenable: UiService.instance.isMainBottomBarVisible,
                   builder: (context, isNavBarVisible, _) {
                     final theme = Theme.of(context);
+                    final isDark = theme.brightness == Brightness.dark;
                     final primaryColor = theme.colorScheme.primary;
 
                     return SafeArea(
@@ -97,7 +98,7 @@ class MiniTtsPlayer extends StatelessWidget {
                             LinearProgressIndicator(
                               value: tts.progress,
                               minHeight: 2,
-                              backgroundColor: Colors.white10,
+                              backgroundColor: theme.colorScheme.onSurface.withValues(alpha: 0.12),
                               valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
                             ),
                           Padding(
@@ -135,8 +136,8 @@ class MiniTtsPlayer extends StatelessWidget {
                                     children: [
                                       Text(
                                         tts.currentChapterTitle ?? 'Đang đọc truyện chữ',
-                                        style: const TextStyle(
-                                          color: Colors.white,
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurface,
                                           fontSize: 13,
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -150,8 +151,8 @@ class MiniTtsPlayer extends StatelessWidget {
                                           Flexible(
                                             child: Text(
                                               tts.mangaTitle ?? (tts.totalChunks > 0 ? 'Đoạn ${tts.chunkIndex + 1}/${tts.totalChunks}' : 'Giọng đọc AI'),
-                                              style: const TextStyle(
-                                                color: Colors.white60,
+                                              style: TextStyle(
+                                                color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                                                 fontSize: 11,
                                               ),
                                               maxLines: 1,
@@ -168,8 +169,8 @@ class MiniTtsPlayer extends StatelessWidget {
                                               ),
                                               child: Text(
                                                 '${tts.sleepMinutesRemaining}p',
-                                                style: const TextStyle(
-                                                  color: Colors.amberAccent,
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.amberAccent : Colors.orange.shade800,
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.bold,
                                                 ),
@@ -188,9 +189,9 @@ class MiniTtsPlayer extends StatelessWidget {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                   tooltip: 'Tùy chỉnh đọc AI',
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.tune_rounded,
-                                    color: Colors.white70,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                                     size: 18,
                                   ),
                                   onPressed: () {
@@ -205,9 +206,9 @@ class MiniTtsPlayer extends StatelessWidget {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                   tooltip: 'Đoạn trước',
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.skip_previous_rounded,
-                                    color: Colors.white70,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                                     size: 22,
                                   ),
                                   onPressed: tts.prevChunk,
@@ -235,9 +236,9 @@ class MiniTtsPlayer extends StatelessWidget {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                   tooltip: 'Đoạn tiếp',
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.skip_next_rounded,
-                                    color: Colors.white70,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                                     size: 22,
                                   ),
                                   onPressed: tts.nextChunk,
@@ -249,9 +250,9 @@ class MiniTtsPlayer extends StatelessWidget {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                   tooltip: 'Tắt',
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.close_rounded,
-                                    color: Colors.white38,
+                                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                                     size: 18,
                                   ),
                                   onPressed: tts.stopAndHide,
@@ -277,10 +278,11 @@ class MiniTtsPlayer extends StatelessWidget {
   }
 
   void _showTtsQuickControlSheet(BuildContext context, TtsService tts) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -345,8 +347,8 @@ class MiniTtsPlayer extends StatelessWidget {
                             children: [
                               Text(
                                 tts.currentChapterTitle ?? 'Đang đọc truyện chữ',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface,
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -356,8 +358,8 @@ class MiniTtsPlayer extends StatelessWidget {
                               const SizedBox(height: 2),
                               Text(
                                 '${tts.mangaTitle ?? 'Giọng đọc AI'} • Đoạn ${tts.chunkIndex + 1}/${max(1, tts.totalChunks)}',
-                                style: const TextStyle(
-                                  color: Colors.white60,
+                                style: TextStyle(
+                                  color: colorScheme.onSurface.withValues(alpha: 0.65),
                                   fontSize: 12,
                                 ),
                                 maxLines: 1,
@@ -378,7 +380,7 @@ class MiniTtsPlayer extends StatelessWidget {
                           trackHeight: 3,
                           overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                           activeTrackColor: primaryColor,
-                          inactiveTrackColor: Colors.white12,
+                          inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.12),
                           thumbColor: primaryColor,
                         ),
                         child: Slider(
@@ -397,14 +399,14 @@ class MiniTtsPlayer extends StatelessWidget {
                         child: LinearProgressIndicator(
                           value: tts.progress,
                           minHeight: 4,
-                          backgroundColor: Colors.white10,
+                          backgroundColor: colorScheme.onSurface.withValues(alpha: 0.1),
                           valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
                         ),
                       ),
                       const SizedBox(height: 10),
                     ],
 
-                    const Divider(color: Colors.white12),
+                    Divider(color: theme.dividerColor.withValues(alpha: 0.15)),
                     const SizedBox(height: 10),
 
                     // Speed Setting Section
@@ -415,9 +417,9 @@ class MiniTtsPlayer extends StatelessWidget {
                           children: [
                             Icon(Icons.speed_rounded, size: 18, color: primaryColor),
                             const SizedBox(width: 8),
-                            const Text(
+                            Text(
                               'Tốc độ đọc',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                              style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.onSurface, fontSize: 14),
                             ),
                           ],
                         ),
@@ -444,7 +446,7 @@ class MiniTtsPlayer extends StatelessWidget {
                               selected: isSelected,
                               selectedColor: primaryColor,
                               labelStyle: TextStyle(
-                                color: isSelected ? colorScheme.onPrimary : Colors.white70,
+                                color: isSelected ? colorScheme.onPrimary : colorScheme.onSurface.withValues(alpha: 0.7),
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                 fontSize: 12,
                               ),
@@ -465,21 +467,29 @@ class MiniTtsPlayer extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.timer_rounded, size: 18, color: Colors.amberAccent),
-                            SizedBox(width: 8),
+                            Icon(
+                              Icons.timer_rounded,
+                              size: 18,
+                              color: isDark ? Colors.amberAccent : Colors.orange.shade800,
+                            ),
+                            const SizedBox(width: 8),
                             Text(
                               'Hẹn giờ tắt',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onSurface,
+                                fontSize: 14,
+                              ),
                             ),
                           ],
                         ),
                         if (tts.stopAtEndOfChapter)
-                          const Text(
+                          Text(
                             'Hết chương',
                             style: TextStyle(
-                              color: Colors.amberAccent,
+                              color: isDark ? Colors.amberAccent : Colors.orange.shade800,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
@@ -487,8 +497,8 @@ class MiniTtsPlayer extends StatelessWidget {
                         else if (tts.sleepMinutesRemaining > 0)
                           Text(
                             'Còn ${tts.sleepMinutesRemaining} phút',
-                            style: const TextStyle(
-                              color: Colors.amberAccent,
+                            style: TextStyle(
+                              color: isDark ? Colors.amberAccent : Colors.orange.shade800,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
@@ -506,9 +516,11 @@ class MiniTtsPlayer extends StatelessWidget {
                             child: ChoiceChip(
                               label: const Text('Hết chương'),
                               selected: tts.stopAtEndOfChapter,
-                              selectedColor: Colors.amberAccent,
+                              selectedColor: isDark ? Colors.amberAccent : Colors.amber.shade700,
                               labelStyle: TextStyle(
-                                color: tts.stopAtEndOfChapter ? Colors.black : Colors.white70,
+                                color: tts.stopAtEndOfChapter
+                                    ? (isDark ? Colors.black : Colors.white)
+                                    : colorScheme.onSurface.withValues(alpha: 0.7),
                                 fontWeight: tts.stopAtEndOfChapter ? FontWeight.bold : FontWeight.normal,
                                 fontSize: 12,
                               ),
@@ -528,9 +540,11 @@ class MiniTtsPlayer extends StatelessWidget {
                               child: ChoiceChip(
                                 label: Text(mins == 0 ? 'Tắt hẹn giờ' : '$mins phút'),
                                 selected: isSelected,
-                                selectedColor: Colors.amberAccent,
+                                selectedColor: isDark ? Colors.amberAccent : Colors.amber.shade700,
                                 labelStyle: TextStyle(
-                                  color: isSelected ? Colors.black : Colors.white70,
+                                  color: isSelected
+                                      ? (isDark ? Colors.black : Colors.white)
+                                      : colorScheme.onSurface.withValues(alpha: 0.7),
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   fontSize: 12,
                                 ),
@@ -555,7 +569,7 @@ class MiniTtsPlayer extends StatelessWidget {
                       children: [
                         IconButton(
                           iconSize: 36,
-                          icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
+                          icon: Icon(Icons.skip_previous_rounded, color: colorScheme.onSurface),
                           tooltip: 'Đoạn trước',
                           onPressed: () {
                             HapticFeedback.lightImpact();
@@ -580,7 +594,7 @@ class MiniTtsPlayer extends StatelessWidget {
                         const SizedBox(width: 16),
                         IconButton(
                           iconSize: 36,
-                          icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
+                          icon: Icon(Icons.skip_next_rounded, color: colorScheme.onSurface),
                           tooltip: 'Đoạn tiếp',
                           onPressed: () {
                             HapticFeedback.lightImpact();

@@ -420,14 +420,18 @@ class _DownloadQueuePageState extends State<DownloadQueuePage> {
                                     ),
                                   ),
                                   child: Center(
-                                    child: Text(
-                                      '$threads luồng',
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? theme.colorScheme.onPrimary
-                                            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                        fontSize: 11,
-                                        fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        '$threads luồng',
+                                        maxLines: 1,
+                                        style: TextStyle(
+                                          color: isSelected
+                                              ? theme.colorScheme.onPrimary
+                                              : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                          fontSize: 11,
+                                          fontWeight: isSelected ? FontWeight.w900 : FontWeight.w500,
+                                        ),
                                       ),
                                     ),
                                   ),

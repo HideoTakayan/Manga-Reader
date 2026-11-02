@@ -69,7 +69,7 @@ class PdfReaderView extends StatefulWidget {
   final VoidCallback? onUserScrollStart;
   final bool rotateLandscapeImages;
   final double? initialScrollOffset;
-  final void Function(double offset, int pageIndex)? onScrollProgress;
+  final void Function(double offset, double minScroll, double maxScroll, int pageIndex)? onScrollProgress;
 
   const PdfReaderView({
     super.key,
@@ -176,6 +176,7 @@ class PdfReaderViewState extends State<PdfReaderView> {
   void _onVerticalScroll() {
     if (!_scrollController.hasClients || _document == null) return;
     final offset = _scrollController.offset;
+    final minScroll = _scrollController.position.minScrollExtent;
     final maxScroll = _scrollController.position.maxScrollExtent;
     final pageCount = _document!.pagesCount;
     if (pageCount <= 1 || maxScroll <= 0) return;
@@ -208,7 +209,7 @@ class PdfReaderViewState extends State<PdfReaderView> {
       widget.onPageChanged?.call(estimatedPage);
       _schedulePrefetch(estimatedPage);
     }
-    widget.onScrollProgress?.call(offset, estimatedPage);
+    widget.onScrollProgress?.call(offset, minScroll, maxScroll, estimatedPage);
   }
 
   void _initPdf() {
@@ -972,21 +973,32 @@ class PdfReaderViewState extends State<PdfReaderView> {
           child: CircularProgressIndicator(color: Colors.white),
         );
       } else {
-        content = PdfView(
-          key: ValueKey(
-              'pdf_h_${widget.direction}_${widget.imageFit}_${widget.zoomStart}_${widget.cropBorders}_${widget.rotateLandscapeImages}'),
-          controller: _pdfController!,
-          scrollDirection: Axis.horizontal,
-          reverse: widget.direction == ReaderDirection.rtl,
-          backgroundDecoration: BoxDecoration(color: widget.backgroundColor),
-          onPageChanged: (page) {
-            final zeroPage = page - 1;
-            if (_lastReportedPage != zeroPage) {
-              _lastReportedPage = zeroPage;
-              widget.onPageChanged?.call(zeroPage);
-              _schedulePrefetch(zeroPage);
+        content = NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification.metrics.axis == Axis.horizontal) {
+              final offset = notification.metrics.pixels;
+              final maxScroll = notification.metrics.maxScrollExtent;
+              final minScroll = notification.metrics.minScrollExtent;
+              widget.onScrollProgress?.call(offset, minScroll, maxScroll, _lastReportedPage);
             }
+            return false;
           },
+          child: PdfView(
+            key: ValueKey(
+                'pdf_h_${widget.direction}_${widget.imageFit}_${widget.zoomStart}_${widget.cropBorders}_${widget.rotateLandscapeImages}'),
+            controller: _pdfController!,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            reverse: widget.direction == ReaderDirection.rtl,
+            backgroundDecoration: BoxDecoration(color: widget.backgroundColor),
+            onPageChanged: (page) {
+              final zeroPage = page - 1;
+              if (_lastReportedPage != zeroPage) {
+                _lastReportedPage = zeroPage;
+                widget.onPageChanged?.call(zeroPage);
+                _schedulePrefetch(zeroPage);
+              }
+            },
           builders: PdfViewBuilders<DefaultBuilderOptions>(
             options: const DefaultBuilderOptions(),
             documentLoaderBuilder: (_) => const Center(
@@ -1120,8 +1132,9 @@ class PdfReaderViewState extends State<PdfReaderView> {
               );
             },
           ),
-        );
-      }
+        ),
+      );
+    }
     }
 
     return Container(

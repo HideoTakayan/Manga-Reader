@@ -6,6 +6,7 @@ import '../models/forum_message.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../config/admin_config.dart';
 import '../../../widgets/vip_leaderboard_flair.dart';
+import '../../shared/image_viewer_dialog.dart';
 import '../services/leaderboard_service.dart';
 
 class ChatMessageBubble extends StatelessWidget {
@@ -171,7 +172,7 @@ class ChatMessageBubble extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: isMe 
                                 ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.4) 
-                                : Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           constraints: const BoxConstraints(maxWidth: 200),
@@ -251,43 +252,46 @@ class ChatMessageBubble extends StatelessWidget {
                           padding: EdgeInsets.only(
                             bottom: (message.body.isNotEmpty || message.gifUrl != null) ? 8.0 : 0,
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: _isGifUrl(message.imageUrl!)
-                                // GIF từ máy: dùng Image.network để giữ animation
-                                ? Image.network(
-                                    message.imageUrl!,
-                                    width: 200,
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
-                                    loadingBuilder: (context, child, progress) {
-                                      if (progress == null) return child;
-                                      return Container(
+                          child: GestureDetector(
+                            onTap: () => ImageViewerDialog.show(context, imageUrl: message.imageUrl!),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: _isGifUrl(message.imageUrl!)
+                                  // GIF từ máy: dùng Image.network để giữ animation
+                                  ? Image.network(
+                                      message.imageUrl!,
+                                      width: 200,
+                                      fit: BoxFit.cover,
+                                      gaplessPlayback: true,
+                                      loadingBuilder: (context, child, progress) {
+                                        if (progress == null) return child;
+                                        return Container(
+                                          height: 150,
+                                          width: 200,
+                                          color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                          child: const Center(child: CircularProgressIndicator()),
+                                        );
+                                      },
+                                      errorBuilder: (context, error, _) =>
+                                          const Icon(Icons.gif, size: 40, color: Colors.grey),
+                                    )
+                                  // Ảnh tĩnh: dùng CachedNetworkImage
+                                  : CachedNetworkImage(
+                                      imageUrl: message.imageUrl!,
+                                      width: 200,
+                                      fit: BoxFit.cover,
+                                      placeholder: (context, url) => Container(
                                         height: 150,
                                         width: 200,
                                         color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                                        child: const Center(child: CircularProgressIndicator()),
-                                      );
-                                    },
-                                    errorBuilder: (context, error, _) =>
-                                        const Icon(Icons.gif, size: 40, color: Colors.grey),
-                                  )
-                                // Ảnh tĩnh: dùng CachedNetworkImage
-                                : CachedNetworkImage(
-                                    imageUrl: message.imageUrl!,
-                                    width: 200,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      height: 150,
-                                      width: 200,
-                                      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                                      child: const Center(
-                                        child: CircularProgressIndicator(),
+                                        child: const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
                                       ),
+                                      errorWidget: (context, url, error) =>
+                                          const Icon(Icons.error),
                                     ),
-                                    errorWidget: (context, url, error) =>
-                                        const Icon(Icons.error),
-                                  ),
+                            ),
                           ),
                         ),
                       if (message.gifUrl != null && !message.isDeleted)
@@ -295,29 +299,32 @@ class ChatMessageBubble extends StatelessWidget {
                           padding: EdgeInsets.only(
                             bottom: message.body.isNotEmpty ? 8.0 : 0,
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              message.gifUrl!,
-                              width: 180,
-                              fit: BoxFit.contain,
-                              gaplessPlayback: true, // Giữ ảnh cũ khi reload
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  height: 120,
-                                  width: 180,
-                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                                  child: const Center(child: CircularProgressIndicator()),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(Icons.gif, size: 40, color: Colors.grey),
+                          child: GestureDetector(
+                            onTap: () => ImageViewerDialog.show(context, imageUrl: message.gifUrl!, isGif: true),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                message.gifUrl!,
+                                width: 180,
+                                fit: BoxFit.contain,
+                                gaplessPlayback: true, // Giữ ảnh cũ khi reload
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    height: 120,
+                                    width: 180,
+                                    color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                                    child: const Center(child: CircularProgressIndicator()),
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.gif, size: 40, color: Colors.grey),
+                              ),
                             ),
                           ),
                         ),
                       if (message.body.isNotEmpty || message.isDeleted)
-                        _buildMessageText(context, isMe),
+                        _buildMessageText(context, isMe, authorRank),
                     ],
                   ),
                 ),
@@ -415,12 +422,13 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildMessageText(BuildContext context, bool isMe) {
+  Widget _buildMessageText(BuildContext context, bool isMe, int authorRank) {
+    final hasDarkVipBg = authorRank >= 1 && authorRank <= 3;
     if (message.isDeleted) {
       return Text(
         'Tin nhắn đã bị xóa',
         style: TextStyle(
-          color: isMe
+          color: (isMe || hasDarkVipBg)
               ? Colors.white.withValues(alpha: 0.7)
               : Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
           fontStyle: FontStyle.italic,
@@ -429,7 +437,7 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     final defaultStyle = TextStyle(
-      color: isMe
+      color: (isMe || hasDarkVipBg)
           ? Colors.white
           : Theme.of(context).textTheme.bodyMedium?.color,
       fontSize: 14,
@@ -437,7 +445,7 @@ class ChatMessageBubble extends StatelessWidget {
     );
 
     final mentionStyle = TextStyle(
-      color: isMe ? const Color(0xFFFFE082) : const Color(0xFF00B0FF),
+      color: (isMe || hasDarkVipBg) ? const Color(0xFFFFE082) : const Color(0xFF00B0FF),
       fontWeight: FontWeight.bold,
       fontSize: 14,
       height: 1.3,
@@ -488,15 +496,21 @@ class ChatMessageBubble extends StatelessWidget {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Theme.of(context).cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
               const SizedBox(height: 8),
               Center(
                 child: Container(
@@ -658,10 +672,12 @@ class ChatMessageBubble extends StatelessWidget {
               ],
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
-  }
+  },
+);
+}
 
   /// Kiểm tra URL có phải là GIF không (theo extension)
   static bool _isGifUrl(String url) {

@@ -9,6 +9,7 @@ import '../../../services/interaction_service.dart';
 import '../../../services/group_service.dart';
 import '../../../services/library_status_service.dart';
 import '../../shared/drive_image.dart';
+import '../../shared/image_viewer_dialog.dart';
 import '../../shared/custom_tag_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
@@ -48,15 +49,19 @@ class MangaHeaderSection extends StatelessWidget {
             ),
           ),
         ),
-        // Gradient che dưới (Hòa vào nền Scaffold)
+        // Gradient che dưới (Hòa vào nền Scaffold nhưng giữ vùng chữ luôn đủ độ tương phản ở cả Light/Dark mode)
         Positioned.fill(
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, theme.scaffoldBackgroundColor],
-                stops: const [0.0, 1.0],
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.35),
+                  theme.scaffoldBackgroundColor,
+                ],
+                stops: const [0.0, 0.86, 1.0],
               ),
             ),
           ),
@@ -68,20 +73,34 @@ class MangaHeaderSection extends StatelessWidget {
             16,
             MediaQuery.paddingOf(context).top + 60,
             16,
-            20,
+            32,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Ảnh bìa chính
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 120,
-                  height: 160,
-                  child: DriveImage(
-                    fileId: manga.coverFileId,
-                    fit: BoxFit.cover,
+              Tooltip(
+                message: 'Chạm để phóng to ảnh bìa',
+                child: GestureDetector(
+                  onTap: () {
+                    if (manga.coverFileId.trim().isNotEmpty) {
+                      HapticFeedback.lightImpact();
+                      ImageViewerDialog.show(
+                        context,
+                        imageUrl: manga.coverFileId,
+                      );
+                    }
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: 120,
+                      height: 160,
+                      child: DriveImage(
+                        fileId: manga.coverFileId,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -434,7 +453,10 @@ class _RatingWidgetState extends State<_RatingWidget> {
                         onTap: () => _rate(starValue),
                         customBorder: const CircleBorder(),
                         child: Padding(
-                          padding: const EdgeInsets.all(3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 6,
+                          ),
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
                             child: Icon(
@@ -646,7 +668,7 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
     final tags = _entry?.tags ?? [];
     final (label, icon, color) = status != null
         ? LibraryStatusService.getStatusDisplay(status)
-        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6));
+        : ('Đặt trạng thái đọc', Icons.add_circle_outline, Colors.white70);
 
     return Wrap(
       spacing: 6,
@@ -658,13 +680,13 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
           color: Colors.transparent,
           child: Ink(
             decoration: BoxDecoration(
-              color: (status != null ? color : Theme.of(context).colorScheme.onSurface).withValues(
+              color: (status != null ? color : Colors.white).withValues(
                 alpha: 0.12,
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: (status != null ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)).withValues(
-                  alpha: 0.4,
+                color: (status != null ? color : Colors.white).withValues(
+                  alpha: 0.25,
                 ),
               ),
             ),
@@ -719,9 +741,9 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
           color: Colors.transparent,
           child: Ink(
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
             ),
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
@@ -733,21 +755,21 @@ class _ReadingStatusChipState extends State<_ReadingStatusChip> {
                 );
                 if (updated != null) _loadStatus();
               },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       Icons.bookmark_add_outlined,
                       size: 13,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: Colors.white,
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4),
                     Text(
                       '+ Nhãn',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
+                        color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),

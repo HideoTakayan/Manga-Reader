@@ -227,14 +227,15 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 ],
               ),
             ),
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            backgroundColor: const Color(0xFF0F172A),
+            iconTheme: const IconThemeData(color: Colors.white),
             actions: [
               _buildDriveAction(),
               IconButton(
                 tooltip: 'Làm mới',
-                icon: Icon(
+                icon: const Icon(
                   Icons.refresh,
-                  color: Theme.of(context).iconTheme.color,
+                  color: Colors.white,
                 ),
                 onPressed: _loadStats,
               ),

@@ -6,6 +6,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // BackgroundService: giữ process Android sống trong khi DownloadService tải file.
+@pragma('vm:entry-point')
 class BackgroundService {
   static Future<void> initialize() async {
     final service = FlutterBackgroundService();

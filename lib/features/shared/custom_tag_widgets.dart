@@ -48,11 +48,14 @@ class CustomTagHelper {
     ),
   ];
 
-  static Color getColorForTag(String tag) {
+  static Color getColorForTag(String tag, {bool isDark = true}) {
     final match = presets.where((p) => p.label.toLowerCase() == tag.toLowerCase()).firstOrNull;
-    if (match != null) return match.color;
+    final baseColor = match?.color ?? _getDynamicColorForTag(tag);
+    if (isDark) return baseColor;
+    return getLightModeColor(baseColor);
+  }
 
-    // Stable color based on string hash
+  static Color _getDynamicColorForTag(String tag) {
     final hash = tag.codeUnits.fold(0, (prev, elem) => prev + elem);
     const colors = [
       Colors.pinkAccent,
@@ -64,6 +67,20 @@ class CustomTagHelper {
       Colors.lightBlueAccent,
     ];
     return colors[hash % colors.length];
+  }
+
+  static Color getLightModeColor(Color color) {
+    if (color == Colors.amberAccent) return Colors.amber.shade900;
+    if (color == Colors.cyanAccent) return Colors.cyan.shade900;
+    if (color == Colors.greenAccent) return Colors.green.shade800;
+    if (color == Colors.deepOrangeAccent) return Colors.deepOrange.shade800;
+    if (color == Colors.purpleAccent) return Colors.purple.shade800;
+    if (color == Colors.pinkAccent) return Colors.pink.shade800;
+    if (color == Colors.tealAccent) return Colors.teal.shade800;
+    if (color == Colors.indigoAccent) return Colors.indigo.shade800;
+    if (color == Colors.limeAccent) return Colors.lime.shade900;
+    if (color == Colors.lightBlueAccent) return Colors.lightBlue.shade900;
+    return color;
   }
 
   static IconData getIconForTag(String tag) {
@@ -89,7 +106,8 @@ class CustomTagBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = CustomTagHelper.getColorForTag(tag);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = CustomTagHelper.getColorForTag(tag, isDark: isDark);
     final icon = CustomTagHelper.getIconForTag(tag);
 
     return Container(
@@ -99,10 +117,10 @@ class CustomTagBadge extends StatelessWidget {
         vertical: isSmall ? 2 : 4,
       ),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: color.withValues(alpha: isDark ? 0.15 : 0.1),
         borderRadius: BorderRadius.circular(isSmall ? 6 : 10),
         border: Border.all(
-          color: color.withValues(alpha: 0.4),
+          color: color.withValues(alpha: isDark ? 0.4 : 0.3),
           width: 1,
         ),
       ),
@@ -234,6 +252,7 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -390,26 +409,29 @@ class _CustomTagManagerDialogState extends State<CustomTagManagerDialog> {
                       runSpacing: 8,
                       children: CustomTagHelper.presets.map((preset) {
                         final isSelected = _tags.contains(preset.label);
-                        final selectedFg = preset.color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+                        final presetColor = isDark
+                            ? preset.color
+                            : CustomTagHelper.getLightModeColor(preset.color);
+                        final selectedFg = presetColor.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
                         return FilterChip(
                           avatar: Icon(
                             preset.icon,
                             size: 16,
-                            color: isSelected ? selectedFg : preset.color,
+                            color: isSelected ? selectedFg : presetColor,
                           ),
                           label: Text(preset.label),
                           selected: isSelected,
-                          selectedColor: preset.color.withValues(alpha: 0.8),
-                          backgroundColor: preset.color.withValues(alpha: 0.12),
+                          selectedColor: presetColor.withValues(alpha: 0.85),
+                          backgroundColor: presetColor.withValues(alpha: isDark ? 0.12 : 0.08),
                           labelStyle: TextStyle(
-                            color: isSelected ? selectedFg : preset.color,
+                            color: isSelected ? selectedFg : presetColor,
                             fontSize: 12,
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                           ),
                           side: BorderSide(
                             color: isSelected
                                 ? Colors.transparent
-                                : preset.color.withValues(alpha: 0.4),
+                                : presetColor.withValues(alpha: isDark ? 0.4 : 0.25),
                           ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),

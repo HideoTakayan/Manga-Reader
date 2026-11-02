@@ -63,6 +63,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
   Widget build(BuildContext context) {
     final comment = widget.comment;
     final authorRank = LeaderboardService.instance.getCachedRank(comment.authorId);
+    final isDarkVip = authorRank >= 1 && authorRank <= 3;
 
     return Material(
       color: Colors.transparent,
@@ -95,12 +96,12 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: authorRank == 1
-                      ? const Color(0xFF2C2216).withValues(alpha: 0.8)
+                      ? const Color(0xFF2C2216)
                       : authorRank == 2
-                          ? const Color(0xFF21282D).withValues(alpha: 0.8)
+                          ? const Color(0xFF21282D)
                           : authorRank == 3
-                              ? const Color(0xFF2B1C17).withValues(alpha: 0.8)
-                              : Theme.of(context).cardColor.withValues(alpha: 0.5),
+                              ? const Color(0xFF2B1C17)
+                              : Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                   border: authorRank == 1
                       ? Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 1.2)
@@ -126,7 +127,7 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                                 fontSize: 14,
                                 color: comment.authorId == FirebaseAuth.instance.currentUser?.uid
                                     ? Theme.of(context).colorScheme.primary
-                                    : null,
+                                    : (isDarkVip ? Colors.white : null),
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -140,7 +141,9 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                         Text(
                           timeago.format(comment.createdAt, locale: 'vi'),
                           style: TextStyle(
-                            color: Theme.of(context).textTheme.bodySmall?.color,
+                            color: isDarkVip
+                                ? Colors.white60
+                                : Theme.of(context).textTheme.bodySmall?.color,
                             fontSize: 12,
                           ),
                         ),
@@ -161,16 +164,23 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
                           ),
                         ),
                       ),
-                    Text(comment.body, style: const TextStyle(fontSize: 14)),
+                    Text(
+                      comment.body,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: isDarkVip ? Colors.white : null,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        _buildLikeButton(context),
+                        _buildLikeButton(context, isDarkVip: isDarkVip),
                         const SizedBox(width: 16),
                         _buildAction(
                           context,
                           Icons.reply_rounded,
                           'Phản hồi',
+                          color: _inactiveActionColor(context, isDarkVip: isDarkVip),
                           onTap: () {
                             widget.onReply?.call(comment);
                           },
@@ -328,13 +338,18 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
     );
   }
 
-  Widget _buildLikeButton(BuildContext context) {
+  Widget _buildLikeButton(BuildContext context, {bool isDarkVip = false}) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final likeCountText = widget.comment.likeCount > 0
+        ? widget.comment.likeCount.toString()
+        : 'Thích';
+
     if (uid == null) {
       return _buildAction(
         context,
         Icons.thumb_up_outlined,
-        widget.comment.likeCount.toString(),
+        likeCountText,
+        color: _inactiveActionColor(context, isDarkVip: isDarkVip),
         onTap: () {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -354,10 +369,10 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
         return _buildAction(
           context,
           isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-          widget.comment.likeCount.toString(),
+          likeCountText,
           color: isLiked
               ? const Color(0xFFFF5252)
-              : _inactiveActionColor(context),
+              : _inactiveActionColor(context, isDarkVip: isDarkVip),
           onTap: () async {
             try {
               await FirebaseForumRepository().toggleLikeComment(
@@ -415,7 +430,8 @@ class _ForumCommentTileState extends State<ForumCommentTile> {
     );
   }
 
-  Color _inactiveActionColor(BuildContext context) {
+  Color _inactiveActionColor(BuildContext context, {bool isDarkVip = false}) {
+    if (isDarkVip) return const Color(0xFFBDBDBD);
     return Theme.of(context).brightness == Brightness.dark
         ? const Color(0xFFBDBDBD)
         : const Color(0xFF5F6368);

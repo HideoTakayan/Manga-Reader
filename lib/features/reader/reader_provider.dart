@@ -884,10 +884,13 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
     if (cachedPages != null && cachedPages.isNotEmpty) {
       debugPrint('⚡ Fast load from extracted cache for online chapter: $chapterId');
       CloudChapter? knownChapter = state.chapters.firstWhereOrNull((c) => c.id == chapterId);
+      List<CloudChapter> resolvedChapters = state.chapters;
       if (knownChapter == null && mangaId != null && mangaId.isNotEmpty) {
         final chapters = await DriveService.instance.getChapters(mangaId);
         if (initGeneration != _initGeneration) return;
         knownChapter = chapters.firstWhereOrNull((c) => c.id == chapterId);
+        // FIX-3: Cập nhật chapters state ngay để nút prev/next hoạt động tức thì
+        if (chapters.isNotEmpty) resolvedChapters = chapters;
       }
 
       final currentChapter = knownChapter ?? CloudChapter(
@@ -903,6 +906,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       state = state.copyWith(
         isLoading: false,
         currentChapter: currentChapter,
+        chapters: resolvedChapters,
         currentPageIndex: _restorePageIndex(
           savedProgress,
           cachedPages.length,
@@ -936,6 +940,7 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
       }
       return;
     }
+
 
     // ========================================
     // TỐI ƯU HÓA: Tra cứu metadata từ RAM cache & Tải file trực tiếp
@@ -2063,6 +2068,18 @@ class ReaderNotifier extends AutoDisposeNotifier<ReaderState> {
           targetChapter.id,
         );
       }
+
+      // FIX-2: Refresh chapters list trong nền để phản ánh các chương mới tải
+      // (không block UI — chỉ cập nhật state khi kết quả về)
+      final refreshMangaId = state.mangaId;
+      if (refreshMangaId != null && refreshMangaId.isNotEmpty && !refreshMangaId.startsWith('local_')) {
+        DriveService.instance.getChapters(refreshMangaId, forceRefresh: false).then((freshChapters) {
+          if (freshChapters.isNotEmpty && state.mangaId == refreshMangaId) {
+            state = state.copyWith(chapters: freshChapters);
+          }
+        }).catchError((_) {});
+      }
+
     } catch (e) {
       if (kDebugMode) debugPrint('Error loading adjacent chapter: $e');
       // BUG-3 FIX: Đảm bảo reset cả loading flag lẫn hasReached để UI không

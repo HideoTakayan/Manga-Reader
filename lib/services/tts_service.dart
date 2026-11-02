@@ -225,66 +225,7 @@ class TtsService extends ChangeNotifier {
     }
   }
 
-  /// Trích xuất danh sách câu kèm tọa độ ký tự chính xác tuyệt đối trong block.
-  /// Không dùng indexOf sau khi trim/split giúp loại bỏ hoàn toàn lỗi lệch index highlight.
-  static List<({String text, int start, int end})> extractSentenceSpans(String block) {
-    if (block.isEmpty) return const [];
 
-    final spans = <({String text, int start, int end})>[];
-    // Khớp các câu kết thúc bởi: ! ? … 。！？ hoặc dấu . KHÔNG phải thập phân (1.5 an toàn)
-    final sentenceRegex = RegExp(
-      r'(?:[^.!?…。！？\n]|\d\.\d)*(?:(?<!\d)\.(?!\d)[“”‘\)]*|[!?…。！？]+[“”‘\)]*|\n+|$)',
-      multiLine: true,
-    );
-
-    for (final match in sentenceRegex.allMatches(block)) {
-      final raw = match.group(0) ?? '';
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) continue;
-
-      final leadingOffset = raw.indexOf(trimmed);
-      final sentenceStart = match.start + (leadingOffset != -1 ? leadingOffset : 0);
-      final sentenceEnd = sentenceStart + trimmed.length;
-
-      // Chỉ cắt câu cực kỳ dài (> 240 ký tự) không có dấu chấm để TTS dễ thở hơn
-      if (trimmed.length > 240) {
-        final subRegex = RegExp(r'[^,;:\-—\n]+(?:[,;:\-—]+|\n+|$)');
-        var curBuf = '';
-        var curStart = sentenceStart;
-        for (final subMatch in subRegex.allMatches(trimmed)) {
-          final subRaw = subMatch.group(0) ?? '';
-          if (curBuf.isNotEmpty && (curBuf.length + subRaw.length > 180)) {
-            final tBuf = curBuf.trim();
-            if (tBuf.isNotEmpty) {
-              final lead = curBuf.indexOf(tBuf);
-              final actualStart = curStart + (lead != -1 ? lead : 0);
-              spans.add((text: tBuf, start: actualStart, end: actualStart + tBuf.length));
-            }
-            curBuf = subRaw;
-            curStart = sentenceStart + subMatch.start;
-          } else {
-            curBuf += subRaw;
-          }
-        }
-        final tBuf = curBuf.trim();
-        if (tBuf.isNotEmpty) {
-          final lead = curBuf.indexOf(tBuf);
-          final actualStart = curStart + (lead != -1 ? lead : 0);
-          spans.add((text: tBuf, start: actualStart, end: actualStart + tBuf.length));
-        }
-      } else {
-        spans.add((text: trimmed, start: sentenceStart, end: sentenceEnd));
-      }
-    }
-
-    return spans;
-  }
-
-  static List<String> splitParagraphIntoSentences(String para) {
-    final spans = extractSentenceSpans(para);
-    if (spans.isEmpty) return const [];
-    return spans.map((s) => s.text).toList();
-  }
 
   List<TtsChunk> splitTtsChunks(
     String text, {
@@ -300,15 +241,12 @@ class TtsService extends ChangeNotifier {
             .applyReplacements(rawBlock, mangaId: mangaId);
         if (block.trim().isEmpty) continue;
 
-        final sentenceSpans = extractSentenceSpans(block);
-        for (final s in sentenceSpans) {
-          chunks.add(TtsChunk(
-            text: s.text,
-            blockIndex: bIdx,
-            charStartInBlock: s.start,
-            charEndInBlock: s.end,
-          ));
-        }
+        chunks.add(TtsChunk(
+          text: block.trim(),
+          blockIndex: bIdx,
+          charStartInBlock: 0,
+          charEndInBlock: block.length,
+        ));
       }
     } else {
       final processedText = GlossaryService.instance
@@ -318,15 +256,12 @@ class TtsService extends ChangeNotifier {
         final para = paragraphs[bIdx];
         if (para.trim().isEmpty) continue;
 
-        final sentenceSpans = extractSentenceSpans(para);
-        for (final s in sentenceSpans) {
-          chunks.add(TtsChunk(
-            text: s.text,
-            blockIndex: bIdx,
-            charStartInBlock: s.start,
-            charEndInBlock: s.end,
-          ));
-        }
+        chunks.add(TtsChunk(
+          text: para.trim(),
+          blockIndex: bIdx,
+          charStartInBlock: 0,
+          charEndInBlock: para.length,
+        ));
       }
     }
     return chunks;

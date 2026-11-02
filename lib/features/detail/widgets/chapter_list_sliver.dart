@@ -123,7 +123,9 @@ class ChapterListSliver extends StatelessWidget {
                   isRead
                       ? Icons.mark_chat_unread_outlined
                       : Icons.check_circle_outline,
-                  color: isRead ? Theme.of(context).colorScheme.primary : Colors.greenAccent,
+                  color: isRead
+                      ? Theme.of(context).colorScheme.primary
+                      : (theme.brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700),
                 ),
                 title: Text(
                   isRead ? 'Đánh dấu là chưa đọc' : 'Đánh dấu là đã đọc',
@@ -160,7 +162,10 @@ class ChapterListSliver extends StatelessWidget {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.done_all, color: Colors.amberAccent),
+                leading: Icon(
+                  Icons.done_all,
+                  color: theme.brightness == Brightness.dark ? Colors.amberAccent : Colors.orange.shade800,
+                ),
                 title: Text(
                   'Đánh dấu tất cả chương trước là đã đọc',
                   style: TextStyle(color: theme.colorScheme.onSurface),
@@ -197,9 +202,9 @@ class ChapterListSliver extends StatelessWidget {
                 },
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.remove_done,
-                  color: Colors.deepOrangeAccent,
+                  color: theme.brightness == Brightness.dark ? Colors.deepOrangeAccent : Colors.deepOrange.shade700,
                 ),
                 title: Text(
                   'Đánh dấu tất cả chương sau là chưa đọc',

@@ -179,6 +179,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
 
     _scrollController.addListener(_onVerticalScroll);
+    _pageController.addListener(_onHorizontalScroll);
 
     WakelockPlus.enable();
 
@@ -242,6 +243,32 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
+  void _onHorizontalScroll() {
+    final state = ref.read(readerProvider);
+
+    if (state.isVerticalMode || state.isPdf) return;
+    if (!_pageController.hasClients) return;
+
+    final pixels = _pageController.position.pixels;
+    final maxExtent = _pageController.position.maxScrollExtent;
+    final minExtent = _pageController.position.minScrollExtent;
+
+    final isNearEnd = pixels >= maxExtent + 5.0;
+    final isOverscrollTop = pixels <= minExtent - 5.0;
+
+    if (isNearEnd && !_isInNextChapterZone) {
+      _enterNextChapterZone();
+    } else if (!isNearEnd && _isInNextChapterZone) {
+      _exitNextChapterZone();
+    }
+
+    if (isOverscrollTop && !_isInPrevChapterZone) {
+      _enterPrevChapterZone();
+    } else if (!isOverscrollTop && _isInPrevChapterZone) {
+      _exitPrevChapterZone();
+    }
+  }
+
   void _onVerticalScroll() {
     final state = ref.read(readerProvider);
 
@@ -253,7 +280,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final readingMode =
         state.readingMode; // cache local để khỏi lấy lại nhiều lần
 
-    final isNearEnd = pixels >= maxExtent - _nextChapterThreshold;
+    final isNearEnd = pixels >= maxExtent + 20.0;
 
     final isOverscrollTop = pixels < _prevChapterThreshold;
 
@@ -435,6 +462,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _lastAutoScrollTick = null;
     _autoPageTurnRunId++;
 
+    double stuckTime = 0.0;
+
     _autoScrollTicker = createTicker((elapsed) {
       if (!mounted) {
         _stopAutoScroll();
@@ -463,39 +492,49 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         final canContinue =
             _pdfReaderKey.currentState?.scrollBy(deltaPixels) ?? false;
         if (!canContinue) {
-          final notifier = ref.read(readerProvider.notifier);
-          if (notifier.getNextChapterId() != null &&
-              !_isChapterTransitionLocked) {
-            _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
-              if (!changed && mounted && _isAutoScrolling) {
-                _stopAutoScroll();
-              }
-            });
-          } else {
-            _stopAutoScroll();
+          stuckTime += safeDeltaSeconds;
+          if (stuckTime > 1.5) {
+            final notifier = ref.read(readerProvider.notifier);
+            if (notifier.getNextChapterId() != null &&
+                !_isChapterTransitionLocked) {
+              _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
+                if (!changed && mounted && _isAutoScrolling) {
+                  _stopAutoScroll();
+                }
+              });
+            } else {
+              _stopAutoScroll();
+            }
+            stuckTime = 0.0;
           }
+        } else {
+          stuckTime = 0.0;
         }
       } else {
-        // Truyện tranh CBZ / ZIP cuộn dọc qua ScrollController
         if (!_scrollController.hasClients) {
           _stopAutoScroll();
           return;
         }
         final position = _scrollController.position;
         if (position.pixels >= position.maxScrollExtent) {
-          final notifier = ref.read(readerProvider.notifier);
-          if (notifier.getNextChapterId() != null &&
-              !_isChapterTransitionLocked) {
-            _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
-              if (!changed && mounted && _isAutoScrolling) {
-                _stopAutoScroll();
-              }
-            });
-          } else {
-            _stopAutoScroll();
+          stuckTime += safeDeltaSeconds;
+          if (stuckTime > 1.5) {
+            final notifier = ref.read(readerProvider.notifier);
+            if (notifier.getNextChapterId() != null &&
+                !_isChapterTransitionLocked) {
+              _triggerNextChapter(resumeHorizontalAuto: true).then((changed) {
+                if (!changed && mounted && _isAutoScrolling) {
+                  _stopAutoScroll();
+                }
+              });
+            } else {
+              _stopAutoScroll();
+            }
+            stuckTime = 0.0; // Reset after trigger
           }
           return;
         }
+        stuckTime = 0.0; // Reset if we are not stuck at maxScrollExtent
         final nextOffset = position.pixels + deltaPixels;
         _scrollController.jumpTo(
           nextOffset.clamp(0.0, position.maxScrollExtent),
@@ -870,6 +909,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     ]);
     _levelUpSub?.cancel();
     _scrollController.removeListener(_onVerticalScroll);
+    _pageController.removeListener(_onHorizontalScroll);
     _cancelHoldTimer();
     // Flush pending progress save ngay trước khi dispose để không mất tiến độ
     // khi user thoát trong vòng 600ms debounce window
@@ -884,8 +924,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _pageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
-    PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
+    // Fix: Chỉ evict ảnh của chapter hiện tại để giải phóng RAM, không clear toàn bộ cache toàn cục
+    final pages = ref.read(readerProvider).pages;
+    for (final path in pages) {
+      if (path.isNotEmpty) {
+        try {
+          FileImage(File(path)).evict();
+        } catch (_) {}
+      }
+    }
     // Tự động đẩy lịch sử đọc lên Firestore khi thoát chế độ đọc (bỏ qua nếu đang đọc Ẩn danh)
     if (!ref.read(readerProvider).isIncognito) {
       SyncService.instance.syncPendingHistory();
@@ -1194,12 +1241,42 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     return '/reader/$chapterId?${Uri(queryParameters: params).query}';
   }
 
-  void _readerPageForward(ReaderState state) {
+  void _showEdgeSwipeToast({required bool isNext}) {
+    if (!mounted) return;
+    final notifier = ref.read(readerProvider.notifier);
+    final hasTargetChapter = isNext
+        ? notifier.getNextChapterId() != null
+        : notifier.getPrevChapterId() != null;
+    final String message;
+    if (!hasTargetChapter) {
+      message = isNext
+          ? 'Bạn đang ở chương mới nhất!'
+          : 'Bạn đang ở chương đầu tiên!';
+    } else {
+      message = isNext
+          ? 'Vuốt mép màn hình để sang chương tiếp theo'
+          : 'Vuốt mép màn hình để về chương trước';
+    }
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _readerPageForward(ReaderState state, {bool fromTap = false}) {
     if (state.isPdf) {
       if (state.readingMode == ReadingMode.horizontal) {
         final pageCount = state.pdfPageCount;
         if (pageCount > 0 && state.currentPageIndex >= pageCount - 1) {
-          _triggerNextChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: true);
+          } else {
+            _triggerNextChapter();
+          }
         } else {
           _pdfReaderKey.currentState?.nextPage();
         }
@@ -1209,7 +1286,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ?.scrollBy(screenHeight * 0.65, animated: true) ??
             false;
         if (!moved) {
-          _triggerNextChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: true);
+          } else {
+            _triggerNextChapter();
+          }
         }
       }
       return;
@@ -1220,20 +1301,28 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       final currentSpread = _pageController.hasClients
           ? _pageController.page?.round() ?? 0
           : 0;
-      if (currentSpread < spreads.length) {
+      if (currentSpread < spreads.length - 1) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
         );
       } else {
-        _triggerNextChapter();
+        if (fromTap) {
+          _showEdgeSwipeToast(isNext: true);
+        } else {
+          _triggerNextChapter();
+        }
       }
     } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
         final maxScroll = _scrollController.position.maxScrollExtent;
         if (currentOffset >= maxScroll - 20.0) {
-          _triggerNextChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: true);
+          } else {
+            _triggerNextChapter();
+          }
         } else {
           final screenHeight = MediaQuery.of(context).size.height;
           _scrollController.animateTo(
@@ -1249,11 +1338,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  void _readerPageBackward(ReaderState state) {
+  void _readerPageBackward(ReaderState state, {bool fromTap = false}) {
     if (state.isPdf) {
       if (state.readingMode == ReadingMode.horizontal) {
         if (state.currentPageIndex <= 0) {
-          _triggerPrevChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: false);
+          } else {
+            _triggerPrevChapter();
+          }
         } else {
           _pdfReaderKey.currentState?.previousPage();
         }
@@ -1263,7 +1356,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 ?.scrollBy(-(screenHeight * 0.65), animated: true) ??
             false;
         if (!moved) {
-          _triggerPrevChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: false);
+          } else {
+            _triggerPrevChapter();
+          }
         }
       }
       return;
@@ -1279,13 +1376,21 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           curve: Curves.easeInOut,
         );
       } else {
-        _triggerPrevChapter();
+        if (fromTap) {
+          _showEdgeSwipeToast(isNext: false);
+        } else {
+          _triggerPrevChapter();
+        }
       }
     } else if (state.isVerticalMode) {
       if (_scrollController.hasClients) {
         final currentOffset = _scrollController.offset;
         if (currentOffset <= 20.0) {
-          _triggerPrevChapter();
+          if (fromTap) {
+            _showEdgeSwipeToast(isNext: false);
+          } else {
+            _triggerPrevChapter();
+          }
         } else {
           final screenHeight = MediaQuery.of(context).size.height;
           _scrollController.animateTo(
@@ -1364,15 +1469,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         notifier.toggleControls();
       } else if (tapX >= midRight) {
         if (state.direction == ReaderDirection.rtl && !state.isVerticalMode) {
-          _readerPageBackward(state);
+          _readerPageBackward(state, fromTap: true);
         } else {
-          _readerPageForward(state);
+          _readerPageForward(state, fromTap: true);
         }
       } else {
         if (state.direction == ReaderDirection.rtl && !state.isVerticalMode) {
-          _readerPageForward(state);
+          _readerPageForward(state, fromTap: true);
         } else {
-          _readerPageBackward(state);
+          _readerPageBackward(state, fromTap: true);
         }
       }
       return;
@@ -1383,7 +1488,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     if (state.tapZone == ReaderTapZone.oneHanded) {
       // Đỉnh màn hình (18%) -> Lùi trang / Cuộn lên
       if (tapY < screenHeight * 0.18) {
-        _readerPageBackward(state);
+        _readerPageBackward(state, fromTap: true);
         return;
       }
       // Vùng tâm màn hình (Menu controls)
@@ -1395,7 +1500,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         return;
       }
       // Toàn bộ vùng còn lại (vừa tầm ngón cái) -> Tiến trang / Cuộn xuống
-      _readerPageForward(state);
+      _readerPageForward(state, fromTap: true);
       return;
     }
 
@@ -1405,11 +1510,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       if (state.isVerticalMode) {
         // Mép trái (40%) -> Cuộn xuống (Tiến)
         if (tapX < screenWidth * 0.40) {
-          _readerPageForward(state);
+          _readerPageForward(state, fromTap: true);
         }
         // Mép phải (40%) -> Cuộn lên (Lùi)
         else if (tapX > screenWidth * 0.60) {
-          _readerPageBackward(state);
+          _readerPageBackward(state, fromTap: true);
         }
         // 20% Giữa màn hình -> Menu controls
         else {
@@ -1420,11 +1525,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
       // Đọc ngang: 40% Bên trái màn hình -> Luôn TIẾN (dành cho ngón cái tay trái)
       if (tapX < screenWidth * 0.40) {
-        _readerPageForward(state);
+        _readerPageForward(state, fromTap: true);
       }
       // 40% Bên phải màn hình -> Luôn LÙI
       else if (tapX > screenWidth * 0.60) {
-        _readerPageBackward(state);
+        _readerPageBackward(state, fromTap: true);
       }
       // 20% Giữa màn hình -> Menu controls
       else {
@@ -1436,9 +1541,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     // 4. Chế độ 3 Cột Mặc định (Default 3-Cols)
     if (state.isVerticalMode) {
       if (tapY < screenHeight * 0.35) {
-        _readerPageBackward(state);
+        _readerPageBackward(state, fromTap: true);
       } else if (tapY > screenHeight * 0.65) {
-        _readerPageForward(state);
+        _readerPageForward(state, fromTap: true);
       } else {
         notifier.toggleControls();
       }
@@ -1448,17 +1553,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     // 35% Bên trái màn hình
     if (tapX < screenWidth * 0.35) {
       if (state.direction == ReaderDirection.rtl) {
-        _readerPageForward(state);
+        _readerPageForward(state, fromTap: true);
       } else {
-        _readerPageBackward(state);
+        _readerPageBackward(state, fromTap: true);
       }
     }
     // 35% Bên phải màn hình
     else if (tapX > screenWidth * 0.65) {
       if (state.direction == ReaderDirection.rtl) {
-        _readerPageBackward(state);
+        _readerPageBackward(state, fromTap: true);
       } else {
-        _readerPageForward(state);
+        _readerPageForward(state, fromTap: true);
       }
     }
     // 30% Vùng giữa màn hình -> Bật/Tắt thanh công cụ
@@ -1496,6 +1601,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           final file = File(filePath);
           if (file.existsSync()) {
             _precachedPaths.add(filePath);
+            // Fix memory leak/miss: Giới hạn _precachedPaths (tránh trường hợp ImageCache evict mà ta vẫn nghĩ là còn cache)
+            if (_precachedPaths.length > 20) {
+              _precachedPaths.remove(_precachedPaths.first);
+            }
             precacheImage(FileImage(file), context);
           }
         } catch (_) {}
@@ -1574,6 +1683,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
 
       if (prev?.orientation != next.orientation) {
         _applyOrientation(next.orientation);
+      }
+
+      if (prev?.showControls != next.showControls) {
+        if (next.showControls) {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        } else {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        }
       }
 
       // Xử lý khi chuyển đổi giữa chế độ dọc và ngang
@@ -1740,7 +1857,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                     );
                                   }
                                 },
-                                onScrollProgress: (offset, pageIndex) {
+                                onScrollProgress: (offset, minScroll, maxScroll, pageIndex) {
                                   // Nhận offset cuộn thực tế từ PDF vertical view
                                   _scheduleVerticalProgressSaveIfNeeded(
                                     offset,
@@ -1748,6 +1865,26 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                   );
                                   if (_currentPageNotifier.value != pageIndex) {
                                     _currentPageNotifier.value = pageIndex;
+                                  }
+
+                                  // Xử lý chuyển chương bằng thao tác kéo ở cuối/đầu trang PDF
+                                  final isHorizontalPdf = contentState.readingMode == ReadingMode.horizontal;
+                                  final isNearEnd = isHorizontalPdf
+                                      ? offset >= maxScroll + 5.0
+                                      : offset >= maxScroll - _nextChapterThreshold;
+                                  final isOverscrollTop = isHorizontalPdf
+                                      ? offset <= minScroll - 5.0
+                                      : offset < _prevChapterThreshold;
+
+                                  if (isNearEnd && !_isInNextChapterZone) {
+                                    _enterNextChapterZone();
+                                  } else if (!isNearEnd && _isInNextChapterZone) {
+                                    _exitNextChapterZone();
+                                  }
+                                  if (isOverscrollTop && !_isInPrevChapterZone) {
+                                    _enterPrevChapterZone();
+                                  } else if (!isOverscrollTop && _isInPrevChapterZone) {
+                                    _exitPrevChapterZone();
                                   }
                                 },
                                 initialScrollOffset: contentFullState.scrollOffset > 0
@@ -1841,6 +1978,69 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         color: const Color(
                           0xFFFF9500,
                         ).withValues(alpha: state.tintLevel),
+                      ),
+                    ),
+
+                  // Lớp overlay báo hiệu hold-to-load ở chế độ đọc ngang
+                  if (state.readingMode == ReadingMode.horizontal && (_isHoldingForNextChapter || _isHoldingForPrevChapter))
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 80,
+                                  height: 80,
+                                  child: AnimatedBuilder(
+                                    animation: _holdProgressController,
+                                    builder: (context, child) {
+                                      return Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          CircularProgressIndicator(
+                                            value: 1.0,
+                                            strokeWidth: 4,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.white.withValues(alpha: 0.2),
+                                            ),
+                                          ),
+                                          CircularProgressIndicator(
+                                            value: _holdProgressController.value,
+                                            strokeWidth: 4,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Theme.of(context).colorScheme.primary,
+                                            ),
+                                          ),
+                                          Icon(
+                                            _isHoldingForPrevChapter
+                                                ? (state.direction == ReaderDirection.rtl ? Icons.keyboard_double_arrow_right : Icons.keyboard_double_arrow_left)
+                                                : (state.direction == ReaderDirection.rtl ? Icons.keyboard_double_arrow_left : Icons.keyboard_double_arrow_right),
+                                            color: Theme.of(context).colorScheme.primary.withValues(
+                                              alpha: 0.5 + (_holdProgressController.value * 0.5),
+                                            ),
+                                            size: 32,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _isHoldingForPrevChapter ? 'Giữ để đọc chương trước...' : 'Giữ để đọc chương tiếp...',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
 
@@ -4825,17 +5025,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       ),
       scrollPhysics: const BouncingScrollPhysics(),
       builder: (context, index) {
-        if (index == spreads.length) {
-          return PhotoViewGalleryPageOptions.customChild(
-            child: Center(
-              child: _buildHorizontalChapterTransitionFooter(state, notifier),
-            ),
-            initialScale: PhotoViewComputedScale.contained,
-            minScale: PhotoViewComputedScale.contained,
-            maxScale: PhotoViewComputedScale.contained,
-          );
-        }
-
         final pageIndices = spreads[index];
         if (pageIndices.length == 1) {
           final pageIdx = pageIndices[0];
@@ -4994,7 +5183,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
               _handleReaderTap(details, state, notifier),
         );
       },
-      itemCount: spreads.length + 1,
+      itemCount: spreads.length,
       pageController: _pageController,
       reverse: isRtl,
       onPageChanged: (index) {
@@ -5012,98 +5201,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  Widget _buildHorizontalChapterTransitionFooter(
-    ReaderState state,
-    ReaderNotifier notifier,
-  ) {
-    final hasNextChapter = notifier.getNextChapterId() != null;
-    final isRtl = state.direction == ReaderDirection.rtl;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isRtl
-                ? Icons.keyboard_double_arrow_left
-                : Icons.keyboard_double_arrow_right,
-            color: Colors.white54,
-            size: 40,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Hết ${state.currentChapter?.title ?? 'chương'}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
-          ),
-          const SizedBox(height: 20),
-          if (state.isLoadingNextChapter)
-            const Column(
-              children: [
-                CircularProgressIndicator(strokeWidth: 2),
-                SizedBox(height: 12),
-                Text(
-                  'Đang tải chương tiếp theo...',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-              ],
-            )
-          else if (hasNextChapter)
-            FilledButton.icon(
-              onPressed: _isChapterTransitionLocked
-                  ? null
-                  : () => _triggerNextChapter(),
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('Đọc chương tiếp'),
-            )
-          else
-            Column(
-              children: [
-                const Icon(
-                  Icons.check_circle_outline,
-                  color: Colors.green,
-                  size: 36,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Bạn đã đọc hết truyện!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Đây là chương cuối cùng của bộ truyện này.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: () => context.pop(),
-                  icon: const Icon(Icons.arrow_back, size: 18),
-                  label: const Text('Quay lại chi tiết truyện'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
 
   // Chế độ đọc DỌC: ListView cuộn liên tục thuần túy, mượt mà 60/120fps, không bị can thiệp gesture
   Widget _buildVerticalView(ReaderState state, ReaderNotifier notifier) {

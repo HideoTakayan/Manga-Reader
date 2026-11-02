@@ -809,7 +809,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       ),
                 leading: isSelectionMode
                     ? IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
+                        icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
                         onPressed: _clearSelection,
                         tooltip: 'Bỏ chọn',
                       )
@@ -822,14 +822,14 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                               autofocus: true,
                               onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
                               textInputAction: TextInputAction.search,
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
                               decoration: InputDecoration(
                                 hintText: 'Tìm kiếm truyện trong mục...',
-                                hintStyle: const TextStyle(color: Colors.white54),
+                                hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)),
                                 border: InputBorder.none,
                                 suffixIcon: IconButton(
                                   tooltip: 'Đóng tìm kiếm',
-                                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                                  icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7), size: 18),
                                   onPressed: () {
                                     _searchController.clear();
                                     if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
@@ -853,7 +853,7 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                         Builder(
                           builder: (tabCtx) {
                             return IconButton(
-                              icon: const Icon(Icons.select_all, color: Colors.white),
+                              icon: Icon(Icons.select_all, color: Theme.of(context).colorScheme.onSurface),
                               tooltip: 'Chọn tất cả trong mục',
                               onPressed: () async {
                                 final tabIndex = DefaultTabController.of(tabCtx).index;
@@ -1083,8 +1083,8 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
                         color: Theme.of(context).cardColor,
-                        border: const Border(
-                          top: BorderSide(color: Colors.white12, width: 0.5),
+                        border: Border(
+                          top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2), width: 0.5),
                         ),
                       ),
                       child: SafeArea(
@@ -1094,9 +1094,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             // Nút di chuyển sang danh mục khác
                             IconButton(
                               tooltip: 'Chuyển danh mục',
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.folder_outlined,
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               onPressed: () async {
                                 if (_selectedMangaIds.isNotEmpty) {
@@ -1119,9 +1119,9 @@ class _CustomLibraryPageState extends State<CustomLibraryPage> {
                             // Nút tải tất cả chapter của các truyện đã chọn
                             IconButton(
                               tooltip: 'Tải các truyện đã chọn',
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.download_outlined,
-                                color: Colors.white,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               onPressed: () async {
                                 final confirm = await showDialog<bool>(

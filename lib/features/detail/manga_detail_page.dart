@@ -792,13 +792,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              'Danh sách ${manga.contentType.unitLabel.toLowerCase()} (${chapters.length})',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                            Expanded(
+                              child: Text(
+                                'Danh sách ${manga.contentType.unitLabel.toLowerCase()} (${chapters.length})',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: 8),
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -1184,7 +1189,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 isSelected:
                                     _selectedChapterFilter ==
                                     ChapterFilterStatus.downloaded,
-                                activeColor: Colors.greenAccent,
+                                activeColor: theme.brightness == Brightness.dark ? Colors.greenAccent : Colors.green.shade700,
                               ),
                               const SizedBox(width: 8),
                               _buildChapterFilterChip(
@@ -1195,7 +1200,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 isSelected:
                                     _selectedChapterFilter ==
                                     ChapterFilterStatus.bookmarked,
-                                activeColor: Colors.amberAccent,
+                                activeColor: theme.brightness == Brightness.dark ? Colors.amberAccent : Colors.amber.shade800,
                               ),
                             ],
                           ),
@@ -1306,6 +1311,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       final selectedCats = snapshot.data ?? [];
                       final isInLibrary = selectedCats.isNotEmpty;
                       return IconButton(
+                        visualDensity: VisualDensity.compact,
                         tooltip: isInLibrary ? 'Quản lý danh mục' : 'Thêm vào thư viện',
                         icon: Icon(
                           isInLibrary
@@ -1326,6 +1332,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                     builder: (context, snapshot) {
                       final isFollowed = snapshot.data ?? false;
                       return IconButton(
+                        visualDensity: VisualDensity.compact,
                         tooltip: isFollowed ? 'Hủy theo dõi' : 'Theo dõi truyện',
                         icon: Icon(
                           isFollowed ? Icons.favorite : Icons.favorite_border,
@@ -1767,16 +1774,6 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           HapticFeedback.selectionClick();
           setState(() {
             _selectedChapterFilter = status;
-          });
-          // Scroll tới khu vực danh sách chương để không bị mất hướng sau khi lọc
-          Future.microtask(() {
-            if (_scrollController.hasClients) {
-              _scrollController.animateTo(
-                _scrollController.position.maxScrollExtent * 0.35,
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOut,
-              );
-            }
           });
         },
         child: AnimatedContainer(

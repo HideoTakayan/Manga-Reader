@@ -291,8 +291,8 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                                   Flexible(
                                     child: Text(
                                       group.name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurface,
                                         fontSize: 20,
                                         fontWeight: FontWeight.w800,
                                         letterSpacing: -0.3,
@@ -334,7 +334,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                               Text(
                                 group.description.isNotEmpty ? group.description : 'Nhóm dịch Manga & Novel',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.65),
+                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                                   fontSize: 12.5,
                                 ),
                                 maxLines: 1,
@@ -353,7 +353,7 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                       decoration: BoxDecoration(
                         color: theme.cardColor.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.3)),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.2),
@@ -366,9 +366,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
                         children: [
                           Expanded(child: _buildMetricItem('Truyện', _isLoadingMangas ? '...' : '$mangaCount', Icons.auto_stories_rounded, primary)),
                           _buildVerticalDivider(),
-                          Expanded(child: _buildMetricItem('Thành viên', '${group.members.length}', Icons.people_alt_rounded, Colors.tealAccent)),
+                          Expanded(child: _buildMetricItem('Thành viên', '${group.members.length}', Icons.people_alt_rounded, isDark ? Colors.tealAccent : Colors.teal)),
                           _buildVerticalDivider(),
-                          Expanded(child: _buildMetricItem('Lượt xem', _formatNumber(totalViews), Icons.remove_red_eye_rounded, Colors.amberAccent)),
+                          Expanded(child: _buildMetricItem('Lượt xem', _formatNumber(totalViews), Icons.remove_red_eye_rounded, isDark ? Colors.amberAccent : Colors.amber.shade700)),
                           _buildVerticalDivider(),
                           Expanded(child: _buildMetricItem('Lượt thích', _formatNumber(totalLikes), Icons.favorite_rounded, Colors.pinkAccent)),
                         ],
@@ -726,9 +726,9 @@ class _GroupDashboardPageState extends State<GroupDashboardPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.25),
+              color: theme.brightness == Brightness.dark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+              border: Border.all(color: theme.dividerColor.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [

@@ -460,16 +460,158 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
             return Column(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _bodyController,
-                    focusNode: _focusNode,
-                    onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-                    maxLines: null,
-                    textCapitalization: TextCapitalization.sentences,
-                    keyboardType: TextInputType.multiline,
-                    decoration: const InputDecoration(
-                      hintText: 'Bạn đang nghĩ gì?',
-                      border: InputBorder.none,
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: _bodyController,
+                          focusNode: _focusNode,
+                          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                          maxLines: null,
+                          textCapitalization: TextCapitalization.sentences,
+                          keyboardType: TextInputType.multiline,
+                          decoration: const InputDecoration(
+                            hintText: 'Bạn đang nghĩ gì?',
+                            border: InputBorder.none,
+                          ),
+                        ),
+
+                        // Preview
+                        if (_imageFile != null)
+                          Stack(
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(top: 8, bottom: 16),
+                                constraints: const BoxConstraints(maxHeight: 220),
+                                width: double.infinity,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.file(_imageFile!, fit: BoxFit.cover),
+                                ),
+                              ),
+                              Positioned(
+                                top: 16,
+                                right: 8,
+                                child: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: Colors.black54,
+                                  child: IconButton(
+                                    tooltip: 'Xóa ảnh đính kèm',
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(Icons.close, size: 18),
+                                    color: Colors.white,
+                                    onPressed: () => setState(() => _imageFile = null),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                        if (_poll != null)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8, bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.poll_rounded,
+                                      size: 18,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _poll!.question,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Xóa bình chọn',
+                                      visualDensity: VisualDensity.compact,
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                      icon: Icon(
+                                        Icons.cancel,
+                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                        size: 20,
+                                      ),
+                                      onPressed: () => setState(() => _poll = null),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                ..._poll!.options.map((opt) => Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.radio_button_unchecked,
+                                            size: 14,
+                                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              opt,
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )),
+                              ],
+                            ),
+                          ),
+
+                        if (widget.type == 'manga_share') ...[
+                          const SizedBox(height: 16),
+                          if (_selectedManga != null)
+                            SharedMangaCard(
+                              mangaId: _selectedManga!.id,
+                              title: _selectedManga!.title,
+                              coverUrl: DriveService.instance.getThumbnailLink(
+                                _selectedManga!.coverFileId,
+                              ),
+                              author: _selectedManga!.author,
+                              onTap: () {}, // Do nothing in preview
+                            )
+                          else
+                            OutlinedButton.icon(
+                              onPressed: _showMangaPicker,
+                              icon: const Icon(Icons.add_circle_outline),
+                              label: const Text('Chọn truyện để chia sẻ', style: TextStyle(fontWeight: FontWeight.bold)),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.all(16),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                minimumSize: const Size(double.infinity, 50),
+                              ),
+                            ),
+                          if (_selectedManga != null)
+                            TextButton(
+                              onPressed: _showMangaPicker,
+                              child: const Text('Đổi truyện khác'),
+                            ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -496,143 +638,16 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                   }),
                 ),
                 const SizedBox(height: 4),
-
-                // Preview
-                if (_imageFile != null)
-                  Stack(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        constraints: const BoxConstraints(maxHeight: 200),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(_imageFile!, fit: BoxFit.cover),
-                        ),
-                      ),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: IconButton(
-                          tooltip: 'Xóa ảnh đính kèm',
-                          icon: const Icon(Icons.cancel),
-                          color: Colors.white,
-                          onPressed: () => setState(() => _imageFile = null),
-                        ),
-                      ),
-                    ],
-                  ),
-
-
-                if (_poll != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.poll_rounded,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _poll!.question,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Xóa bình chọn',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                              icon: Icon(
-                                Icons.cancel,
-                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                                size: 20,
-                              ),
-                              onPressed: () => setState(() => _poll = null),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        ..._poll!.options.map((opt) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.radio_button_unchecked,
-                                    size: 14,
-                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      opt,
-                                      style: TextStyle(
-                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )),
-                      ],
-                    ),
-                  ),
-
-                if (widget.type == 'manga_share') ...[
-                  const SizedBox(height: 16),
-                  if (_selectedManga != null)
-                    SharedMangaCard(
-                      mangaId: _selectedManga!.id,
-                      title: _selectedManga!.title,
-                      coverUrl: DriveService.instance.getThumbnailLink(
-                        _selectedManga!.coverFileId,
-                      ),
-                      author: _selectedManga!.author,
-                      onTap: () {}, // Do nothing in preview
-                    )
-                  else
-                    OutlinedButton.icon(
-                      onPressed: _showMangaPicker,
-                      icon: const Icon(Icons.add_circle_outline),
-                      label: const Text('Chọn truyện để chia sẻ', style: TextStyle(fontWeight: FontWeight.bold)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.all(16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
-                    ),
-                  if (_selectedManga != null)
-                    TextButton(
-                      onPressed: _showMangaPicker,
-                      child: const Text('Đổi truyện khác'),
-                    ),
-                ],
                 // Hashtags Selector Bar
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.04),
+                    color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -644,9 +659,13 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                             children: [
                               Icon(Icons.tag_rounded, size: 16, color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 6),
-                              const Text(
+                              Text(
                                 'Hashtag / Nhãn dán',
-                                style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
@@ -708,12 +727,14 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                                 child: FilterChip(
                                   selected: false,
                                   label: Text('#$tag'),
-                                  backgroundColor: Colors.white.withValues(alpha: 0.05),
-                                  labelStyle: const TextStyle(
-                                    color: Colors.white70,
+                                  backgroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                                  labelStyle: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                                     fontSize: 11.5,
                                   ),
-                                  side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                                  side: BorderSide(
+                                    color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+                                  ),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   onSelected: (val) {
                                     HapticFeedback.selectionClick();
@@ -734,15 +755,21 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
                       widget.type ==
                       'discussion', // Không cho đính ảnh nếu đang share truyện để đỡ rối
                   onPollPressed: widget.type == 'discussion' ? _showPollCreatorDialog : null,
-                  onEmojiPressed: () {
-                    setState(() {
-                      _showEmojiPicker = !_showEmojiPicker;
-                      if (_showEmojiPicker) {
+                  onEmojiPressed: () async {
+                    if (!_showEmojiPicker) {
+                      // FIX-1: Unfocus trước, đợi bàn phím thu lại (150ms) rồi mới show picker
+                      // để tránh overflow khi bàn phím và emoji picker cùng chiếm không gian
+                      if (_focusNode.hasFocus) {
                         _focusNode.unfocus();
-                      } else {
-                        _focusNode.requestFocus();
+                        await Future.delayed(const Duration(milliseconds: 150));
                       }
-                    });
+                      if (mounted) {
+                        setState(() => _showEmojiPicker = true);
+                      }
+                    } else {
+                      setState(() => _showEmojiPicker = false);
+                      _focusNode.requestFocus();
+                    }
                   },
                   onImageSelected: (file) {
                     setState(() {
@@ -759,7 +786,52 @@ class _ForumCreatePostPageState extends State<ForumCreatePostPage> {
               ],
             );
           },
-        ) : const SizedBox.shrink(),
+        ) : Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.lock_outline_rounded,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'Yêu cầu đăng nhập',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Bạn cần đăng nhập tài khoản để có thể tạo bài viết trên Diễn đàn.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                    icon: const Icon(Icons.login_rounded),
+                    label: const Text('Đăng nhập ngay', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () => context.push('/login'),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ),
     ),
   );

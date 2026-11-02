@@ -21,15 +21,19 @@ class ForumComposer extends StatelessWidget {
   });
 
   Future<void> _pickMedia() async {
-    final pickerPlatform = ImagePickerPlatform.instance;
-    if (pickerPlatform is ImagePickerAndroid) {
-      pickerPlatform.useAndroidPhotoPicker = true;
-    }
-    final picker = ImagePicker();
-    // pickImage kích hoạt Android Photo Picker (Tất cả ảnh / Albums) giống Messenger
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      onImageSelected(File(pickedFile.path));
+    try {
+      final pickerPlatform = ImagePickerPlatform.instance;
+      if (pickerPlatform is ImagePickerAndroid) {
+        pickerPlatform.useAndroidPhotoPicker = true;
+      }
+      final picker = ImagePicker();
+      // pickImage kích hoạt Android Photo Picker (Tất cả ảnh / Albums) giống Messenger
+      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
+        onImageSelected(File(pickedFile.path));
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error picking media: $e');
     }
   }
 

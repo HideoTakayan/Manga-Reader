@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../config/admin_config.dart';
+import '../../config/admin_config.dart';
 
 import 'admin_reports_screen.dart';
 import 'forum_chat_page.dart';

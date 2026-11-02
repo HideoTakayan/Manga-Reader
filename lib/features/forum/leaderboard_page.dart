@@ -2,9 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../services/level_service.dart';
-import '../../../widgets/level_badge.dart';
-import '../../../widgets/vip_leaderboard_flair.dart';
+import '../../services/level_service.dart';
+import '../../widgets/level_badge.dart';
+import '../../widgets/vip_leaderboard_flair.dart';
 import 'services/leaderboard_service.dart';
 
 /// Trang Bảng Xếp Hạng Đua Top Độc Giả Toàn Server (Hall of Fame)
@@ -290,7 +290,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                 ? _buildPodiumItem(
                     user: top2,
                     rank: 2,
-                    color: const Color(0xFFC0C0C0),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFFC0C0C0)
+                        : const Color(0xFF455A64),
                     trophy: '🥈',
                     height: 140,
                   )
@@ -303,7 +305,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                 ? _buildPodiumItem(
                     user: top1,
                     rank: 1,
-                    color: const Color(0xFFFFD700),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFFFFD700)
+                        : const Color(0xFFD48806),
                     trophy: '👑',
                     height: 175,
                     isChampion: true,
@@ -317,7 +321,9 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                 ? _buildPodiumItem(
                     user: top3,
                     rank: 3,
-                    color: const Color(0xFFCD7F32),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFFCD7F32)
+                        : const Color(0xFFA0522D),
                     trophy: '🥉',
                     height: 125,
                   )
@@ -422,60 +428,127 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   }
 
   Widget _buildRankRow(LeaderboardUser user, bool isMe) {
-    // Màu sắc, background và badge phân cấp riêng biệt theo từng Rank Tier
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    // Màu sắc, background và badge phân cấp riêng biệt theo từng Rank Tier, tương thích cả Dark & Light mode
     Color rankBorderColor;
     Color rankBgColor;
     Widget rankIndicator;
+    Color valueColor;
 
     if (user.rank == 1) {
-      rankBorderColor = const Color(0xFFFFD700).withValues(alpha: 0.6);
-      rankBgColor = const Color(0xFF2C2216).withValues(alpha: 0.85);
-      rankIndicator = const Text(
+      rankBorderColor = isDark
+          ? const Color(0xFFFFD700).withValues(alpha: 0.6)
+          : Colors.amber.shade700.withValues(alpha: 0.6);
+      rankBgColor = isDark
+          ? const Color(0xFF2C2216).withValues(alpha: 0.85)
+          : Colors.amber.withValues(alpha: 0.1);
+      rankIndicator = Text(
         '👑 #1',
-        style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFFFD700), fontSize: 13),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: isDark ? const Color(0xFFFFD700) : Colors.amber.shade900,
+          fontSize: 13,
+        ),
       );
+      valueColor = isDark ? const Color(0xFFFFD700) : Colors.amber.shade900;
     } else if (user.rank == 2) {
-      rankBorderColor = const Color(0xFFB0BEC5).withValues(alpha: 0.5);
-      rankBgColor = const Color(0xFF21282D).withValues(alpha: 0.85);
-      rankIndicator = const Text(
+      rankBorderColor = isDark
+          ? const Color(0xFFB0BEC5).withValues(alpha: 0.5)
+          : Colors.blueGrey.shade400.withValues(alpha: 0.5);
+      rankBgColor = isDark
+          ? const Color(0xFF21282D).withValues(alpha: 0.85)
+          : Colors.blueGrey.withValues(alpha: 0.08);
+      rankIndicator = Text(
         '🥈 #2',
-        style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFCFD8DC), fontSize: 13),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: isDark ? const Color(0xFFCFD8DC) : Colors.blueGrey.shade700,
+          fontSize: 13,
+        ),
       );
+      valueColor = isDark ? const Color(0xFFCFD8DC) : Colors.blueGrey.shade700;
     } else if (user.rank == 3) {
-      rankBorderColor = const Color(0xFFFF7043).withValues(alpha: 0.5);
-      rankBgColor = const Color(0xFF2B1C17).withValues(alpha: 0.85);
-      rankIndicator = const Text(
+      rankBorderColor = isDark
+          ? const Color(0xFFFF7043).withValues(alpha: 0.5)
+          : Colors.deepOrange.shade600.withValues(alpha: 0.4);
+      rankBgColor = isDark
+          ? const Color(0xFF2B1C17).withValues(alpha: 0.85)
+          : Colors.deepOrange.withValues(alpha: 0.08);
+      rankIndicator = Text(
         '🥉 #3',
-        style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFFF8A65), fontSize: 13),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: isDark ? const Color(0xFFFF8A65) : Colors.deepOrange.shade800,
+          fontSize: 13,
+        ),
       );
+      valueColor = isDark ? const Color(0xFFFF8A65) : Colors.deepOrange.shade800;
     } else if (user.rank <= 5) {
-      rankBorderColor = Colors.cyanAccent.withValues(alpha: 0.4);
-      rankBgColor = const Color(0xFF102730).withValues(alpha: 0.7);
+      rankBorderColor = isDark
+          ? Colors.cyanAccent.withValues(alpha: 0.4)
+          : Colors.cyan.shade700.withValues(alpha: 0.4);
+      rankBgColor = isDark
+          ? const Color(0xFF102730).withValues(alpha: 0.7)
+          : Colors.cyan.withValues(alpha: 0.08);
       rankIndicator = Text(
         '💎 #${user.rank}',
-        style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.cyanAccent, fontSize: 12),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: isDark ? Colors.cyanAccent : Colors.cyan.shade800,
+          fontSize: 12,
+        ),
       );
+      valueColor = isDark ? Colors.cyanAccent : Colors.cyan.shade800;
     } else if (user.rank <= 10) {
-      rankBorderColor = Colors.purpleAccent.withValues(alpha: 0.35);
-      rankBgColor = const Color(0xFF25162E).withValues(alpha: 0.7);
+      rankBorderColor = isDark
+          ? Colors.purpleAccent.withValues(alpha: 0.35)
+          : Colors.purple.shade600.withValues(alpha: 0.4);
+      rankBgColor = isDark
+          ? const Color(0xFF25162E).withValues(alpha: 0.7)
+          : Colors.purple.withValues(alpha: 0.08);
       rankIndicator = Text(
         '🌟 #${user.rank}',
-        style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.purpleAccent, fontSize: 12),
+        style: TextStyle(
+          fontWeight: FontWeight.w900,
+          color: isDark ? Colors.purpleAccent : Colors.purple.shade800,
+          fontSize: 12,
+        ),
       );
+      valueColor = isDark ? Colors.purpleAccent : Colors.purple.shade800;
     } else if (user.rank <= 20) {
-      rankBorderColor = Colors.redAccent.withValues(alpha: 0.3);
-      rankBgColor = const Color(0xFF2B1616).withValues(alpha: 0.6);
+      rankBorderColor = isDark
+          ? Colors.redAccent.withValues(alpha: 0.3)
+          : Colors.red.shade600.withValues(alpha: 0.35);
+      rankBgColor = isDark
+          ? const Color(0xFF2B1616).withValues(alpha: 0.6)
+          : Colors.red.withValues(alpha: 0.07);
       rankIndicator = Text(
         '⚔️ #${user.rank}',
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 11.5),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: isDark ? Colors.redAccent : Colors.red.shade700,
+          fontSize: 11.5,
+        ),
       );
+      valueColor = isDark ? Colors.redAccent : Colors.red.shade700;
     } else if (user.rank <= 50) {
-      rankBorderColor = Colors.greenAccent.withValues(alpha: 0.25);
-      rankBgColor = const Color(0xFF13281A).withValues(alpha: 0.5);
+      rankBorderColor = isDark
+          ? Colors.greenAccent.withValues(alpha: 0.25)
+          : Colors.green.shade700.withValues(alpha: 0.35);
+      rankBgColor = isDark
+          ? const Color(0xFF13281A).withValues(alpha: 0.5)
+          : Colors.green.withValues(alpha: 0.07);
       rankIndicator = Text(
         '🛡️ #${user.rank}',
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent, fontSize: 11.5),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: isDark ? Colors.greenAccent : Colors.green.shade700,
+          fontSize: 11.5,
+        ),
       );
+      valueColor = isDark ? Colors.greenAccent : Colors.green.shade700;
     } else {
       rankBorderColor = isMe
           ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)
@@ -485,8 +558,13 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           : Theme.of(context).cardColor;
       rankIndicator = Text(
         '#${user.rank}',
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.grey),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 12.5,
+          color: onSurface.withValues(alpha: 0.5),
+        ),
       );
+      valueColor = onSurface.withValues(alpha: 0.8);
     }
 
     return Container(
@@ -546,7 +624,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                           fontSize: 13.5,
                           color: isMe
                               ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurface,
+                              : onSurface,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -555,7 +633,11 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                       const SizedBox(width: 4),
                       Text(
                         '(Tôi)',
-                        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ],
@@ -584,16 +666,15 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
-                  color: user.rank == 1
-                      ? const Color(0xFFFFD700)
-                      : user.rank <= 5
-                          ? Colors.cyanAccent
-                          : Colors.amberAccent,
+                  color: valueColor,
                 ),
               ),
               Text(
                 _selectedCategory == 0 ? 'EXP' : 'chương',
-                style: const TextStyle(color: Colors.grey, fontSize: 10),
+                style: TextStyle(
+                  color: onSurface.withValues(alpha: 0.5),
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
@@ -603,6 +684,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   }
 
   Widget _buildMyRankBar(LeaderboardUser? myEntry) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final localExp = LevelService.instance.currentExp;
     final levelInfo = LevelService.getLevelInfo(localExp);
     final myRank = myEntry?.rank ?? 0;
@@ -614,7 +696,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
+            color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),

@@ -13,6 +13,7 @@ import '../services/leaderboard_service.dart';
 import 'shared_manga_card.dart';
 import 'report_dialog.dart';
 import 'forum_poll_widget.dart';
+import '../../shared/image_viewer_dialog.dart';
 
 class ForumPostCard extends StatefulWidget {
   final ForumPost post;
@@ -197,8 +198,8 @@ class _ForumPostCardState extends State<ForumPostCard> {
                         tooltip: 'Tùy chọn',
                         icon: const Icon(Icons.more_horiz, size: 20),
                         onPressed: () => _showOptions(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                       ),
                     ],
                   ),
@@ -257,28 +258,34 @@ class _ForumPostCardState extends State<ForumPostCard> {
 
                 // Image or GIF (Full width, no padding, no border radius)
                 if (post.imageUrl != null)
-                  CachedNetworkImage(
-                    imageUrl: post.imageUrl!,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      height: 200,
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                      child: const Center(child: CircularProgressIndicator()),
+                  GestureDetector(
+                    onTap: () => ImageViewerDialog.show(context, imageUrl: post.imageUrl!),
+                    child: CachedNetworkImage(
+                      imageUrl: post.imageUrl!,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        height: 200,
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(Icons.error),
                     ),
-                    errorWidget: (context, url, error) => const Icon(Icons.error),
                   )
                 else if (post.gifUrl != null)
-                  CachedNetworkImage(
-                    imageUrl: post.gifUrl!,
-                    width: double.infinity,
-                    fit: BoxFit.contain,
-                    placeholder: (context, url) => Container(
-                      height: 200,
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                      child: const Center(child: CircularProgressIndicator()),
+                  GestureDetector(
+                    onTap: () => ImageViewerDialog.show(context, imageUrl: post.gifUrl!, isGif: true),
+                    child: CachedNetworkImage(
+                      imageUrl: post.gifUrl!,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => Container(
+                        height: 200,
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
+                        child: const Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(Icons.error),
                     ),
-                    errorWidget: (context, url, error) => const Icon(Icons.error),
                   ),
 
                 // Shared Manga Card
@@ -411,11 +418,12 @@ class _ForumPostCardState extends State<ForumPostCard> {
 
   Widget _buildLikeButton(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final likeLabel = _likeCount > 0 ? '$_likeCount' : 'Thích';
     if (uid == null) {
       return _buildAction(
         context,
         Icons.thumb_up_outlined,
-        _likeCount.toString(),
+        likeLabel,
         onTap: () {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -432,7 +440,7 @@ class _ForumPostCardState extends State<ForumPostCard> {
         return _buildAction(
           context,
           isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-          _likeCount.toString(),
+          likeLabel,
           color: isLiked
               ? const Color(0xFF1877F2)
               : _inactiveActionColor(context),
